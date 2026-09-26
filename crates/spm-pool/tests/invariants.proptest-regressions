@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 5619f9181fda564de0612dd1af3ddfedc4c891b4b227d9a24d9eaabedc65a764 # shrinks to cfgs = [PoolConfig { host: "a.example", port: 1200, tls: Auto, enabled: true, login: "w0" }, PoolConfig { host: "a.example", port: 1200, tls: Auto, enabled: true, login: "w0" }], seed = 0, ops = [Advance(10000), Drive(0, 0), Drive(0, 0), Drive(0, 20), Drive(0, 20), Drive(0, 0), Advance(300000), Drive(74, 0), Drive(72, 0), Drive(14, 100), Drive(50, 0), Drive(90, 0), Drive(84, 11)]
+cc 7ed562ae20c32aa2bfebb9e1631ace122a6fa756ca65c3494a6f4c189f96f902 # shrinks to cfgs = [PoolConfig { host: "a.example", port: 1200, tls: Auto, enabled: false, login: "w0" }], seed = 0, ops = [Advance(0), Raw(ConfigChanged { pools: [PoolConfig { host: "a.example", port: 1200, tls: Auto, enabled: true, login: "w0" }] }), Raw(ResumeRequest), Drive(0, 0), Drive(0, 20), Drive(0, 0), Drive(0, 0)]

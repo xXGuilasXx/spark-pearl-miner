@@ -15,7 +15,7 @@
 | M5a | Janela de microbenchmark no GB10 (MB0–MB2: pico IMMA a 1800/2000/2200 MHz, QMMA FP8, ldmatrix/cp.async/TMA, L2/DRAM) — avisar antes de parar o vLLM; clock travado | 1 | M0 | |
 | M5 | `libspm_cuda` v0 + `gpu-worker` **bit-exato** (128×256×64, cp.async 3 estágios, tile de hash 8×16 em registradores, epílogo BLAKE3, KAT, canário, cancelamento por época) | 6–10 | M1, M5a | **G0** |
 | M6 | Primeiras shares aceitas com o nosso minerador (LuckyPool BR → HeroMiners BR/TLS, 1 h: ≥ 20 aceitas, 0 invalid, stale < 1 %) | 1 | M4, M5 | **G2** |
-| M7 | Máquina de estados de failover de 3 pools (redutor puro, ≥ 25 cenários, proptest, mockpool, teste ao vivo < 15 s) | 3 | M4 | |
+| M7 | Máquina de estados de failover de 3 pools (redutor puro, ≥ 25 cenários, proptest, mockpool, teste ao vivo < 15 s) | 3 | M4 | redutor `spm-pool` + 42 cenários + proptest ✅; mockpool e teste ao vivo pendentes |
 | M8 | Dev fee 2 % transparente (`spm-fee`: constantes únicas, débito 200/9800, fatias 120 s, worker `devfee`, HeroMiners→LuckyPool→Kryptex, auto-off se carteira = dev, banner/log/API/`fee-test`, guarda de CI README×constantes) | 1,5 | M6, M7 | |
 | M9 | API + GUI web EN/PT-BR (assistente, dashboard, 3 slots de pool com failover ao vivo, energia, fee, logs, sobre; segurança token→cookie+CSRF), unit `systemd --user`, `.desktop`, `contrib/spark-modo` (runtime `miner`) | 4 | M7 | |
 | M10 | Kernel v1 (persistente 48 CTAs, TMA p/ B, raster L2, A' duplo-buffer; ≥ 85 % do pico IMMA; meta ≥ 76 TH/s a ≤ 85 W) | 5 | M5, M6 | |

@@ -1,0 +1,14 @@
+[package]
+name = "spm-pool"
+description = "Pool failover manager for spark-pearl-miner: a pure reducer over up to 3 user pool slots with an injected clock"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+spm-proto = { path = "../spm-proto" }
+
+[dev-dependencies]
+proptest = "1"
