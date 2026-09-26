@@ -26,11 +26,13 @@ if nvidia-smi --query-compute-apps=process_name --format=csv,noheader | grep -q 
 fi
 echo "== building bench"; cargo build --release -p spm-gpu --features gpu --example bench >/dev/null
 BENCH=$(ls -t "$CARGO_TARGET_DIR"/release/examples/bench 2>/dev/null | head -1)
+echo "== validating sudo (kept alive every 5 min so the cleanup never waits for a password)"; sudo -v
+( while true; do sleep 300; sudo -n true 2>/dev/null || exit; done ) & KEEP=$!
 echo "== locking SM clock at $MHZ MHz (sudo)"; sudo nvidia-smi -lgc 300,"$MHZ" >/dev/null
 START_UP=$(cut -d' ' -f1 /proc/uptime)
 cleanup() {
   set +e
-  [ -n "${LOGPID:-}" ] && kill "$LOGPID" 2>/dev/null; sleep 1
+  [ -n "${LOGPID:-}" ] && kill "$LOGPID" 2>/dev/null; [ -n "${KEEP:-}" ] && kill "$KEEP" 2>/dev/null; sleep 1
   sudo nvidia-smi -rgc >/dev/null 2>&1 || true
   bench/soak-log.sh --summarize "$P-soak.csv" 2>/dev/null | tee "$P-summary.txt" || true
   END_UP=$(cut -d' ' -f1 /proc/uptime); echo "uptime start=${START_UP}s end=${END_UP}s (a smaller end than start = the machine rebooted)" | tee -a "$P-summary.txt"
@@ -40,5 +42,6 @@ cleanup() {
 trap cleanup EXIT INT TERM
 echo "== soak logger every 10 s for $SECS s -> $P-soak.csv"; bench/soak-log.sh --interval 10 --duration $((SECS+120)) --out "$P-soak.csv" >/dev/null 2>&1 & LOGPID=$!
 echo "== bench: 131072x131072x4096 for $MIN min at $MHZ MHz -> $P-bench.log"; date -u | tee "$P-bench.log"
+# The bench prints its summary only when it finishes on its own; give it the full time and let it exit.
 "$BENCH" --seconds "$SECS" --m 131072 --n 131072 --k 4096 --csv "$P-chunks.csv" 2>&1 | tee -a "$P-bench.log"
 echo "== bench finished $(date -u)" | tee -a "$P-bench.log"
