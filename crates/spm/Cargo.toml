@@ -33,6 +33,7 @@ spm-proto.workspace = true
 spm-work.workspace = true
 spm-ipc.workspace = true
 spm-pow.workspace = true
+spm-worker.workspace = true
 zk-pow.workspace = true
 tokio = { workspace = true, features = ["process", "signal", "fs"] }
 tracing.workspace = true

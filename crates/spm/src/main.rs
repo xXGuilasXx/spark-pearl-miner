@@ -34,7 +34,7 @@ enum Cmd {
         #[arg(long)]
         no_api: bool,
     },
-    /// The GPU worker. This build only has the CPU simulation (`--sim`); the CUDA worker is M5.
+    /// The GPU worker (normally started by the daemon or the spark-modo `miner` runtime).
     GpuWorker {
         /// Socket of the daemon to attach to (default: $XDG_RUNTIME_DIR/spark-pearl-miner/worker.sock).
         #[arg(long)]
@@ -158,14 +158,17 @@ async fn daemon(no_api: bool) -> ExitCode {
 
 fn gpu_worker(attach: Option<PathBuf>, sim: bool, sim_interval_ms: u64) -> ExitCode {
     init_tracing(None);
-    if !sim {
-        eprintln!(
-            "spark-pearl-miner gpu-worker: the CUDA worker is not part of this build yet (milestone M5).\n\
-             Use --sim for the CPU simulation (set worker.simulate = true in config.toml when the daemon spawns it)."
-        );
-        return ExitCode::from(2);
-    }
     let sock = attach.unwrap_or_else(|| Paths::from_env().worker_sock());
+    if !sim {
+        tracing::info!(sock = %sock.display(), "GPU worker");
+        return match spm_worker::run(spm_worker::Args { sock }) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("gpu-worker: {e:#}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     tracing::info!(sock = %sock.display(), "SIMULATED GPU worker (CPU reference miner, m=n=256, k=2048)");
     let opts = spm::worker_sim::SimOptions {
         sock,
