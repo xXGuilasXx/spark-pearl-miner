@@ -769,11 +769,11 @@ mod tests {
         let mut c = PowerCtl::new(Profile::Balanced, Some(Profile::Eco), Some("unclean".into()), true);
         let v = c.view();
         assert_eq!((v.profile.as_str(), v.configured_profile.as_str(), v.stepped_down), ("eco", "balanced", true));
-        assert_eq!((v.target_w, v.hard_stop_w, v.clock_cap.cap_mhz), (60.0, 70.0, 2000));
+        assert_eq!((v.target_w, v.hard_stop_w, v.clock_cap.cap_mhz), (60.0, 70.0, 1800));
         assert_eq!(c.set_configured(Profile::Max), None);
         let mut c2 = ctl();
         assert_eq!(c2.set_configured(Profile::Eco), Some((Profile::Balanced, Profile::Eco)));
-        assert_eq!(c2.view().clock_cap.cap_mhz, 2000);
+        assert_eq!(c2.view().clock_cap.cap_mhz, 1800);
         assert_eq!(c.view().unclean_start.as_deref(), Some("unclean"));
     }
 
