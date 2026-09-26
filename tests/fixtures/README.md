@@ -10,7 +10,7 @@ because the 76-byte header and the target are public chain data.
 |---|---|---|---|---|
 | `capture-herominers-br-authorize.jsonl` | HeroMiners, `br.pearl.herominers.com:1200` | TLS (Let's Encrypt) | object, authorize-first | static diff 2,097,152; jobs every ~28 s |
 | `capture-luckypool-br-authorize.jsonl` | LuckyPool, `pearl-br.luckypool.io:3360` | TLS only, self-signed `*.luckypool.io` (pinned) | object + `jsonrpc`, ack carries `type` | vardiff (`diff` field, 888,888 for a fresh worker) |
-| `capture-kryptex-8048-authorize.jsonl` | Kryptex, `prl.kryptex.network:8048` | TLS (public CA) | stratum-v1 arrays (`subscribe` silent, `authorize` acked) | static diff 2,097,152; `target = 2^224/diff − 1` |
+| `capture-kryptex-8048-authorize.jsonl` | Kryptex, `prl-br.kryptex.network:8048` | TLS (public CA) | stratum-v1 arrays (`subscribe` silent, `authorize` acked) | static diff 2,097,152; `target = 2^224/diff − 1` |
 
 `crates/spm-proto/tests/pool_fixtures.rs` replays every file: our generated handshake must match the accepted
 one, and every recorded job must parse. `SHA256SUMS` pins the files; regenerate it whenever a capture is refreshed.

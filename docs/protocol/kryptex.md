@@ -1,6 +1,6 @@
 # Kryptex — Pearl (PRL) stratum dialect (captured live 2026-09-26)
 
-Endpoint used: `prl.kryptex.network:8048` (**TLS**, TLSv1.3, publicly trusted certificate). On the plain port **7048 the pool did not answer** subscribe or authorize in our probe, so the preset is 8048/TLS. Regional hosts `prl-{eu,us,br,sg,hk,ru,ae}.kryptex.network` (`prl-br` resolves to the US IP, ~140 ms from Brazil).
+Endpoint used: `prl-br.kryptex.network:8048` (**TLS**, TLSv1.3, publicly trusted certificate). On the plain port **7048 the pool did not answer** subscribe or authorize in our probe, so the preset is 8048/TLS. Regional hosts `prl-{eu,us,br,sg,hk,ru,ae}.kryptex.network`. Re-checked 2026-09-26: `prl-br` and `prl-us` both resolve to 40.160.29.14 (Warrenton, Virginia, US — OVH), ~150 ms from São Paulo; the default `prl` resolves to Hetzner in Europe (~240 ms). So `prl-br.kryptex.network:8048` (TLS, cert `CN=kryptex.com`) is the best Kryptex endpoint from Brazil even though it is not in Brazil.
 
 ## Handshake (stratum-v1 arrays, `"jsonrpc":"2.0"` accepted)
 ```json

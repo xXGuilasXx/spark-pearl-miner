@@ -14,7 +14,7 @@ export const PRESETS = [
   hero('fr', 'FR'),
   { id: 'lucky-br', name: 'LuckyPool BR', host: 'pearl-br.luckypool.io', port: 3360, tls: 'pinned', spki_pin: LUCKY_PIN, dialect: 'object', jsonrpc: 'on' },
   { id: 'lucky-eu', name: 'LuckyPool EU', host: 'pearl-eu1.luckypool.io', port: 3360, tls: 'pinned', spki_pin: LUCKY_PIN, dialect: 'object', jsonrpc: 'on', unverified: true },
-  { id: 'kryptex', name: 'Kryptex', host: 'prl.kryptex.network', port: 8048, tls: 'on', dialect: 'kryptex', jsonrpc: 'auto' },
+  { id: 'kryptex', name: 'Kryptex', host: 'prl-br.kryptex.network', port: 8048, tls: 'on', dialect: 'kryptex', jsonrpc: 'auto' },
 ];
 
 /** A pool entry (config schema) from a preset. */

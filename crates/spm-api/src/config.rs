@@ -279,7 +279,7 @@ pub fn default_pools() -> Vec<PoolEntry> {
     lucky.spki_pin = LUCKYPOOL_SPKI_SHA256_B64.to_string();
     lucky.dialect = DialectSetting::Object;
     lucky.jsonrpc = JsonRpcSetting::On;
-    let mut kryptex = PoolEntry::new("Kryptex", "prl.kryptex.network", 8048, TlsSetting::On);
+    let mut kryptex = PoolEntry::new("Kryptex", "prl-br.kryptex.network", 8048, TlsSetting::On);
     kryptex.dialect = DialectSetting::Kryptex;
     vec![hero, lucky, kryptex]
 }
@@ -738,7 +738,7 @@ mod tests {
         assert_eq!((p[0].host.as_str(), p[0].port, p[0].tls, p[0].dialect), ("br.pearl.herominers.com", 1200, TlsSetting::Auto, DialectSetting::Auto));
         assert_eq!((p[1].host.as_str(), p[1].port, p[1].tls, p[1].dialect, p[1].jsonrpc), ("pearl-br.luckypool.io", 3360, TlsSetting::Pinned, DialectSetting::Object, JsonRpcSetting::On));
         assert_eq!(p[1].spki_pin, "d0ehDQxaU5IUv4UHWXItQKqdJ8anqZclQXcoIjwF/mk=");
-        assert_eq!((p[2].host.as_str(), p[2].port, p[2].tls, p[2].dialect), ("prl.kryptex.network", 8048, TlsSetting::On, DialectSetting::Kryptex));
+        assert_eq!((p[2].host.as_str(), p[2].port, p[2].tls, p[2].dialect), ("prl-br.kryptex.network", 8048, TlsSetting::On, DialectSetting::Kryptex));
         assert_eq!(p[0].resolved_dialect(), Dialect::Object);
         assert_eq!(p[1].resolved_jsonrpc(), Some(true));
         assert_eq!(p[2].resolved_dialect(), Dialect::Kryptex);

@@ -64,7 +64,7 @@ enabled = true
 
 [[pools]]
 name = "Kryptex"
-host = "prl.kryptex.network"
+host = "prl-br.kryptex.network"
 port = 8048
 tls = "on"
 dialect = "kryptex"
@@ -159,7 +159,7 @@ Predefinições da GUI:
 | HeroMiners BR / US / US2 / DE / FR | `{br,us,us2,de,fr}.pearl.herominers.com:1200` | auto | auto |
 | LuckyPool BR | `pearl-br.luckypool.io:3360` | pinned `d0ehDQxaU5IUv4UHWXItQKqdJ8anqZclQXcoIjwF/mk=` | object / on |
 | LuckyPool EU (ainda não verificada) | `pearl-eu1.luckypool.io:3360` | pinned (a mesma chave) | object / on |
-| Kryptex | `prl.kryptex.network:8048` | on | kryptex |
+| Kryptex | `prl-br.kryptex.network:8048` | on | kryptex |
 
 ## `[failover]`
 
