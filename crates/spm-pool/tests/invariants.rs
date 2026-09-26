@@ -134,8 +134,12 @@ fn drive(st: &State, sel: u8, var: u8, jobs: &mut u64) -> Event {
             _ => Event::AuthRejected { slot, msg: "unknown worker".into() },
         },
         Some(SlotState::AwaitingJob) => match v {
-            0..=16 => new_job(Some(3)),
-            17 => new_job(None),
+            // NOTE: a pool that omits `cert_version` (None) is now refused by
+            // `on_job` like any other unsupported version (see
+            // `cert_version_omitted_pauses_with_update_required` in scenarios.rs),
+            // so the explorer only generates it via raw `JobReceived` events;
+            // here None would just burn the slot and starve coverage.
+            0..=17 => new_job(Some(3)),
             18 => new_job(Some(4)),
             _ => Event::Disconnected { slot, was_active_for_s: 0 },
         },

@@ -34,7 +34,7 @@ Num Spark que também serve LLMs (como o do autor), só se minera com a GPU ocio
 
 ## 3. Ventos contrários (todos medidos, nenhum hipotético)
 - Dificuldade **+36 % em 30 dias**; PRL por TH caiu **−32 % em 10 semanas**; só o software dos mineradores dobrou o rendimento por placa entre junho e setembro de 2026.
-- A recompensa por bloco cai suavemente: ~2.206 PRL em 1 mês, ~1.794 em 6 meses, ~1.435 em 12 meses.
+- A recompensa por bloco cai suavemente: ~2.228 PRL em 1 mês, ~1.891 em 6 meses, ~1.579 em 12 meses (de `CalcBlockSubsidy` do upstream na altura de referência 119.365, alvo de 194 s/bloco).
 - Se o tempo de bloco voltar ao alvo de 194 s, a emissão diária cai mais ~22 %.
 - Liquidez fina e concentrada: ~US$2,9 M/dia de volume, ~87 % na SafeTrade (nota 1,9/5 no Trustpilot, com reclamações de saque). Emissão diária ≈ 60 % do volume diário (pressão vendedora).
 - Pools concentradas: Kryptex ~45–50 %, pearlhash.xyz ~25–28 %.
