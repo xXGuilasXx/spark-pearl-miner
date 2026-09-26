@@ -584,10 +584,20 @@ fn host_matrices_edges_chunks_and_abort() {
     assert_eq!(info.chunks, info.cta_tiles);
     job.set_attempt(&c.a_noise_seed, None).expect("attempt");
 
-    // An abort voids the attempt: running again needs a new set_attempt.
+    // An abort voids the attempt: no dump, and running again needs a new set_attempt.
+    assert_eq!(
+        job.dump().unwrap_err().kind,
+        ErrorKind::State,
+        "no dump before the attempt ran"
+    );
     let abort = AtomicU32::new(1);
     assert_eq!(job.run_attempt(&abort).expect("run"), ChunkStatus::Aborted);
     assert_eq!(job.run_chunk().unwrap_err().kind, ErrorKind::State);
+    assert_eq!(
+        job.dump().unwrap_err().kind,
+        ErrorKind::State,
+        "no dump of a void attempt"
+    );
     job.set_attempt(&c.a_noise_seed, None)
         .expect("attempt again");
     // One chunk by hand, then the rest.

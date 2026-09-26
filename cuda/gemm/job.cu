@@ -525,6 +525,8 @@ spm_status_t spm_job_read_dump(spm_job_t* job, uint8_t* out, uint64_t cap, uint6
   if (!job || !out || !written) return SPM_ERR_NULL;
   *written = 0;
   if (!job->dump) return SPM_ERR_NO_DUMP;
+  // Only a completed attempt has a record for every tile (aborted CTAs skip theirs).
+  if (!job->attempt_ready || job->cursor < job->cta_tiles) return SPM_ERR_STATE;
   const uint64_t size = job->dump_bytes();
   if (cap < size) return SPM_ERR_RANGE;
   cudaError_t e = cudaSetDevice(0);

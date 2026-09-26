@@ -420,7 +420,8 @@ impl Job {
         })
     }
 
-    /// The raw dump of the current attempt (tiles × 104 bytes, reference tile order).
+    /// The raw dump of the current attempt (tiles × 104 bytes, reference tile order). Only a
+    /// completed attempt has one (`ErrorKind::State` otherwise).
     pub fn dump(&mut self) -> Result<Vec<u8>, GpuError> {
         if !self.dump {
             return Err(GpuError::new("spm_job_read_dump", ffi::SPM_ERR_NO_DUMP, 0));

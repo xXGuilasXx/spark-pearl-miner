@@ -136,6 +136,7 @@ spm_status_t spm_job_run_attempt(spm_job_t* job, const uint32_t* abort_flag, int
 spm_status_t spm_job_read_hits(spm_job_t* job, spm_hit_t* out, uint32_t cap, uint32_t* total);
 
 // Copies the dump of the current attempt (tiles * 104 bytes, reference tile order) to `out`.
+// Only after the attempt completed (SPM_ERR_STATE before that or after an abort).
 spm_status_t spm_job_read_dump(spm_job_t* job, uint8_t* out, uint64_t cap, uint64_t* written);
 
 // Copies bytes [offset, offset + len) of an internal buffer (SPM_BUF_*) to `out`.
