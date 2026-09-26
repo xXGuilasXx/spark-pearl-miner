@@ -1,0 +1,18 @@
+[package]
+name = "spm-pow"
+description = "PearlHash consensus helpers for spark-pearl-miner: patterns, seeds, bounds, Merkle layers, proof build/verify (thin layer over the official zk-pow)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+zk-pow.workspace = true
+pearl-blake3.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+bincode.workspace = true
+blake3.workspace = true
+primitive-types.workspace = true

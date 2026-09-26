@@ -1,0 +1,25 @@
+# spark-pearl-miner
+
+**Minerador de Pearl (PRL) de código aberto feito para o NVIDIA DGX Spark (GB10, `sm_121`, aarch64).**
+Não oficial. Sem afiliação, patrocínio ou endosso da NVIDIA ou da Pearl Research Labs.
+_English: [README.md](README.md)_
+
+> **Status: pré-alfa (planejamento / bring-up).** Nada aqui minera ainda. Acompanhe o [TODO.pt-BR.md](TODO.pt-BR.md).
+
+## O que é
+- Um minerador de Proof-of-Useful-Work (PearlHash, GEMM int7×int7→int32) cujo kernel CUDA usa nativamente o caminho INT8 `mma.sync` do GB10 (`sm_121a`), verificado bit-a-bit contra a referência oficial `zk-pow` antes de qualquer share ser enviada.
+- Um daemon que nunca segura contexto CUDA, um processo `gpu-worker` descartável que segura, e uma GUI web local (EN/PT-BR) para configurar a **carteira** e **até 3 pools** com **failover automático**.
+- Feito para a realidade do DGX Spark: o desligamento abrupto conhecido sob carga sustentada de GPU (cap de clock + governor sem root), pressão de memória unificada e convivência com um vLLM residente.
+
+## Taxa do desenvolvedor (divulgada)
+`dev fee 2.00% → prl1pxtue3pmxcxjplpe6gsc57ctwv6z8t4lawq2l80wm88rqkyyc6eaqrveydh @ br.pearl.herominers.com:1200 (HeroMiners), worker "devfee", fatias de 120 s, só enquanto minera`
+Todas as constantes da taxa vivem em um único arquivo, `crates/spm-fee/src/lib.rs`; o CI falha se este README divergir dele. Sem configuração remota, sem ofuscação, sem binários empacotados. A taxa se desliga sozinha quando a sua carteira é a carteira da taxa.
+
+## Expectativas honestas
+Um GB10 deve atingir cerca de 65–85 TH/s (creditados, unidade das pools) dentro de um envelope seguro de 75–85 W, o que, nas condições de rede de setembro de 2026, dá cerca de 1,6–2,0 PRL/dia brutos. A dificuldade subiu 36 % nos 30 dias anteriores a este texto e a recompensa por bloco cai ~4 % ao mês. Já existe um minerador fechado para DGX Spark; a proposta deste projeto é ser _aberto e auditável_, não _o primeiro_. Leia `docs/pt-BR/VIABILIDADE.md` antes de gastar com hardware ou energia.
+
+## Requisitos (alvo)
+DGX OS 7.x (Ubuntu 24.04, aarch64), driver CUDA 13.0 ≥ 580, Rust ≥ 1.88 para compilar, um endereço de carteira Pearl (`prl1…`, bech32m). Opcional: `sudo` uma vez para instalar o cap de clock da GPU no boot.
+
+## Licença
+Apache-2.0 — veja [LICENSE](LICENSE) e [NOTICE](NOTICE) (ISC: Pearl Research Labs e The Decred developers; BSD-3: NVIDIA CUTLASS).

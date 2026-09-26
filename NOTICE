@@ -1,0 +1,24 @@
+spark-pearl-miner
+Copyright 2026 xxguilasxx and contributors
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes software developed by third parties:
+
+- Pearl network reference implementation (zk-pow, pearl-blake3, and ported
+  CUDA kernels from miner/pearl-gemm) — ISC License
+  Copyright (c) 2025-2026 Pearl Research Labs
+  Copyright (c) 2015-2016 The Decred developers
+  https://github.com/pearl-research-labs/pearl (pinned at 3fe226761a139a9652b8f28a6464a4bbc25986c8)
+
+- NVIDIA CUTLASS / CuTe — BSD-3-Clause License
+  Copyright (c) 2017-2026 NVIDIA CORPORATION & AFFILIATES
+  https://github.com/NVIDIA/cutlass
+
+- Any snippet adapted from MIT-licensed miners (CPPminer, ascend_prl,
+  nacre-miner, ariaminer, P2Pearl) keeps its original copyright notice in the
+  file header where it is used.
+
+NVIDIA, DGX and DGX Spark are trademarks of NVIDIA Corporation. Pearl and PRL
+are marks of Pearl Research Labs. This project is unofficial and is not
+affiliated with, sponsored by, or endorsed by NVIDIA or Pearl Research Labs.

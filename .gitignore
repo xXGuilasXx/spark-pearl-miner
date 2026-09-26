@@ -1,0 +1,14 @@
+/target/
+/cuda/build/
+*.o
+*.a
+*.cubin
+*.fatbin
+*.ptx
+/webui/dist/
+/.cargo/
+/state/
+*.log
+/tests/fixtures/*unredacted*
+/docs/benchmarks/*.tmp
+.DS_Store
