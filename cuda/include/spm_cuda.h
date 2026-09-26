@@ -35,7 +35,8 @@ const char* spm_cuda_version(void);
 //   spm_job_set_attempt   builds A_L, the A pairs and A' = A + E_A for a_noise_seed (A side),
 //                         resets the hit ring and the chunk cursor
 //   spm_job_run_chunk     one launch chunk (<= ~10 ms at the default job shape), or
-//   spm_job_run           chunks until the attempt is done, polling *abort_flag between chunks
+//   spm_job_run           chunks until the attempt is done, two queued at a time, polling
+//                         *abort_flag while they run
 //   spm_job_read_hits / spm_job_read_dump
 //   spm_job_destroy
 // Every function returns a status code below and never throws or aborts the process.
@@ -112,6 +113,10 @@ typedef struct {
   uint8_t job_key[32];         // blake3(header76 || config52), computed by the library
   int32_t cuda_error;          // last CUDA error (cudaError_t), 0 if none
   uint32_t smem_bytes;         // dynamic shared memory per CTA of the GEMM kernel
+  float attempt_gpu_ms;        // GPU time of the computed chunks of the current attempt
+  float attempt_max_chunk_ms;  // longest chunk of the current attempt
+  uint32_t attempt_chunks;     // computed chunks of the current attempt
+  uint32_t aborted_chunks;     // queued chunks skipped because of an abort (job lifetime)
 } spm_job_info_t;
 
 int32_t spm_job_create(const spm_job_params_t* params, spm_job_t** out);
@@ -127,8 +132,11 @@ int32_t spm_job_set_attempt(spm_job_t* job, const uint8_t a_noise_seed[32], cons
 // Launches the next chunk and waits for it: SPM_CHUNK_MORE, SPM_CHUNK_DONE or an error.
 int32_t spm_job_run_chunk(spm_job_t* job);
 
-// Runs chunks until the attempt is done (SPM_OK) or *abort_flag (read with acquire semantics
-// before every chunk; may be NULL) becomes non-zero (SPM_ABORTED, resumable).
+// Runs chunks until the attempt is done (SPM_OK) or *abort_flag (may be NULL; read with acquire
+// semantics every ~50 us while a chunk runs) becomes non-zero (SPM_ABORTED). Two chunks are kept
+// queued so the GPU never idles between them; on abort no further chunk is launched and a queued
+// chunk that has not started skips itself as a whole, so the latency is the rest of the running
+// chunk and the attempt resumes exactly where it stopped (call spm_job_run again).
 int32_t spm_job_run(spm_job_t* job, const uint32_t* abort_flag);
 
 // Copies up to `cap` hits recorded since the previous call into `out`; `*n_out` receives the

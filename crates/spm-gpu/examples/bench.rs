@@ -2,12 +2,14 @@
 //!
 //! ```text
 //! cargo run --release -p spm-gpu --example bench -- [--m 16384] [--n 16384] [--k 4096]
-//!     [--seconds 10] [--chunk-ctas 0] [--csv chunks.csv]
+//!     [--seconds 10] [--chunk-ctas 0] [--per-chunk] [--csv out.csv]
 //! ```
 //!
-//! Repeats full attempts (A-side prep + every chunk) for ~`seconds` on a GPU-generated problem
-//! and prints the credited rate (m·n·k MACs per full pass) twice: over the kernel's GPU time
-//! only, and over wall time including the per-attempt A-side prep. The SM clock, GPU power and
+//! Repeats full attempts (A-side prep + `Job::run`, the pipelined production path) for
+//! ~`seconds` on a GPU-generated problem and prints the credited rate (m·n·k MACs per full pass)
+//! twice: over the kernel's GPU time only, and over wall time including the per-attempt A-side
+//! prep. `--per-chunk` drives the attempt with synchronous `run_chunk` calls instead, which adds a
+//! host round trip per chunk but records every chunk's time (percentiles, CSV). The SM clock, GPU power and
 //! temperature come from `nvidia-smi` sampled every 200 ms during the run (an idle sample is
 //! taken first, so the power the kernel adds is visible even with other processes resident).
 //! The default shape (16384² × 4096, ~150 MiB of device memory) fits the "short GPU test"
@@ -34,6 +36,7 @@ struct Args {
     k: u32,
     seconds: f64,
     chunk_ctas: u32,
+    per_chunk: bool,
     csv: Option<String>,
 }
 
@@ -44,6 +47,7 @@ fn parse_args() -> Result<Args> {
         k: 4096,
         seconds: 10.0,
         chunk_ctas: 0,
+        per_chunk: false,
         csv: None,
     };
     let mut it = std::env::args().skip(1);
@@ -56,9 +60,10 @@ fn parse_args() -> Result<Args> {
             "--seconds" => a.seconds = value()?.parse()?,
             "--chunk-ctas" => a.chunk_ctas = value()?.parse()?,
             "--csv" => a.csv = Some(value()?),
+            "--per-chunk" => a.per_chunk = true,
             "-h" | "--help" => {
                 println!(
-                    "bench [--m 16384] [--n 16384] [--k 4096] [--seconds 10] [--chunk-ctas 0] [--csv FILE]"
+                    "bench [--m 16384] [--n 16384] [--k 4096] [--seconds 10] [--chunk-ctas 0] [--per-chunk] [--csv FILE]"
                 );
                 std::process::exit(0);
             }
@@ -293,32 +298,55 @@ fn main() -> Result<()> {
     // Warm-up pass (also settles the adaptive chunk size).
     let mut seed = [0u8; 32];
     job.set_attempt(&seed, None)?;
-    while job.run_chunk()? == Chunk::More {}
+    job.run(None)?;
 
     let macs_per_pass = f64::from(args.m) * f64::from(args.n) * f64::from(args.k);
     let (mut passes, mut kernel_ms, mut prep_ms) = (0u64, 0.0f64, 0.0f64);
-    let mut chunk_ms: Vec<f64> = Vec::new();
-    let mut chunk_ctas: Vec<u32> = Vec::new();
-    let mut csv = String::from("pass,chunk,start_ms,ctas,gpu_ms\n");
+    let mut chunk_ms: Vec<f64> = Vec::new(); // --per-chunk only
+    let mut chunk_ctas: Vec<u32> = Vec::new(); // --per-chunk only
+    let (mut chunks, mut chunk_max, mut long_chunks) = (0u64, 0.0f64, 0u64);
+    let mut csv = if args.per_chunk {
+        String::from("pass,chunk,start_ms,ctas,gpu_ms\n")
+    } else {
+        String::from("pass,chunks,gpu_ms,max_chunk_ms,wall_ms\n")
+    };
     let started = Instant::now();
     while started.elapsed().as_secs_f64() < args.seconds {
         seed[..8].copy_from_slice(&(passes + 1).to_le_bytes());
+        let t_pass = Instant::now();
         job.set_attempt(&seed, None)?;
         prep_ms += f64::from(job.info()?.last_prep_ms);
-        for c in 0.. {
-            let t0 = started.elapsed().as_secs_f64() * 1e3;
-            let status = job.run_chunk()?;
-            let i = job.info()?;
-            kernel_ms += f64::from(i.last_chunk_ms);
-            chunk_ms.push(f64::from(i.last_chunk_ms));
-            chunk_ctas.push(i.chunk_ctas);
-            csv += &format!(
-                "{passes},{c},{t0:.3},{},{:.4}\n",
-                i.chunk_ctas, i.last_chunk_ms
-            );
-            if status == Chunk::Done {
-                break;
+        if args.per_chunk {
+            for c in 0.. {
+                let t0 = started.elapsed().as_secs_f64() * 1e3;
+                let status = job.run_chunk()?;
+                let i = job.info()?;
+                chunk_ms.push(f64::from(i.last_chunk_ms));
+                chunk_ctas.push(i.chunk_ctas);
+                csv += &format!(
+                    "{passes},{c},{t0:.3},{},{:.4}\n",
+                    i.chunk_ctas, i.last_chunk_ms
+                );
+                if status == Chunk::Done {
+                    break;
+                }
             }
+        } else {
+            job.run(None)?;
+        }
+        let i = job.info()?;
+        kernel_ms += f64::from(i.attempt_gpu_ms);
+        chunks += u64::from(i.attempt_chunks);
+        chunk_max = chunk_max.max(f64::from(i.attempt_max_chunk_ms));
+        long_chunks += u64::from(i.attempt_max_chunk_ms > 10.0);
+        if !args.per_chunk {
+            csv += &format!(
+                "{passes},{},{:.4},{:.4},{:.4}\n",
+                i.attempt_chunks,
+                i.attempt_gpu_ms,
+                i.attempt_max_chunk_ms,
+                t_pass.elapsed().as_secs_f64() * 1e3
+            );
         }
         passes += 1;
     }
@@ -326,7 +354,7 @@ fn main() -> Result<()> {
     let ended = Instant::now();
 
     // Cancellation: another thread raises the abort flag mid-attempt; the latency is the time
-    // until `run` returns (it polls the flag between chunks, so it is bounded by one chunk).
+    // until `run` returns (the rest of the running chunk: the queued one skips itself).
     let mut abort_ms = Vec::new();
     for trial in 0..3u64 {
         seed[..8].copy_from_slice(&(u64::MAX - trial).to_le_bytes());
@@ -374,10 +402,8 @@ fn main() -> Result<()> {
             .copied()
             .unwrap_or(f64::NAN)
     };
-    let chunk_max = sorted.last().copied().unwrap_or(f64::NAN);
     let mut sizes = chunk_ctas.clone();
     sizes.sort_unstable();
-    let typical_ctas = sizes.get(sizes.len() / 2).copied().unwrap_or(0);
     let peak_at_clock = PEAK_MAC_PER_CLK_SM * f64::from(dev.sm_count) * sm_mhz * 1e6 / 1e12;
 
     // A resident process that stays idle (vLLM between requests) does not disturb the run;
@@ -396,13 +422,20 @@ fn main() -> Result<()> {
         kernel_ms / passes as f64,
         prep_ms / passes as f64
     );
-    println!(
-        "chunks: {} in {passes} passes, median {typical_ctas} CTAs | chunk ms p50 {:.2} p99 {:.2} max {chunk_max:.2} | {} over 10 ms",
-        chunk_ms.len(),
-        pct(0.5),
-        pct(0.99),
-        chunk_ms.iter().filter(|&&t| t > 10.0).count()
-    );
+    if args.per_chunk {
+        println!(
+            "chunks (synchronous run_chunk): {chunks} in {passes} passes, median {} CTAs | chunk ms p50 {:.2} p99 {:.2} max {chunk_max:.2} | {} over 10 ms",
+            sizes.get(sizes.len() / 2).copied().unwrap_or(0),
+            pct(0.5),
+            pct(0.99),
+            chunk_ms.iter().filter(|&&t| t > 10.0).count()
+        );
+    } else {
+        println!(
+            "chunks (pipelined run): {chunks} in {passes} passes, mean {:.2} ms, max {chunk_max:.2} ms | {long_chunks} passes had a chunk over 10 ms",
+            kernel_ms / chunks.max(1) as f64
+        );
+    }
     println!(
         "abort latency (flag raised mid-attempt -> run returns): {:.2?} ms",
         abort_ms

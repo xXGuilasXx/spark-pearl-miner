@@ -10,6 +10,8 @@
 #![forbid(unsafe_code)]
 
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 
 use spm_cpuref::{
     add_noise, build_plain_proof, first_mismatch, noise_factors, tiles_digest, verify_v3,
@@ -328,6 +330,71 @@ fn chunked_and_aborted_runs_give_the_same_tiles() {
     assert_eq!(job.run(Some(&abort)).unwrap(), Run::Done);
     let got: Vec<TileResult> = job.read_dump().unwrap().iter().map(to_tile).collect();
     assert_eq!(first_mismatch(&expected, &got), None, "aborted and resumed");
+}
+
+/// Aborts the pipelined `run` at varying moments, then resumes: queued chunks must skip
+/// themselves as a whole, so the resumed attempt is bit-exact (dump mode) and reports every hit
+/// exactly once (mining mode).
+#[test]
+fn abort_mid_run_skips_whole_chunks_and_resumes_exactly() {
+    if !enabled() {
+        return;
+    }
+    let p = Problem::generate(1024, 512, 4096, header(EASY_NBITS), 9).unwrap();
+    let oracle = Oracle::new(&p).unwrap();
+    let c = *oracle.commitment();
+    let expected = oracle.transcripts().unwrap();
+    let bound = spm_pow::extract_difficulty_bound(EASY_NBITS, &p.config);
+    let mut expected_hits: Vec<(u32, u32)> = expected
+        .iter()
+        .filter(|t| t.meets(bound))
+        .map(|t| (t.t_rows, t.t_cols))
+        .collect();
+    expected_hits.sort();
+
+    let mut aborted_runs = 0;
+    for dump in [true, false] {
+        let mut prm = params(&p, &c, Source::Fill { seed: 9 }, dump, u256_le(bound));
+        prm.chunk_ctas = 1; // 32 CTA tiles -> 32 short chunks
+        let mut job = Job::create(&prm).unwrap();
+        for trial in 0..10u64 {
+            job.set_attempt(&c.a_noise_seed, None).unwrap();
+            let abort = Arc::new(AtomicU32::new(0));
+            let flag = abort.clone();
+            let raiser = std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_micros(150 * trial));
+                flag.store(1, Ordering::Release);
+            });
+            let first = job.run(Some(&abort)).unwrap();
+            raiser.join().unwrap();
+            if first == Run::Aborted {
+                aborted_runs += 1;
+                assert!(job.info().unwrap().next_cta < 32);
+                abort.store(0, Ordering::Release);
+                assert_eq!(job.run(Some(&abort)).unwrap(), Run::Done);
+            }
+            if dump {
+                let got: Vec<TileResult> = job.read_dump().unwrap().iter().map(to_tile).collect();
+                assert_eq!(first_mismatch(&expected, &got), None, "dump, trial {trial}");
+            } else {
+                let mut got: Vec<(u32, u32)> = job
+                    .read_hits()
+                    .unwrap()
+                    .hits
+                    .iter()
+                    .map(|h| (h.t_rows, h.t_cols))
+                    .collect();
+                got.sort();
+                assert_eq!(got, expected_hits, "mining, trial {trial}");
+            }
+        }
+        eprintln!(
+            "abort/resume ({}): {} queued chunks skipped over 10 trials",
+            if dump { "dump" } else { "mining" },
+            job.info().unwrap().aborted_chunks
+        );
+    }
+    assert!(aborted_runs > 0, "no trial was aborted mid-run");
 }
 
 #[test]

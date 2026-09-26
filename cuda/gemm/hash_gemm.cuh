@@ -27,6 +27,11 @@ struct HashGemmParams {
   uint32_t* hit_count;     // mining mode: atomic hit counter of the attempt
   spm_hit_t* hits;         // mining mode: hit ring (slot = count % hit_capacity)
   uint32_t hit_capacity;
+  // Optional chunk gate (pipelined runs): the chunk's first CTA sets *gate to 1 (run) or, when
+  // *abort is already set, to 2 (skip); every CTA of the chunk follows that single decision, so a
+  // chunk is either computed completely or not at all. nullptr = always run.
+  uint32_t* gate;
+  const volatile uint32_t* abort;  // device-visible abort flag (mapped host memory)
 };
 
 // CTA tile edge (both M and N) and smem bytes of the int8 instantiation.

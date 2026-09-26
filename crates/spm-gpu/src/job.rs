@@ -199,6 +199,14 @@ pub struct JobInfo {
     pub job_key: [u8; 32],
     pub cuda_error: i32,
     pub smem_bytes: u32,
+    /// GPU time of the computed chunks of the current attempt.
+    pub attempt_gpu_ms: f32,
+    /// Longest chunk of the current attempt.
+    pub attempt_max_chunk_ms: f32,
+    /// Computed chunks of the current attempt.
+    pub attempt_chunks: u32,
+    /// Queued chunks skipped because of an abort, over the job's lifetime.
+    pub aborted_chunks: u32,
 }
 
 /// A mining job living on the GPU. Drop frees every device buffer.
@@ -284,7 +292,9 @@ impl Job {
         }
     }
 
-    /// Runs chunks until the attempt is complete, checking `abort` (if any) before every chunk.
+    /// Runs chunks until the attempt is complete, two queued at a time; `abort` (if any) is polled
+    /// every ~50 µs while a chunk runs. On abort the queued chunk skips itself, so this returns
+    /// within the rest of the running chunk and a later call resumes exactly where it stopped.
     pub fn run(&mut self, abort: Option<&AtomicU32>) -> Result<Run, GpuError> {
         match check("spm_job_run", self.handle.run(abort))? {
             ffi::SPM_OK => Ok(Run::Done),
@@ -372,6 +382,10 @@ impl Job {
             job_key: r.job_key,
             cuda_error: r.cuda_error,
             smem_bytes: r.smem_bytes,
+            attempt_gpu_ms: r.attempt_gpu_ms,
+            attempt_max_chunk_ms: r.attempt_max_chunk_ms,
+            attempt_chunks: r.attempt_chunks,
+            aborted_chunks: r.aborted_chunks,
         })
     }
 }

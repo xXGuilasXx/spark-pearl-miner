@@ -6,8 +6,10 @@
 #include <cuda_runtime.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <new>
+#include <thread>
 
 #include "../common/blake3.cuh"
 #include "../common/splitmix.cuh"
@@ -24,6 +26,8 @@ constexpr uint32_t kRank = 128;
 constexpr uint64_t kRecordBytes = 104;  // TileResult::DUMP_LEN
 constexpr double kTargetChunkMs = 7.0;  // adaptive chunks aim here; the contract is <= 10 ms
 constexpr double kInitialMacsPerMs = 50e9;  // first-chunk estimate (50 T-MAC/s), then measured
+constexpr int kDepth = 2;               // spm_job_run keeps this many chunks queued on the GPU
+constexpr auto kPoll = std::chrono::microseconds(50);  // abort-flag poll while a chunk runs
 // CTA rows per raster group: the group's A' strips (kGroupM x 512 KiB at k = 4096) stay in the
 // 24 MiB L2 while B'ᵀ strips stream past, so B'ᵀ is read from DRAM m / (128 kGroupM) times.
 #ifndef SPM_GROUP_M
@@ -44,6 +48,10 @@ struct spm_job {
 
   cudaStream_t stream = nullptr;
   cudaEvent_t ev0 = nullptr, ev1 = nullptr;
+  cudaEvent_t ev_start[kDepth] = {}, ev_end[kDepth] = {};  // per in-flight chunk slot
+  uint32_t* h_abort = nullptr;  // mapped pinned word the GEMM gate reads (host side)
+  uint32_t* d_abort = nullptr;  // the same word, device address
+  uint32_t* d_gates = nullptr;  // one gate word per in-flight slot
 
   int8_t* d_a = nullptr;        // A'   m x k
   int8_t* d_bt = nullptr;       // B'ᵀ  n x k
@@ -77,6 +85,8 @@ struct spm_job {
   uint32_t wave = 1;
   uint32_t last_chunk = 0;
   float last_chunk_ms = 0.f, last_prep_ms = 0.f, b_prep_ms = 0.f;
+  float attempt_gpu_ms = 0.f, attempt_max_chunk_ms = 0.f;  // chunks of the current attempt
+  uint32_t attempt_chunks = 0, aborted_chunks = 0;
   int ctas_per_sm = 0;
   int32_t cuda_error = 0;
 };
@@ -106,13 +116,18 @@ int32_t alloc(spm_job* job, T** ptr, uint64_t bytes) {
 
 void release(spm_job* job) {
   if (job->stream) cudaStreamSynchronize(job->stream);
-  void* bufs[] = {job->d_a,       job->d_bt,      job->d_a_base,    job->d_a_l, job->d_b_rt,
-                  job->d_pairs_a, job->d_pairs_b, job->d_patch,     job->d_hits, job->d_dump,
-                  job->d_hit_count};
+  void* bufs[] = {job->d_a,       job->d_bt,      job->d_a_base, job->d_a_l,       job->d_b_rt,
+                  job->d_pairs_a, job->d_pairs_b, job->d_patch,  job->d_hits,      job->d_dump,
+                  job->d_hit_count, job->d_gates};
   for (void* b : bufs)
     if (b) cudaFree(b);
+  if (job->h_abort) cudaFreeHost(job->h_abort);
   if (job->ev0) cudaEventDestroy(job->ev0);
   if (job->ev1) cudaEventDestroy(job->ev1);
+  for (int i = 0; i < kDepth; ++i) {
+    if (job->ev_start[i]) cudaEventDestroy(job->ev_start[i]);
+    if (job->ev_end[i]) cudaEventDestroy(job->ev_end[i]);
+  }
   if (job->stream) cudaStreamDestroy(job->stream);
   delete job;
 }
@@ -179,8 +194,9 @@ int32_t build_b_side(spm_job* job, const int8_t* host_bt, const int8_t* host_a) 
   return elapsed_ms(job, &job->b_prep_ms);
 }
 
-uint32_t next_chunk_ctas(const spm_job* job) {
-  const uint64_t remaining = job->cta_tiles - job->next_cta;
+// Size of the chunk starting at CTA tile `base`.
+uint32_t next_chunk_ctas(const spm_job* job, uint64_t base) {
+  const uint64_t remaining = job->cta_tiles - base;
   uint64_t ctas;
   if (job->chunk_fixed != 0) {
     ctas = job->chunk_fixed;
@@ -190,6 +206,50 @@ uint32_t next_chunk_ctas(const spm_job* job) {
     ctas = waves * job->wave;
   }
   return static_cast<uint32_t>(std::min<uint64_t>(ctas, remaining));
+}
+
+spm::gemm::HashGemmParams chunk_params(const spm_job* job, uint64_t base, uint32_t* gate) {
+  spm::gemm::HashGemmParams p{};
+  p.a = job->d_a;
+  p.bt = job->d_bt;
+  p.m = static_cast<int32_t>(job->m);
+  p.n = static_cast<int32_t>(job->n);
+  p.k = static_cast<int32_t>(job->k);
+  p.slices = static_cast<int32_t>(job->slices);
+  p.tiles_m = static_cast<int32_t>(job->m / 128);
+  p.tiles_n = static_cast<int32_t>(job->n / 128);
+  p.total_ctas = static_cast<int32_t>(job->cta_tiles);
+  p.cta_base = static_cast<int32_t>(base);
+  p.group_m = kGroupM;
+  std::memcpy(p.key, job->a_seed, sizeof p.key);
+  std::memcpy(p.bound, job->bound, sizeof p.bound);
+  p.dump = job->d_dump;
+  p.hit_count = job->d_hit_count;
+  p.hits = job->d_hits;
+  p.hit_capacity = job->hit_capacity;
+  p.gate = gate;
+  p.abort = job->d_abort;
+  return p;
+}
+
+// Bookkeeping of a chunk that ran to completion.
+void chunk_done(spm_job* job, uint32_t ctas, float ms, bool update_rate) {
+  job->last_chunk = ctas;
+  job->last_chunk_ms = ms;
+  job->attempt_gpu_ms += ms;
+  job->attempt_max_chunk_ms = std::max(job->attempt_max_chunk_ms, ms);
+  job->attempt_chunks += 1;
+  // Re-estimate the rate from chunks of at least 4 waves (a short tail under-fills the GPU).
+  // A slowdown (clock drop, another process on the GPU) is followed at once; a speed-up only
+  // gradually, so a chunk overshoots the target by little when the rate falls.
+  if (update_rate && job->chunk_fixed == 0 && ctas >= 4 * job->wave && ms > 0.05f) {
+    const double rate = static_cast<double>(ctas) / ms;
+    job->ctas_per_ms = rate < job->ctas_per_ms ? rate : 0.75 * job->ctas_per_ms + 0.25 * rate;
+  }
+}
+
+bool flag_set(const uint32_t* flag) {
+  return flag != nullptr && __atomic_load_n(flag, __ATOMIC_ACQUIRE) != 0;
 }
 
 }  // namespace
@@ -241,6 +301,7 @@ int32_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
   const uint64_t need = mk + nk + (params->source == SPM_SOURCE_HOST ? mk : 0) +
                         static_cast<uint64_t>(m) * kRank + static_cast<uint64_t>(n) * kRank +
                         4ull * k + (params->source == SPM_SOURCE_FILL ? kMaxPatch : 0) + 4 +
+                        kDepth * sizeof(uint32_t) +
                         static_cast<uint64_t>(hit_capacity) * sizeof(spm_hit_t) +
                         (dump ? tiles * kRecordBytes : 0);
   const uint64_t budget = params->mem_budget_bytes ? params->mem_budget_bytes : kDefaultBudget;
@@ -271,6 +332,16 @@ int32_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
   cudaError_t e = cudaStreamCreateWithFlags(&job->stream, cudaStreamNonBlocking);
   if (e == cudaSuccess) e = cudaEventCreate(&job->ev0);
   if (e == cudaSuccess) e = cudaEventCreate(&job->ev1);
+  for (int i = 0; i < kDepth && e == cudaSuccess; ++i) {
+    e = cudaEventCreate(&job->ev_start[i]);
+    if (e == cudaSuccess) e = cudaEventCreate(&job->ev_end[i]);
+  }
+  if (e == cudaSuccess)
+    e = cudaHostAlloc(reinterpret_cast<void**>(&job->h_abort), sizeof(uint32_t), cudaHostAllocMapped);
+  if (e == cudaSuccess) {
+    *job->h_abort = 0;
+    e = cudaHostGetDevicePointer(reinterpret_cast<void**>(&job->d_abort), job->h_abort, 0);
+  }
   if (e != cudaSuccess) {
     job->cuda_error = e;
     g_last_cuda_error = e;
@@ -286,6 +357,7 @@ int32_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
   if (job->source == SPM_SOURCE_FILL && (rc = alloc(job, &job->d_patch, kMaxPatch)) != SPM_OK)
     return fail(rc);
   if ((rc = alloc(job, &job->d_hit_count, 4)) != SPM_OK) return fail(rc);
+  if ((rc = alloc(job, &job->d_gates, kDepth * sizeof(uint32_t))) != SPM_OK) return fail(rc);
   if ((rc = alloc(job, &job->d_hits, static_cast<uint64_t>(hit_capacity) * sizeof(spm_hit_t))) != SPM_OK)
     return fail(rc);
   if (dump && (rc = alloc(job, &job->d_dump, tiles * kRecordBytes)) != SPM_OK) return fail(rc);
@@ -360,6 +432,9 @@ int32_t spm_job_set_attempt(spm_job_t* job, const uint8_t a_noise_seed[32], cons
   job->next_cta = 0;
   job->hit_read = 0;
   job->hits_total = 0;
+  job->attempt_gpu_ms = 0.f;
+  job->attempt_max_chunk_ms = 0.f;
+  job->attempt_chunks = 0;
   job->attempt_ready = true;
   return SPM_OK;
 }
@@ -369,53 +444,83 @@ int32_t spm_job_run_chunk(spm_job_t* job) {
   if (!job->attempt_ready) return SPM_E_STATE;
   if (job->next_cta >= job->cta_tiles) return SPM_CHUNK_DONE;
 
-  const uint32_t ctas = next_chunk_ctas(job);
-  spm::gemm::HashGemmParams p{};
-  p.a = job->d_a;
-  p.bt = job->d_bt;
-  p.m = static_cast<int32_t>(job->m);
-  p.n = static_cast<int32_t>(job->n);
-  p.k = static_cast<int32_t>(job->k);
-  p.slices = static_cast<int32_t>(job->slices);
-  p.tiles_m = static_cast<int32_t>(job->m / 128);
-  p.tiles_n = static_cast<int32_t>(job->n / 128);
-  p.total_ctas = static_cast<int32_t>(job->cta_tiles);
-  p.cta_base = static_cast<int32_t>(job->next_cta);
-  p.group_m = kGroupM;
-  std::memcpy(p.key, job->a_seed, sizeof p.key);
-  std::memcpy(p.bound, job->bound, sizeof p.bound);
-  p.dump = job->d_dump;
-  p.hit_count = job->d_hit_count;
-  p.hits = job->d_hits;
-  p.hit_capacity = job->hit_capacity;
-
+  const uint32_t ctas = next_chunk_ctas(job, job->next_cta);
+  const spm::gemm::HashGemmParams p = chunk_params(job, job->next_cta, nullptr);
   SPM_CK(job, cudaEventRecord(job->ev0, job->stream));
   SPM_CK(job, spm::gemm::launch_hash_gemm(p, static_cast<int>(ctas), job->dump, job->stream));
   SPM_CK(job, cudaEventRecord(job->ev1, job->stream));
   float ms = 0.f;
   const int32_t rc = elapsed_ms(job, &ms);
   if (rc != SPM_OK) return rc;
-  job->last_chunk = ctas;
-  job->last_chunk_ms = ms;
-  // Re-estimate the rate from chunks of at least 4 waves (a short tail under-fills the GPU).
-  // A slowdown (clock drop, another process on the GPU) is followed at once; a speed-up only
-  // gradually, so a chunk overshoots the target by little when the rate falls.
-  if (job->chunk_fixed == 0 && ctas >= 4 * job->wave && ms > 0.05f) {
-    const double rate = static_cast<double>(ctas) / ms;
-    job->ctas_per_ms = rate < job->ctas_per_ms ? rate : 0.75 * job->ctas_per_ms + 0.25 * rate;
-  }
+  chunk_done(job, ctas, ms, true);
   job->next_cta += ctas;
   return job->next_cta >= job->cta_tiles ? SPM_CHUNK_DONE : SPM_CHUNK_MORE;
 }
 
+// Keeps kDepth chunks queued so the GPU never waits for the host between chunks. While the
+// oldest chunk runs, the caller's flag is polled every ~50 us; once it is seen, no chunk is
+// launched any more and the mapped abort word is raised, so a queued chunk that has not started
+// skips itself as a whole (its gate says 2). Chunks complete in order and a skipped chunk is
+// followed only by skipped ones, so the attempt resumes exactly after the last computed chunk.
 int32_t spm_job_run(spm_job_t* job, const uint32_t* abort_flag) {
   if (job == nullptr) return SPM_E_INVALID;
+  if (!job->attempt_ready) return SPM_E_STATE;
+  __atomic_store_n(job->h_abort, 0u, __ATOMIC_RELEASE);
+  uint64_t slot_base[kDepth] = {};
+  uint32_t slot_ctas[kDepth] = {};
+  int head = 0, queued = 0;
+  uint64_t launch_next = job->next_cta;
+  bool aborting = false;
+  auto check_abort = [&]() {
+    if (!aborting && flag_set(abort_flag)) {
+      aborting = true;
+      __atomic_store_n(job->h_abort, 1u, __ATOMIC_RELEASE);
+    }
+  };
   for (;;) {
-    if (abort_flag != nullptr && __atomic_load_n(abort_flag, __ATOMIC_ACQUIRE) != 0) return SPM_ABORTED;
-    const int32_t rc = spm_job_run_chunk(job);
-    if (rc == SPM_CHUNK_DONE) return SPM_OK;
-    if (rc != SPM_CHUNK_MORE) return rc;
+    check_abort();
+    while (!aborting && queued < kDepth && launch_next < job->cta_tiles) {
+      const int slot = (head + queued) % kDepth;
+      const uint32_t ctas = next_chunk_ctas(job, launch_next);
+      const spm::gemm::HashGemmParams p = chunk_params(job, launch_next, job->d_gates + slot);
+      SPM_CK(job, cudaMemsetAsync(job->d_gates + slot, 0, sizeof(uint32_t), job->stream));
+      SPM_CK(job, cudaEventRecord(job->ev_start[slot], job->stream));
+      SPM_CK(job, spm::gemm::launch_hash_gemm(p, static_cast<int>(ctas), job->dump, job->stream));
+      SPM_CK(job, cudaEventRecord(job->ev_end[slot], job->stream));
+      slot_base[slot] = launch_next;
+      slot_ctas[slot] = ctas;
+      launch_next += ctas;
+      ++queued;
+    }
+    if (queued == 0) break;
+    const int slot = head;
+    for (;;) {
+      const cudaError_t q = cudaEventQuery(job->ev_end[slot]);
+      if (q == cudaSuccess) break;
+      if (q != cudaErrorNotReady) SPM_CK(job, q);
+      check_abort();
+      std::this_thread::sleep_for(kPoll);
+    }
+    // Without an abort request every gate says "run"; after one, ask the chunk itself.
+    bool ran = true;
+    if (aborting) {
+      uint32_t gate = 0;
+      SPM_CK(job, cudaMemcpy(&gate, job->d_gates + slot, sizeof gate, cudaMemcpyDeviceToHost));
+      ran = gate == 1;
+    }
+    if (ran) {
+      float ms = 0.f;
+      SPM_CK(job, cudaEventElapsedTime(&ms, job->ev_start[slot], job->ev_end[slot]));
+      chunk_done(job, slot_ctas[slot], ms, !aborting);
+      job->next_cta = slot_base[slot] + slot_ctas[slot];
+    } else {
+      job->aborted_chunks += 1;
+    }
+    head = (head + 1) % kDepth;
+    --queued;
   }
+  __atomic_store_n(job->h_abort, 0u, __ATOMIC_RELEASE);
+  return job->next_cta >= job->cta_tiles ? SPM_OK : SPM_ABORTED;
 }
 
 int32_t spm_job_read_hits(spm_job_t* job, spm_hit_t* out, uint32_t cap, uint32_t* n_out,
@@ -500,6 +605,10 @@ int32_t spm_job_get_info(const spm_job_t* job, spm_job_info_t* out) {
   std::memcpy(out->job_key, job->job_key, sizeof out->job_key);
   out->cuda_error = job->cuda_error;
   out->smem_bytes = static_cast<uint32_t>(spm::gemm::hash_gemm_smem_bytes());
+  out->attempt_gpu_ms = job->attempt_gpu_ms;
+  out->attempt_max_chunk_ms = job->attempt_max_chunk_ms;
+  out->attempt_chunks = job->attempt_chunks;
+  out->aborted_chunks = job->aborted_chunks;
   return SPM_OK;
 }
 
