@@ -22,8 +22,8 @@ Para ter escala: o pico dos tensor cores só em registradores (MB1, [BENCHMARKS]
 
 | Perfil | Alvo | Corte | Cap de clock recomendado | Observações |
 |---|---|---|---|---|
-| Eco | 60 W | 70 W | 2000 MHz | Silencioso e frio, longe da faixa. |
-| **Balanced** (padrão) | **75 W** | **85 W** | **2200 MHz** | O padrão em todo lugar. |
+| Eco | 60 W | 70 W | 1800 MHz | Silencioso e frio, longe da faixa. |
+| **Balanced** (padrão) | **75 W** | **85 W** | **2000 MHz** | O padrão em todo lugar. |
 | Max | 88 W | 92 W | 2200 MHz | Dentro da faixa de desligamento. Recusado sem `power.max_acknowledged = true`. |
 
 O alvo é para onde o controlador leva a potência. O corte pausa a mineração (seção 4). O cap de clock é o valor da unit de boot.
@@ -39,7 +39,7 @@ sudo packaging/install-clockcap.sh --apply --mhz 2000   # Eco
 sudo packaging/uninstall-clockcap.sh --apply  # desativa, remove e restaura os clocks padrão (nvidia-smi -rgc)
 ```
 
-A unit é `Type=oneshot` com `RemainAfterExit=yes`: `ExecStart=/usr/bin/nvidia-smi -lgc 300,2200` no boot (depois do `nvidia-persistenced`), `ExecStop=/usr/bin/nvidia-smi -rgc`. Ela de propósito não é ordenada depois do `multi-user.target`, porque esse target a puxa e a ordem viraria um ciclo.
+A unit é `Type=oneshot` com `RemainAfterExit=yes`: `ExecStart=/usr/bin/nvidia-smi -lgc 300,2000` no boot (depois do `nvidia-persistenced`), `ExecStop=/usr/bin/nvidia-smi -rgc`. Ela de propósito não é ordenada depois do `multi-user.target`, porque esse target a puxa e a ordem viraria um ciclo.
 
 **Detecção.** O NVML não tem consulta para clock travado, mas o cap aparece nos clocks: com ele instalado o clock do SM nunca passa de 2200 MHz, ocioso ou em carga (sem cap, esta unidade fica em 2424 MHz ociosa). O governor informa *sem cap* assim que uma amostra passa do cap por mais de 30 MHz, e *com cap* depois de 30 s de carga com duty ≥ 90 % sem passar dele. O veredito aparece na API de status (`power.clock_cap`: `unknown`, `capped` ou `uncapped`, com o maior clock visto).
 
@@ -93,3 +93,6 @@ Estes padrões indicam problema de hardware ou firmware, não de carga. O govern
 Plano, numa janela de GPU avisada e com o vLLM parado: escada de clock 1800–2200 MHz com 10 min por degrau, depois 60 min e 24 h no perfil padrão. Aprovação: nenhum desligamento, zero divergências de cálculo, ≥ ~70 TH/s creditados. Os resultados entram aqui quando existirem; **ainda não há** (o worker de GPU é o M5).
 
 Para ver rapidamente o que o governor enxerga: `cargo run --release -p spm-governor --features nvml --example telemetry -- 10`.
+
+
+**Soak G1 nº 1 (2026-09-26 21:54–22:11 UTC, `bench/g1-soak.sh`, cap 2200 MHz, forma de produção, vLLM parado):** 16,9 min, 102 amostras, **sem desligamento**. Minerando: potência média 82,7 W, máxima 87 W, subindo ~1 W a cada 5 min com o aquecimento do SoC; clock médio 2162 MHz; GPU máx 83 °C; **`acpitz` máx 97,5 °C**. Interrompido manualmente a 87 W (acima do corte de 85 W do Balanced e dentro da faixa relatada de desligamento). Consequência: o cap do Balanced passou de 2200 para 2000 MHz; os soaks de 60 min e 24 h serão repetidos a 2000 MHz com o governor ativo. Log bruto: `docs/benchmarks/g1-20260926T215417Z-soak.csv`.

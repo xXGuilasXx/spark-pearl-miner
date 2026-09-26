@@ -11,14 +11,14 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 usage: install-clockcap.sh [--mhz N] [--apply]
-  --mhz N   SM clock cap in MHz (default 2200, what the Balanced and Max profiles expect;
+  --mhz N   SM clock cap in MHz (default 2000, what the Balanced profile expects; Max expect;
             the Eco profile recommends 2000)
   --apply   run the commands (must run as root); without it they are only printed
 EOF
 }
 
 APPLY=0
-MHZ=2200
+MHZ=2000
 while [ $# -gt 0 ]; do
   case "$1" in
     --apply) APPLY=1 ;;
@@ -49,7 +49,7 @@ fi
 
 if [ "$APPLY" -eq 1 ] && [ "$(id -u)" -ne 0 ]; then
   printf 'refusing --apply without root; run: sudo %q --apply' "$0" >&2
-  if [ "$MHZ" != 2200 ]; then printf " --mhz %s" "$MHZ" >&2; fi
+  if [ "$MHZ" != 2000 ]; then printf " --mhz %s" "$MHZ" >&2; fi
   printf '\n' >&2
   exit 1
 fi
@@ -77,8 +77,8 @@ else
   echo "# commands to install the clock cap ($MHZ MHz); nothing was changed:"
 fi
 step install -m 0644 "$SRC" "$DST"
-if [ "$MHZ" != 2200 ]; then
-  step sed -i "s/-lgc 300,2200/-lgc 300,$MHZ/;s/300-2200 MHz/300-$MHZ MHz/" "$DST"
+if [ "$MHZ" != 2000 ]; then
+  step sed -i "s/-lgc 300,2000/-lgc 300,$MHZ/;s/300-2000 MHz/300-$MHZ MHz/" "$DST"
 fi
 step systemctl daemon-reload
 step systemctl enable --now "$UNIT"

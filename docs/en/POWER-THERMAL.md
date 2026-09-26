@@ -22,26 +22,27 @@ For scale: the register-only tensor-core peak (MB1, [BENCHMARKS](BENCHMARKS.md))
 
 | Profile | Target | Hard stop | Recommended clock cap | Notes |
 |---|---|---|---|---|
-| Eco | 60 W | 70 W | 2000 MHz | Quiet and cool, far from the band. |
-| **Balanced** (default) | **75 W** | **85 W** | **2200 MHz** | The default everywhere. |
+| Eco | 60 W | 70 W | 1800 MHz | Quiet and cool, far from the band. |
+| **Balanced** (default) | **75 W** | **85 W** | **2000 MHz** | The default everywhere. At 2200 MHz the real kernel measured 83–87 W (G1 soak below), so 2000 MHz is the cap that fits the 75 W target. |
 | Max | 88 W | 92 W | 2200 MHz | Inside the power-off band. Refused unless `power.max_acknowledged = true`. |
 
 The target is what the controller steers to. The hard stop pauses mining (section 4). The clock cap is the boot unit's value.
 
 ## 3. Clock cap (optional, root once)
 
-Locking the SM clock at 2200 MHz costs ~9 % of peak throughput (96.0 vs 108.6 T-MAC/s in MB1) and is the main safety net: even if the governor fails, the GPU cannot boost into the band. The miner works without it, but on a DGX Spark I recommend it.
+Locking the SM clock at 2000 MHz costs ~22 % of the stock peak (85.0 vs 108.6 T-MAC/s in MB1; 2200 MHz would cost ~12 % but runs above the Balanced target) and is the main safety net: even if the governor fails, the GPU cannot boost into the band. The miner works without it, but on a DGX Spark I recommend it.
 
 ```bash
 packaging/install-clockcap.sh                 # prints the exact sudo commands, changes nothing
 sudo packaging/install-clockcap.sh --apply    # runs them (install the unit, daemon-reload, enable --now)
-sudo packaging/install-clockcap.sh --apply --mhz 2000   # Eco
+sudo packaging/install-clockcap.sh --apply --mhz 1800   # Eco
+sudo packaging/install-clockcap.sh --apply --mhz 2200   # Max (acknowledged)
 sudo packaging/uninstall-clockcap.sh --apply  # disable, remove, restore default clocks (nvidia-smi -rgc)
 ```
 
-The unit is a `Type=oneshot` with `RemainAfterExit=yes`: `ExecStart=/usr/bin/nvidia-smi -lgc 300,2200` at boot (after `nvidia-persistenced`), `ExecStop=/usr/bin/nvidia-smi -rgc`. It is deliberately not ordered after `multi-user.target`, because that target pulls it in and the ordering would be a cycle.
+The unit is a `Type=oneshot` with `RemainAfterExit=yes`: `ExecStart=/usr/bin/nvidia-smi -lgc 300,2000` at boot (after `nvidia-persistenced`), `ExecStop=/usr/bin/nvidia-smi -rgc`. It is deliberately not ordered after `multi-user.target`, because that target pulls it in and the ordering would be a cycle.
 
-**Detection.** NVML has no getter for locked clocks, but the cap is visible in the clocks: with it installed the SM clock never goes above 2200 MHz, idle or loaded (uncapped, this unit idles at 2424 MHz). The governor reports *not capped* as soon as any sample exceeds the cap by more than 30 MHz, and *capped* after 30 s of load at ≥ 90 % duty without exceeding it. The verdict is in the status API (`power.clock_cap`: `unknown`, `capped` or `uncapped`, with the highest clock seen).
+**Detection.** NVML has no getter for locked clocks, but the cap is visible in the clocks: with it installed the SM clock never goes above 2000 MHz, idle or loaded (uncapped, this unit idles at 2424 MHz). The governor reports *not capped* as soon as any sample exceeds the cap by more than 30 MHz, and *capped* after 30 s of load at ≥ 90 % duty without exceeding it. The verdict is in the status API (`power.clock_cap`: `unknown`, `capped` or `uncapped`, with the highest clock seen).
 
 ## 4. Governor behaviour
 
@@ -90,6 +91,8 @@ These patterns point at hardware or firmware problems, not at load. The governor
 
 `bench/soak-log.sh` logs every 10 s: `nvidia-smi --query-gpu=timestamp,power.draw,clocks.sm,temperature.gpu,clocks_event_reasons.active` plus the hottest `acpitz`, to `docs/benchmarks/soak-<UTC>.csv`. It needs no root and does not touch the GPU. On exit it prints max power, min clock, max temperatures, the clock event reasons seen, every gap longer than 20 s between rows and every session that ended without its clean-end line (both mean a suspected power-off). After a power-off, `bench/soak-log.sh --summarize <file>` on the next boot.
 
-Plan, in an announced GPU window with vLLM stopped: a clock ladder 1800–2200 MHz at 10 min per step, then 60 min and 24 h at the default profile. Pass: no power-off, zero compute mismatches, ≥ ~70 TH/s credited. Results go here when they exist; **none yet** (the GPU worker is M5).
+Plan, in an announced GPU window with vLLM stopped: a clock ladder 1800–2200 MHz at 10 min per step, then 60 min and 24 h at the default profile. Pass: no power-off, zero compute mismatches, ≥ ~70 TH/s credited.
+
+**G1 soak #1 (2026-09-26 21:54–22:11 UTC, `bench/g1-soak.sh`, cap 2200 MHz, production shape, vLLM stopped):** 16.9 min, 102 samples, **no power-off**. While mining: power mean 82.7 W, max 87 W, rising ~1 W per 5 min as the SoC warmed; SM clock mean 2162 MHz; GPU max 83 °C; **`acpitz` max 97.5 °C**. Stopped by hand at 87 W (above the Balanced 85 W stop and inside the reported power-off band). Consequence: the Balanced cap moved from 2200 to 2000 MHz; the 60 min and 24 h soaks are to be repeated at 2000 MHz with the governor active. Raw log: `docs/benchmarks/g1-20260926T215417Z-soak.csv`.
 
 For a quick look at what the governor sees: `cargo run --release -p spm-governor --features nvml --example telemetry -- 10`.
