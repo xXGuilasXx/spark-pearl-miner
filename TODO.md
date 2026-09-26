@@ -135,11 +135,11 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 ### M11
 - [ ] After the 24 h soak passes at 2200 MHz, evaluate a 2300 and a 2400 MHz step with soak-log evidence (worth +5–10 % PRL; see docs/en/DUAL-MINING.md). CPU dual mining stays disabled by design (X925 load reaches 84–87 °C in a minute).
 
-- [ ] The governor holds within ±3 W of target for 30 min in each profile, and trips fire on synthetic thresholds.
-- [ ] The fault-signature detector and the running.marker step-down are demonstrated with SIGKILL plus restart.
-- [ ] packaging spark-pearl-clockcap.service and install-clockcap.sh reviewed and installed by the user with sudo (optional); the miner detects the cap.
-- [ ] Ladder 1800-2200 MHz at 10 min per step, a 60 min soak and a 24 h soak at the default profile: no power-off and zero compute mismatches; default profile chosen; results in docs POWER-THERMAL.
-- [ ] Generic yield and yield-release tested under a vLLM load: pause takes 10 ms or less in v0; after release spark-recurso can start vLLM; the memory guard refuses to start below 20 GiB of headroom.
+- [x] The governor holds within ±3 W of target for 30 min in each profile, and trips fire on synthetic thresholds. (`crates/spm-governor`: PI duty control against the first-order plant model in `spm_governor::sim`, 30 simulated minutes per profile, worst reading 1.2 W off with noise; also with a 4x slower or 2x noisier power reading, a heavier job and a hotter room. Trips: 3 samples over the hard stop, GPU > 83 °C, acpitz > 95 °C, profile-switch grace. The same on hardware is part of the soak item below.)
+- [~] The fault-signature detector and the running.marker step-down are demonstrated with SIGKILL plus restart. Done: `usb_pd`, `safety_mode` and `thermal_cap_100w` detectors and the marker step-down (Max → Balanced → Eco), tested on synthetic telemetry and on disk (a marker left behind = a kill). Open: the live SIGKILL + restart demo, once the daemon wires `marker::begin_run`/`clear_marker`.
+- [~] packaging spark-pearl-clockcap.service and install-clockcap.sh reviewed and installed by the user with sudo (optional); the miner detects the cap. Done: the unit (`systemd-analyze verify` clean), `packaging/install-clockcap.sh` / `uninstall-clockcap.sh` (print the sudo commands; run them only with `--apply` as root; `--mhz` for Eco) and `ClockCapDetector`. Open: review and install by the user; daemon wiring of the detector.
+- [ ] Ladder 1800-2200 MHz at 10 min per step, a 60 min soak and a 24 h soak at the default profile: no power-off and zero compute mismatches; default profile chosen; results in docs POWER-THERMAL. (Logger ready: `bench/soak-log.sh`, with gap and unclean-session detection; `tools/gpu-validate.sh` skeleton writes the JSON report.)
+- [ ] Generic yield and yield-release tested under a vLLM load: pause takes 10 ms or less in v0; after release spark-recurso can start vLLM; the memory guard refuses to start below 20 GiB of headroom. (Code and unit tests done in `crates/spm-coexist`: vLLM metrics parser and HTTP client, yield gate, NVML/pmon fallback, memory guard, SIGUSR1/SIGUSR2 handshake. The live tests need the worker and the daemon.)
 
 ### M12
 

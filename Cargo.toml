@@ -10,6 +10,8 @@ members = [
     "crates/spm-mockpool",
     "crates/spm-pool",
     "crates/spm-cpuref",
+    "crates/spm-governor",
+    "crates/spm-coexist",
 ]
 
 [workspace.package]

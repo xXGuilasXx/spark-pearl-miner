@@ -1,0 +1,11 @@
+[package]
+name = "spm-coexist"
+description = "Coexistence of spark-pearl-miner with a resident LLM server: spark-modo / yield / yield-release / exclusive modes, vLLM metrics, memory guard and the pause/resume handshake"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tokio.workspace = true

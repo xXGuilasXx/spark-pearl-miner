@@ -42,3 +42,56 @@ qmma_tmac_stock = 107.0
 imma_tmac_2200 = 96.0
 mac_per_clk_per_sm = 919
 max_power_w_stock = 51
+
+[power]
+# Profiles, trips and fault signatures: crates/spm-governor (profile.rs, governor.rs, fault.rs).
+# Change the code and this table together.
+power_off_band_w_low = 88
+power_off_band_w_high = 92
+nvidia_known_issue_date = "2026-07-27"
+clock_cap_mhz = 2200
+clock_cap_cost_pct = 9          # MB1: 96.0 vs 108.6 T-MAC/s
+eco_target_w = 60
+eco_stop_w = 70
+eco_clock_cap_mhz = 2000
+balanced_target_w = 75
+balanced_stop_w = 85
+max_target_w = 88
+max_stop_w = 92
+sample_hz = 10
+controller_band_w = 3
+controller_worst_sim_w = 1.2    # plant model, 30 simulated minutes per profile, noise included
+duty_min_pct = 10
+ramp_pct_per_s = 20
+over_power_samples = 3
+pause_s = 60
+gpu_temp_trip_c = 83
+acpitz_trip_c = 95
+temp_resume_margin_c = 5
+derate_start_c = 78
+derate_w_per_c = 3
+usb_pd_max_mhz = 850
+usb_pd_hold_s = 10
+safety_mode_w = 30
+safety_mode_hold_s = 30
+thermal_cap_w = 100
+thermal_cap_hold_s = 10
+idle_w_measured = 15            # this unit, vLLM resident and idle, 2026-09-26
+idle_sm_mhz_uncapped = 2424
+
+[coexist]
+metrics_url = "http://127.0.0.1:8001/metrics"
+poll_ms_default = 200
+poll_ms_min = 100
+poll_ms_max = 250
+idle_s = 5
+metrics_fetch_ms_measured = 6   # ~58 KB exposition, this unit, 2026-09-26
+busy_sm_pct = 10
+time_slice_cost_pct = 50
+pause_ack_deadline_ms = 100
+term_grace_s = 3
+worker_budget_gib = 2
+start_headroom_gib = 20
+exit_below_gib = 16
+exit_psi_some_avg10_pct = 10
+vllm_killed_below_gib = 12      # the owner's orchestration

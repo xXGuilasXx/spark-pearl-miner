@@ -1,0 +1,22 @@
+[package]
+name = "spm-governor"
+description = "Power governor for spark-pearl-miner on the DGX Spark: profiles, PI duty control, trips, GB10 fault signatures and the unclean-shutdown marker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+# NVML telemetry (power, SM clock, GPU temperature, per-process SM utilization). Read-only: it
+# never creates a CUDA context. libnvidia-ml.so is loaded at runtime, so building with the feature
+# does not need the driver; tests never enable it.
+nvml = ["dep:nvml-wrapper"]
+
+[dependencies]
+nvml-wrapper = { version = "0.13", optional = true }
+
+[[example]]
+name = "telemetry"
+required-features = ["nvml"]
