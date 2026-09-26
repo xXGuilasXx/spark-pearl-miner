@@ -199,8 +199,9 @@ __global__ void SPM_GEMM_BOUNDS
   Transcript transcript;
   transcript.init();
 
-#pragma unroll 1
-  for (int kt = 0; kt < k_tiles; ++kt) {
+  // One k-tile: LDSM of the next k-block overlaps the MMAs of the current one; the gmem -> smem
+  // copy of the k-tile kStages-1 ahead is issued at the first k-block.
+  auto k_tile = [&]() {
 #pragma unroll
     for (int kb = 0; kb < kKBlocks; ++kb) {
       if (kb == kKBlocks - 1) {
@@ -225,18 +226,25 @@ __global__ void SPM_GEMM_BOUNDS
       }
       cute::gemm(mma, tCrA(_, _, kb), tCrB(_, _, kb), tCrC);
     }
-    if (kt % Config::kTilesPerSlice == Config::kTilesPerSlice - 1) {
-      // End of an r-wide slice: XOR of the 128 cumulative accumulators (order independent).
-      uint32_t x0 = 0, x1 = 0, x2 = 0, x3 = 0;
+  };
+
+  // End of an r-wide slice: XOR of the 128 cumulative accumulators (order independent).
+  auto fold = [&]() {
+    uint32_t x0 = 0, x1 = 0, x2 = 0, x3 = 0;
 #pragma unroll
-      for (int i = 0; i < 128; i += 4) {
-        x0 ^= Policy::acc_bits(tCrC(i));
-        x1 ^= Policy::acc_bits(tCrC(i + 1));
-        x2 ^= Policy::acc_bits(tCrC(i + 2));
-        x3 ^= Policy::acc_bits(tCrC(i + 3));
-      }
-      transcript.push((x0 ^ x1) ^ (x2 ^ x3));
+    for (int i = 0; i < 128; i += 4) {
+      x0 ^= Policy::acc_bits(tCrC(i));
+      x1 ^= Policy::acc_bits(tCrC(i + 1));
+      x2 ^= Policy::acc_bits(tCrC(i + 2));
+      x3 ^= Policy::acc_bits(tCrC(i + 3));
     }
+    transcript.push((x0 ^ x1) ^ (x2 ^ x3));
+  };
+
+#pragma unroll 1
+  for (int kt = 0; kt < k_tiles; ++kt) {
+    k_tile();
+    if (kt % Config::kTilesPerSlice == Config::kTilesPerSlice - 1) fold();
   }
   cp_async_wait<0>();
   uint32_t t[16];

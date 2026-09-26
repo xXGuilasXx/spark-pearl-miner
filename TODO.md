@@ -88,12 +88,12 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 
 ### M5
 
-- [ ] Noise kernels are bit-exact against zk-pow generate_uniform_random_matrix and generate_permutation_matrix for 1000 seeds; A' and B' rows equal compute_noise_for_indices.
-- [ ] gemm_v0 (128x256x64, 3-stage cp.async, 2x4 warps of 64x64, 8x16 register-local hash tile, L1 transcript, BLAKE3 epilogue, mapped hit ring) builds with 0 spills and at most 232 registers; SASS contains IMMA.16832.S8.S8 and LDSM.
-- [ ] G0: 100% of debug-dump transcripts and digests equal spm-cpuref for m,n in {256,512,1024}, k in {2048,4096}, 3 seeds each.
-- [ ] Forced-hit test: at least 100 GPU PlainProofs pass verify_plain_proof(Salted) and check_rank_penalty; mutated proofs fail.
-- [ ] compute-sanitizer memcheck, racecheck and synccheck are clean.
-- [ ] gpu-worker runs the KAT at start, heartbeats, cancels on epoch change in 10 ms or less, and recomputes one canary tile per attempt; spark-pearl-miner selftest and bench --minutes 10 (JSON: credited MAC/s, clocks, W, temperatures) recorded at 2200 MHz.
+- [x] Noise kernels are bit-exact against zk-pow generate_uniform_random_matrix and generate_permutation_matrix for 1000 seeds; A' and B' rows equal compute_noise_for_indices. (Strategy B branch: 1000 fresh (a, b) seed pairs, A_L/B_Rᵀ, both pair tables and both noised operands equal `spm_cpuref::noise_factors` + `add_noise`, which spm-cpuref proves equal to the zk-pow generators and `compute_noise_for_indices`; `crates/spm-gpu/tests/g0.rs`.)
+- [~] gemm_v0 (128x256x64, 3-stage cp.async, 2x4 warps of 64x64, 8x16 register-local hash tile, L1 transcript, BLAKE3 epilogue, mapped hit ring) builds with 0 spills and at most 232 registers; SASS contains IMMA.16832.S8.S8 and LDSM. Strategy B (CuTe atoms, 128x128x64, 3-stage cp.async, 2x2 warps of 64x64, 2 CTAs/SM, L1 transcript, BLAKE3 epilogue, device hit ring): 230 registers, 0 spills, 64 IMMA.16832.S8.S8 + 24 LDSM.16.M88.4 per kernel, no HMMA (`crates/spm-gpu/README.md`); the panel picks between the strategies.
+- [x] G0: 100% of debug-dump transcripts and digests equal spm-cpuref for m,n in {256,512,1024}, k in {2048,4096}, 3 seeds each. (Strategy B: 54/54, plus ragged k 2112/2176/6144, host matrices with ±64 entries, nonce patch, chunked and aborted runs.)
+- [x] Forced-hit test: at least 100 GPU PlainProofs pass verify_plain_proof(Salted) and check_rank_penalty; mutated proofs fail. (Strategy B: 383 GPU hits = the oracle's hit set, all pass `verify_v3` and `check_rank_penalty`; a mutated row index is rejected.)
+- [x] compute-sanitizer memcheck, racecheck and synccheck are clean. (Strategy B, plus initcheck and the leak check, on the small G0 problems, mining mode, chunked runs and the host/patch paths.)
+- [ ] gpu-worker runs the KAT at start, heartbeats, cancels on epoch change in 10 ms or less, and recomputes one canary tile per attempt; spark-pearl-miner selftest and bench --minutes 10 (JSON: credited MAC/s, clocks, W, temperatures) recorded at 2200 MHz. (Library side done on the strategy B branch: at the default 131072² × 4096 job the adaptive chunks run p50 6.3 ms / max 8.6 ms and an abort returns in 0.6–3.4 ms; the worker, KAT, canary and the clock-locked 10-minute bench are still open.)
 
 ### M6
 

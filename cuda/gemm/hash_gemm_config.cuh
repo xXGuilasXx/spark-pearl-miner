@@ -9,6 +9,8 @@
 // proves this mapping for every thread before the kernel relies on it.
 #pragma once
 
+#include <cstring>
+
 #include <cute/tensor.hpp>
 #include <cute/atom/copy_atom.hpp>
 #include <cute/atom/mma_atom.hpp>
@@ -32,7 +34,8 @@ struct Int8Policy {
 
 #if defined(SPM_ENABLE_FP8_POLICY)
 // Certificate-v4 (M12) preview: mma.sync.m16n8k32.kind::f8f6f4.f32.e4m3.e4m3.f32 (QMMA.16832)
-// shares the S8 atom's fragment layouts, so only the policy changes. Not instantiated in v0.
+// shares the S8 atom's fragment layouts, so only the policy changes (cuda/tests/layout_check.cu
+// verifies the hash-tile mapping for it too). The kernel is not instantiated with it in v0.
 struct Fp8E4M3Policy {
   using ElementA = cutlass::float_e4m3_t;
   using ElementB = cutlass::float_e4m3_t;
@@ -43,7 +46,7 @@ struct Fp8E4M3Policy {
     return __float_as_uint(x);
 #else
     uint32_t u;
-    memcpy(&u, &x, 4);
+    std::memcpy(&u, &x, 4);
     return u;
 #endif
   }

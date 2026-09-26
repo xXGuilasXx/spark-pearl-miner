@@ -75,6 +75,8 @@ struct Sample {
     watts: f64,
     temp_c: f64,
     util: f64,
+    /// `clocks_event_reasons.active` bitmask (why the clock is below its maximum).
+    reasons: u64,
 }
 
 /// Runs `nvidia-smi <args> -lms <period>` in the background and hands every output line, with
@@ -140,22 +142,24 @@ impl Sampler {
         let sink = samples.clone();
         let gpu = Poller::start(
             &[
-                "--query-gpu=clocks.sm,power.draw,temperature.gpu,utilization.gpu",
+                "--query-gpu=clocks.sm,power.draw,temperature.gpu,utilization.gpu,clocks_event_reasons.active",
                 "--format=csv,noheader,nounits",
             ],
             200,
             move |at, line| {
-                let f: Vec<f64> = line
-                    .split(',')
-                    .filter_map(|x| x.trim().parse().ok())
-                    .collect();
-                if f.len() == 4 {
+                let fields: Vec<&str> = line.split(',').map(str::trim).collect();
+                let f: Vec<f64> = fields.iter().filter_map(|x| x.parse().ok()).collect();
+                let reasons = fields
+                    .get(4)
+                    .and_then(|r| u64::from_str_radix(r.trim_start_matches("0x"), 16).ok());
+                if let (4, Some(reasons)) = (f.len(), reasons) {
                     let s = Sample {
                         at,
                         sm_mhz: f[0],
                         watts: f[1],
                         temp_c: f[2],
                         util: f[3],
+                        reasons,
                     };
                     sink.lock().expect("sampler lock").push(s);
                 }
@@ -211,6 +215,26 @@ impl Sampler {
         self.gpu.stop();
         self.apps.stop();
     }
+}
+
+/// Names of the `clocks_event_reasons` bits (nvidia-smi --help-query-gpu).
+fn clock_reasons(mask: u64) -> Vec<&'static str> {
+    const NAMES: [(u64, &str); 9] = [
+        (0x1, "gpu_idle"),
+        (0x2, "applications_clocks_setting"),
+        (0x4, "sw_power_cap"),
+        (0x8, "hw_slowdown"),
+        (0x10, "sync_boost"),
+        (0x20, "sw_thermal_slowdown"),
+        (0x40, "hw_thermal_slowdown"),
+        (0x80, "hw_power_brake_slowdown"),
+        (0x100, "display_clock_setting"),
+    ];
+    NAMES
+        .iter()
+        .filter(|(bit, _)| mask & bit != 0)
+        .map(|&(_, name)| name)
+        .collect()
 }
 
 fn mean(v: impl Iterator<Item = f64>) -> f64 {
@@ -341,6 +365,7 @@ fn main() -> Result<()> {
     let idle_watts = mean(idle.iter().map(|s| s.watts));
     let idle_util = mean(idle.iter().map(|s| s.util));
     let temp_max = busy.iter().map(|s| s.temp_c).fold(f64::NAN, f64::max);
+    let reasons = busy.iter().fold(0u64, |m, s| m | s.reasons);
     let mut sorted = chunk_ms.clone();
     sorted.sort_by(f64::total_cmp);
     let pct = |q: f64| {
@@ -385,8 +410,9 @@ fn main() -> Result<()> {
     println!("credited T-MAC/s (kernel GPU time): {kernel_tmacs:.2}");
     println!("credited T-MAC/s (wall, incl. prep): {wall_tmacs:.2}");
     println!(
-        "SM clock: {sm_mhz:.0} MHz avg ({} samples) | {:.1} % of {PEAK_CAPPED_TMACS} T-MAC/s | {:.1} % of the MB1 register-only peak at this clock ({peak_at_clock:.1} T-MAC/s)",
+        "SM clock: {sm_mhz:.0} MHz avg ({} samples, clock event reasons {:?}) | {:.1} % of {PEAK_CAPPED_TMACS} T-MAC/s | {:.1} % of the MB1 register-only peak at this clock ({peak_at_clock:.1} T-MAC/s)",
         busy.len(),
+        clock_reasons(reasons),
         100.0 * kernel_tmacs / PEAK_CAPPED_TMACS,
         100.0 * kernel_tmacs / peak_at_clock
     );
