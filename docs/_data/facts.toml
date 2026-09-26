@@ -1,0 +1,36 @@
+# Single source for every number shared between the EN and PT-BR docs. Refresh monthly (see TODO [ONGOING]).
+snapshot_date = "2026-09-26"
+[network]
+hashrate_eh_s = 54.8            # WhatToMine 2026-09-26 (miner-reported MAC/s units)
+difficulty = 29.41e6
+block_reward_prl = 2305.8
+block_time_target_s = 194
+block_time_observed_s = 151
+daily_emission_prl = 1.32e6
+yield_prl_per_th_per_day = 0.0241   # = 306.9 * reward / difficulty
+difficulty_change_30d_pct = 36
+[price]
+usd = 1.30
+brl = 6.78
+brl_per_usd = 5.18
+ath_usd = 1.76
+ath_date = "2026-09-23"
+atl_usd = 0.14
+atl_date = "2026-07-23"
+volume_24h_usd = 2.9e6
+safetrade_share_pct = 87
+[gb10]
+sms = 48
+int8_peak_measured_tops = 215
+ceiling_th_s = 107
+planning_th_s_low = 65
+planning_th_s_high = 85
+power_w_low = 100
+power_w_high = 130
+competitor_claim_th_s = 76
+competitor_claim_w = 99
+[fee]
+bps = 200
+[brazil]
+kwh_brl_low = 0.80
+kwh_brl_high = 1.10
