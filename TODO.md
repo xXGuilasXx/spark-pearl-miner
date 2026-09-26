@@ -109,7 +109,7 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 - [x] spm-pool reducer with an injected clock passes at least 25 deterministic time-warped scenarios. (42 scenarios in `crates/spm-pool/tests/scenarios.rs`, plus 5 unit tests.)
 - [x] proptest invariants hold: one active user session; hits only on the originating session; no lost or duplicated shares; the dev session stays isolated. (`crates/spm-pool/tests/invariants.rs`, 1024 random sequences per run plus a state-coverage guard; the dev session is outside the reducer, which is asserted never to address a non-user slot.)
 - [ ] Mockpool faults (refuse, blackhole, TLS fail, auth reject, no job, reject storm, stall, EOF mid-submit, 4 MiB line) each lead to failover within 15 s.
-- [~] Live check: with pool 1 pointed at a closed port, pool 2 becomes active within 15 s; after pool 1 is restored, mining returns to it after the 300 s probe plus 60 s stable; the timeline is logged (2026-09-26, config path: pool 1 disabled → pool 2 mining in 1.1 s; pool 1 re-enabled → probe healthy, 60 s standby, switch, pool 2 drained in 5 s; the closed-port variant is pending).
+- [x] Live check: with pool 1 pointed at a closed port, pool 2 becomes active within 15 s; after pool 1 is restored, mining returns to it after the 300 s probe plus 60 s stable; the timeline is logged. (2026-09-26 22:49–22:51 UTC: pool 1 → `127.0.0.1:1` gave `connect_refused`, pool 2 mining 1.1 s later; config restored → probe healthy in 0.35 s, 60 s standby, switch, pool 2 drained and closed 5 s later; 12 accepted, 0 rejected across the whole exercise.)
 
 ### M8
 
