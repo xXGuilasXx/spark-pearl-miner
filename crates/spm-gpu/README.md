@@ -78,8 +78,8 @@ SASS (`tools/check-sass.py`, per fused kernel): `IMMA.16832.S8.S8` × 128, `LDSM
 
 | Job | Bytes |
 |---|---|
-| bench shape m = n = 16384, k = 4096 (A_base + A' + B'ᵀ + A_L + B_Rᵀ + pairs + 4096-entry ring) | 205,701,376 (196.2 MiB) |
-| production shape m = n = 131072, k = 4096 | 1,644,347,648 (1.53 GiB) |
+| bench shape m = n = 16384, k = 4096 (A_base + A' + B'ᵀ + A_L + B_Rᵀ + pairs + 4096-entry ring + counters) | 205,701,632 (196.2 MiB) |
+| production shape m = n = 131072, k = 4096 | 1,644,347,904 (1.53 GiB) |
 
 `spm_job_create` refuses anything over 2 GiB (`SPM_ERR_BUDGET`); the dump buffer (m·n/128 × 104 B)
 only exists in dump mode.
@@ -142,26 +142,35 @@ miner gets). Peak references from MB1 (`docs/en/BENCHMARKS.md`): 919 MAC/clk/SM,
 2424 MHz, 96.0 T-MAC/s at 2200 MHz.
 
 Runs of 2026-09-26 with nothing else on the GPU but the resident vLLM (stock clocks, driver
-580.178.04, CUDA 13.0):
+580.178.04, CUDA 13.0). The first row is the final code (commit with the device abort word); the
+others are the same kernel one commit earlier (208 registers, host-side abort only):
 
-| Run (UTC) | SM clock | Power mean / max | Chunk GPU time mean / max | Kernel only mean / median / best | Sustained (fused kernel) | Incl. A prep |
-|---|---|---|---|---|---|---|
-| 20:32:33 | 2424 MHz | 84.0 / 95.0 W | 3.79 / 7.63 ms | 81.3 / — / 93.2 T-MAC/s | **75.1 T-MAC/s** (78.2 % of 96.0) | 71.2 |
-| 20:33:18 | 2424 MHz | 87.9 / 95.4 W | 3.75 / 7.62 ms | 82.8 / 84.3 / 94.4 T-MAC/s | **77.7 T-MAC/s** (80.9 % of 96.0) | 73.5 |
-| 20:33:53 | 2356 MHz | 87.4 / 93.3 W | 3.77 / 7.39 ms | 81.5 / 83.2 / 93.1 T-MAC/s | **76.3 T-MAC/s** (79.5 % of 96.0) | 72.2 |
-ABORT_ROW
+| Run (UTC) | SM clock | Power mean / max | Chunk GPU time mean / max | Kernel only mean / median / best | Sustained (fused kernel) | Incl. A prep | Abort latency |
+|---|---|---|---|---|---|---|---|
+| 20:40:01 | 2424 MHz | 90.5 / 96.9 W | 3.77 / 6.83 ms | 81.7 / 83.8 / 96.6 T-MAC/s | **77.0 T-MAC/s** (80.2 % of 96.0) | 72.9 | **0.21 / 0.27 ms** |
+| 20:39:26 | 2397 MHz | 86.1 / 95.1 W | 3.88 / 7.26 ms | 83.4 / 85.4 / 95.1 T-MAC/s | 77.1 T-MAC/s (80.3 %) | 72.9 | 7.0 / 7.3 ms |
+| 20:33:18 | 2424 MHz | 87.9 / 95.4 W | 3.75 / 7.62 ms | 82.8 / 84.3 / 94.4 T-MAC/s | 77.7 T-MAC/s (80.9 %) | 73.5 | — |
+| 20:33:53 | 2356 MHz | 87.4 / 93.3 W | 3.77 / 7.39 ms | 81.5 / 83.2 / 93.1 T-MAC/s | 76.3 T-MAC/s (79.5 %) | 72.2 | — |
+| 20:32:33 | 2424 MHz | 84.0 / 95.0 W | 3.79 / 7.63 ms | 81.3 / — / 93.2 T-MAC/s | 75.1 T-MAC/s (78.2 %) | 71.2 | — |
 
-* Kernel only is ~77–78 % of the register-only IMMA peak at the clock in use (106.9 T-MAC/s at
-  2424 MHz); single attempts reach 93–94 T-MAC/s (~88 %) when nothing else touches the GPU or the
+* **Sustained ≈ 77 T-MAC/s ≈ 80 % of the 96.0 T-MAC/s capped peak**, measured at stock 2424 MHz; kernel
+  only ≈ 82–84 T-MAC/s ≈ 77–79 % of the register-only IMMA peak at the clock in use (106.9 T-MAC/s at
+  2424 MHz); single attempts reach 93–97 T-MAC/s (~90 %) when nothing else touches the GPU or the
   memory. The standalone experiment driver (chunks of 2736 CTA tiles, per-chunk GPU time, medians of
   interleaved runs) sees 86–89 T-MAC/s for the same kernel.
 * The A-side prep (A_L, pairs, A' for 16384 × 4096) takes 0.63 ms per attempt; B side and matrix
   generation at job creation 1.4 ms.
-* Chunks: the first chunks of a job use the peak-rate size (3216 CTA tiles here, ~7.6 ms at the
-  measured rate), then the adaptive size settles at ~3.8 ms.
-* At full load the GB10 draws ~85–95 W at stock clocks and trims the SM clock a little (2356 MHz mean in
-  the third run); the 2200 MHz cap would lower both.
-PROD_ROW
+* Chunks: the first chunks of a job use the peak-rate size (3216 CTA tiles here, ~7 ms at the
+  measured rate), then the adaptive size settles at ~3.8 ms. The abort latency is the time from the
+  flag store (another thread, mid-attempt) to the return of `run_attempt`.
+* At full load the GB10 draws ~85–97 W at stock clocks and sometimes trims the SM clock a little
+  (2356 MHz mean in one run); the 2200 MHz cap would lower both.
+
+Production shape (`--m 131072 --n 131072 --k 4096 --seconds 0`, 20:40:27 UTC, final code, only the
+vLLM besides): 1,644,347,904 B of device memory, job creation with matrix fill and B side 13.2 ms,
+3 attempts of 7.04 × 10¹³ credited MACs at **79.8 T-MAC/s kernel only (0.88 s per attempt)**,
+655 chunks of 4.04 ms mean (max 7.94 ms, the first peak-sized chunks), power 78 W mean / 95 W max,
+**abort latency 0.28 ms mean / 0.38 ms max** over 5 trials.
 
 Stock clocks only: locking 2200 MHz needs root, and the vLLM stays resident (its ~6 % background
 load time-slices with every kernel). Other CUDA jobs of the owner's machine and the CPU sharing the
