@@ -138,7 +138,7 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 - [~] Kernel-only throughput reaches at least 85% of the measured IMMA peak at 2200 MHz, or the reason is documented; credited TH/s and GPU W published (goal: at least 76 TH/s at 85 W or less). (Strategy C, clock not locked, vLLM resident: 84.8 T-MAC/s kernel-only, 80.1 end-to-end at 2273 MHz and 84 W board = 88.3 % of 96.0, 84.6 % of the MB1 peak at that clock; still to be repeated at a locked 2200 MHz.)
 
 ### M11
-- [ ] G1 soak: `bench/g1-soak.sh --minutes 60 --manage-vllm` (clock 2200 MHz, production shape), then 24 h; zero power-off, max chunk ≤ 8 ms, results in docs/benchmarks/g1-*.
+- [ ] G1 soak: `bench/g1-soak.sh --minutes 60 --manage-vllm` (clock 2000 MHz, production shape), then 24 h; zero power-off, max chunk ≤ 8 ms, results in docs/benchmarks/g1-*. Soak #1 at 2200 MHz (16.9 min, 87 W max, acpitz 97.5 °C) is what moved the default cap to 2000 MHz.
 - [ ] After the 24 h soak passes at 2200 MHz, evaluate a 2300 and a 2400 MHz step with soak-log evidence (worth +5–10 % PRL; see docs/en/DUAL-MINING.md). CPU dual mining stays disabled by design (X925 load reaches 84–87 °C in a minute).
 
 - [x] The governor holds within ±3 W of target for 30 min in each profile, and trips fire on synthetic thresholds. (`crates/spm-governor`: PI duty control against the first-order plant model in `spm_governor::sim`, 30 simulated minutes per profile, worst reading 1.2 W off with noise; also with a 4x slower or 2x noisier power reading, a heavier job and a hotter room. Trips: 3 samples over the hard stop, GPU > 83 °C, acpitz > 95 °C, profile-switch grace. The same on hardware is part of the soak item below.)
@@ -179,7 +179,7 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 ## Gates
 
 - **G0** GPU int8 kernel bit-identical to the official `zk-pow` reference; PlainProofs pass `check_cert_version_eligible(3)` + `verify_plain_proof(Salted)`.
-- **G1** 60 min and 24 h soaks at the default power profile with the 2200 MHz cap: no power-off, zero compute mismatches, ≥ ~70 TH/s credited.
+- **G1** 60 min and 24 h soaks at the default power profile with the 2000 MHz cap: no power-off, zero compute mismatches, ≥ ~70 TH/s credited.
 - **G2** Accepted shares on LuckyPool BR and HeroMiners BR with our own miner (0 invalid, stale < 1 %).
 - **G3** GB10 `QMMA` FP8 bit-exact against the `fp8-scheme` `zk-pow` reference (≥ 1e6 atoms) — decides post-fork viability.
 - **G4** Owner signs the fee address (BIP-322 simple, oystercli) before the public release.

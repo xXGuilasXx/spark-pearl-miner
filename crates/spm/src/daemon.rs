@@ -1972,12 +1972,6 @@ impl Daemon {
         if !cfg.pools.iter().any(|p| p.enabled) {
             return Err("enable at least one pool".into());
         }
-        if !cfg.worker.simulate && effective_launch(cfg) == LaunchMode::Spawn {
-            self.alert(
-                "warn",
-                "this build has no CUDA worker yet (M5): enable the CPU simulation (worker.simulate) or use launch = external".into(),
-            );
-        }
         self.hw_fault = false;
         self.verify_failures = 0;
         let _ = self.sup.send(SupCmd::ResetFaults);
