@@ -1,0 +1,20 @@
+[package]
+name = "spm-work"
+description = "Work units: a pool Job plus our fixed shape turned into share/block bounds, job key and fill seed"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+spm-pow.workspace = true
+spm-proto.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+blake3.workspace = true
+primitive-types.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+bincode.workspace = true
