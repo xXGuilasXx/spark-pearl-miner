@@ -46,10 +46,14 @@ kernel panel (CuTe/CUTLASS 4.8 atoms)**; see `docs/en/KERNEL.md` for the contrac
   `digest <= bound` (LE U256) → `atomicAdd` slot in the hit ring (mining mode).
 * **Raster:** CTA tiles are walked in groups of 8 CTA rows (`SPM_GROUP_M`), so the group's A' strips
   stay in the 24 MiB L2 while B'ᵀ strips stream past (group 4 measured 74 T-MAC/s, 8 → 87, 16 → 85).
-* **Chunks and cancellation:** a chunk is a contiguous range of CTA tiles; the size adapts to ~7 ms
-  from the measured rate (a slowdown is followed immediately, a speed-up gradually). `spm_job_run`
-  polls a caller-owned abort flag (atomic acquire load) before every chunk; an aborted attempt can
-  be resumed.
+* **Chunks and cancellation:** a chunk is a contiguous range of CTA tiles; its size adapts to
+  ~7 ms from the measured rate (a slowdown is followed immediately, a speed-up gradually).
+  `spm_job_run` reads the caller's abort flag (atomic acquire load) before every chunk, so an abort
+  takes effect within the running chunk and a later `spm_job_run` resumes exactly where the attempt
+  stopped. Keeping two chunks queued (with a per-chunk gate so a queued chunk could skip itself on
+  abort) was built and measured: at stock clocks the GB10 is power-bound, so removing the ~0.1 ms
+  host round trip between chunks only made the chunks ~2 % slower and gained no throughput, and it
+  was dropped for the simpler loop.
 * **FP8 readiness (M12):** the kernel is templated on `HashGemmConfig<Policy, Stages>`; the policy
   supplies the MMA op, operand types and the accumulator → 32-bit view the fold uses.
   `Fp8E4M3Policy` (`SM120_16x8x32_TN<e4m3, e4m3, f32>`, QMMA.16832, same fragment layouts) is
@@ -83,7 +87,7 @@ SASS (`cuobjdump -sass` of `hash_gemm_cute.o`), per kernel instantiation:
 
 ## G0 and the other GPU tests
 
-`SPM_GPU_TESTS=1 cargo test --release -p spm-gpu --features gpu -- --test-threads=1` (≈ 6 s, the GPU
+`SPM_GPU_TESTS=1 cargo test --release -p spm-gpu --features gpu -- --test-threads=1` (≈ 8 s, the GPU
 part a fraction of it, < 20 MiB of device memory), all passing on 2026-09-26:
 
 * `g0_every_shape_is_bit_exact`: m, n ∈ {256, 512, 1024} × k ∈ {2048, 4096} × seeds {1, 2, 3} —
@@ -97,16 +101,19 @@ part a fraction of it, < 20 MiB of device memory), all passing on 2026-09-26:
   zk-pow generators) and `add_noise`.
 * `host_matrices_and_nonce_patch_are_bit_exact`: host-supplied A/Bᵀ with ±64 entries, and a nonce
   patched into A chunk 0 through both sources.
-* `chunked_and_aborted_runs_give_the_same_tiles`: 6 chunks of 3 CTA tiles, and abort/resume.
+* `chunked_and_aborted_runs_give_the_same_tiles`: 6 synchronous chunks of 3 CTA tiles, and
+  abort/resume between chunks.
+* `abort_mid_run_resumes_exactly`: `run` aborted from another thread at ten different moments and
+  resumed, in dump mode (bit-exact) and mining mode (exactly the oracle's hits, none duplicated).
 * `forced_hits_become_verified_plain_proofs`: mining mode at an easy nbits on 512×512×2048,
   256×512×4096 and 1024×256×2048 — the GPU's hit set equals `Oracle::find_hits`, and **all 383 GPU
   hits become PlainProofs that pass `verify_v3` (with and without the nbits override) and
   `check_rank_penalty`**; a proof with a mutated row index is rejected; with the bound set to the
   smallest digest the GPU reports exactly that tile.
 
-compute-sanitizer 2025.3.1 (CUDA 13.0) on the ragged/long-k problems, mining mode, chunked runs and
-the host/patch paths: memcheck (with leak check) 0 errors, racecheck 0 hazards, synccheck 0 errors,
-initcheck 0 errors.
+compute-sanitizer 2025.3.1 (CUDA 13.0) on the ragged/long-k problems, mining mode, chunked and
+aborted/resumed runs and the host/patch paths: memcheck (with leak check) 0 errors,
+racecheck 0 hazards, synccheck 0 errors, initcheck 0 errors.
 
 ## Throughput
 

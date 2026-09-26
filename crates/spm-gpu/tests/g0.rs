@@ -332,11 +332,10 @@ fn chunked_and_aborted_runs_give_the_same_tiles() {
     assert_eq!(first_mismatch(&expected, &got), None, "aborted and resumed");
 }
 
-/// Aborts the pipelined `run` at varying moments, then resumes: queued chunks must skip
-/// themselves as a whole, so the resumed attempt is bit-exact (dump mode) and reports every hit
-/// exactly once (mining mode).
+/// Aborts `run` from another thread at varying moments, then resumes: the resumed attempt is
+/// bit-exact (dump mode) and reports every hit exactly once (mining mode).
 #[test]
-fn abort_mid_run_skips_whole_chunks_and_resumes_exactly() {
+fn abort_mid_run_resumes_exactly() {
     if !enabled() {
         return;
     }
@@ -388,11 +387,6 @@ fn abort_mid_run_skips_whole_chunks_and_resumes_exactly() {
                 assert_eq!(got, expected_hits, "mining, trial {trial}");
             }
         }
-        eprintln!(
-            "abort/resume ({}): {} queued chunks skipped over 10 trials",
-            if dump { "dump" } else { "mining" },
-            job.info().unwrap().aborted_chunks
-        );
     }
     assert!(aborted_runs > 0, "no trial was aborted mid-run");
 }

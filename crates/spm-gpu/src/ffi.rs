@@ -87,7 +87,7 @@ pub struct JobInfoRaw {
     pub attempt_gpu_ms: f32,
     pub attempt_max_chunk_ms: f32,
     pub attempt_chunks: u32,
-    pub aborted_chunks: u32,
+    pub reserved: u32,
 }
 
 #[repr(C)]

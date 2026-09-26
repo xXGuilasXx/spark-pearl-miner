@@ -5,11 +5,11 @@
 //!     [--seconds 10] [--chunk-ctas 0] [--per-chunk] [--csv out.csv]
 //! ```
 //!
-//! Repeats full attempts (A-side prep + `Job::run`, the pipelined production path) for
+//! Repeats full attempts (A-side prep + `Job::run`, the production path) for
 //! ~`seconds` on a GPU-generated problem and prints the credited rate (m·n·k MACs per full pass)
 //! twice: over the kernel's GPU time only, and over wall time including the per-attempt A-side
-//! prep. `--per-chunk` drives the attempt with synchronous `run_chunk` calls instead, which adds a
-//! host round trip per chunk but records every chunk's time (percentiles, CSV). The SM clock, GPU power and
+//! prep. `--per-chunk` drives the attempt with explicit `run_chunk` calls instead and records every
+//! chunk's size and time (percentiles, CSV). The SM clock, GPU power and
 //! temperature come from `nvidia-smi` sampled every 200 ms during the run (an idle sample is
 //! taken first, so the power the kernel adds is visible even with other processes resident).
 //! The default shape (16384² × 4096, ~150 MiB of device memory) fits the "short GPU test"
@@ -375,7 +375,7 @@ fn main() -> Result<()> {
     };
 
     // Cancellation: another thread raises the abort flag mid-attempt; the latency is the time
-    // until `run` returns (the rest of the running chunk: the queued one skips itself).
+    // until `run` returns (it checks the flag before every chunk: at most the running chunk).
     let mut abort_ms = Vec::new();
     for trial in 0..3u64 {
         seed[..8].copy_from_slice(&(u64::MAX - trial).to_le_bytes());
@@ -449,7 +449,7 @@ fn main() -> Result<()> {
     );
     if args.per_chunk {
         println!(
-            "chunks (synchronous run_chunk): {chunks} in {passes} passes, median {} CTAs | chunk ms p50 {:.2} p99 {:.2} max {chunk_max:.2} | {} over 10 ms",
+            "chunks (run_chunk): {chunks} in {passes} passes, median {} CTAs | chunk ms p50 {:.2} p99 {:.2} max {chunk_max:.2} | {} over 10 ms",
             sizes.get(sizes.len() / 2).copied().unwrap_or(0),
             pct(0.5),
             pct(0.99),
@@ -457,7 +457,7 @@ fn main() -> Result<()> {
         );
     } else {
         println!(
-            "chunks (pipelined run): {chunks} in {passes} passes, mean {:.2} ms, max {chunk_max:.2} ms | {long_chunks} passes had a chunk over 10 ms",
+            "chunks (run): {chunks} in {passes} passes, mean {:.2} ms, max {chunk_max:.2} ms | {long_chunks} passes had a chunk over 10 ms",
             kernel_ms / chunks.max(1) as f64
         );
     }

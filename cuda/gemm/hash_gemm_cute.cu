@@ -119,21 +119,6 @@ __global__ void SPM_GEMM_BOUNDS
 
   const int cta = p.cta_base + static_cast<int>(blockIdx.x);
   if (cta >= p.total_ctas) return;
-  if (p.gate != nullptr) {
-    // One decision per chunk: the first CTA to get here claims the gate.
-    __shared__ uint32_t go;
-    if (threadIdx.x == 0) {
-      uint32_t g = *reinterpret_cast<volatile uint32_t*>(p.gate);
-      if (g == 0) {
-        const uint32_t want = *p.abort != 0 ? 2u : 1u;
-        const uint32_t prev = atomicCAS(p.gate, 0u, want);
-        g = prev == 0 ? want : prev;
-      }
-      go = g;
-    }
-    __syncthreads();
-    if (go != 1) return;
-  }
   int tile_m, tile_n;
   raster(cta, p.tiles_m, p.tiles_n, p.group_m, tile_m, tile_n);
 
