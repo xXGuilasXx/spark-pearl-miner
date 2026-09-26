@@ -9,7 +9,7 @@
 use std::time::{Duration, Instant};
 
 use spm_cpuref::{
-    build_plain_proof, first_mismatch, noise_factors, tiles_digest, verify_v3,
+    add_noise, build_plain_proof, first_mismatch, noise_factors, tiles_digest, verify_v3,
     IncompleteBlockHeader, NoiseFactors, Oracle, Problem, TileResult, U256,
 };
 use spm_gpu::{Buffer, ChunkStatus, Job, JobConfig, Operands, TileRecord};
@@ -219,6 +219,27 @@ fn g0_every_tile_matches_the_oracle() {
         gpu.as_secs_f64(),
         failures.len()
     );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Ragged and long k: k mod 128 = 64 (the last 64 columns never enter the transcript), a slice
+/// count that is not a multiple of 16 (the transcript slot wraps mid-way and the epilogue undoes a
+/// leftover rotation of 1) and a long k (every slot written three times), on CTA tiles that are
+/// half empty along n or m.
+#[test]
+fn g0_ragged_and_long_k() {
+    if !gpu_enabled() {
+        return;
+    }
+    let cases: Vec<Case> = [
+        (128usize, 256usize, 2112usize, 11u64),
+        (256, 128, 2176, 12),
+        (128, 128, 6144, 13),
+    ]
+    .into_iter()
+    .map(|(m, n, k, seed)| prepare(m, n, k, 0x7261_6700 + seed))
+    .collect();
+    let failures: Vec<String> = cases.iter().filter_map(|c| run_case(c).err()).collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
@@ -509,6 +530,170 @@ fn g0_noise_matches_the_official_generators() {
         bytes(oracle.noised_bt()),
         "B'ᵀ"
     );
+}
+
+/// Noise stage over 1000 random seed pairs, one job each: the B side at creation (B_Rᵀ, B_L,
+/// B'ᵀ = Bᵀ + E_Bᵀ) and the A side of an attempt (A_L, A_R, A' = A + E_A) equal the official
+/// zk-pow generators and the reference noise expansion.
+#[test]
+fn g0_noise_over_1000_random_seed_pairs() {
+    if !gpu_enabled() {
+        return;
+    }
+    let (m, n, k) = (256usize, 256usize, 2048usize);
+    let p = Problem::generate(m, n, k, header(EASY_NBITS), 5).unwrap();
+    let base = *Oracle::new(&p).unwrap().commitment();
+    let bytes = |v: &[i8]| -> Vec<u8> { v.iter().map(|&x| x as u8).collect() };
+    let pair_bytes =
+        |v: &[[u32; 2]]| -> Vec<u8> { v.iter().flat_map(|&[p, q]| [p as u8, q as u8]).collect() };
+    // xorshift64 seeds: unrelated to every seed derivation of the protocol.
+    let mut x = 0x9e37_79b9_7f4a_7c15u64;
+    let mut next_seed = || {
+        let mut s = [0u8; 32];
+        for chunk in s.chunks_mut(8) {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            chunk.copy_from_slice(&x.to_le_bytes());
+        }
+        s
+    };
+    let started = Instant::now();
+    let seeds = 1000;
+    for i in 0..seeds {
+        let mut c = base;
+        c.b_noise_seed = next_seed();
+        c.a_noise_seed = next_seed();
+        let f = noise_factors(&p, &c).unwrap();
+        let e = f.expand().unwrap();
+        let cfg = JobConfig::new(
+            m as u32,
+            n as u32,
+            k as u32,
+            Operands::Generated { seed: 5 },
+            c.b_noise_seed,
+        );
+        let mut job = Job::new(&cfg).unwrap();
+        assert_eq!(
+            job.read_buffer(Buffer::BtFactor).unwrap(),
+            bytes(&f.b_rt),
+            "B_Rᵀ, pair {i}"
+        );
+        assert_eq!(
+            job.read_buffer(Buffer::BPairs).unwrap(),
+            pair_bytes(&f.b_l),
+            "B_L, pair {i}"
+        );
+        assert_eq!(
+            job.read_buffer(Buffer::BtNoised).unwrap(),
+            bytes(&add_noise(&p.bt, &e.e_bt).unwrap()),
+            "B'ᵀ, pair {i}"
+        );
+        job.set_attempt(&c.a_noise_seed, &[0u8; 32]).unwrap();
+        assert_eq!(
+            job.read_buffer(Buffer::AFactor).unwrap(),
+            bytes(&f.a_l),
+            "A_L, pair {i}"
+        );
+        assert_eq!(
+            job.read_buffer(Buffer::APairs).unwrap(),
+            pair_bytes(&f.a_r),
+            "A_R, pair {i}"
+        );
+        assert_eq!(
+            job.read_buffer(Buffer::ANoised).unwrap(),
+            bytes(&add_noise(&p.a, &e.e_a).unwrap()),
+            "A', pair {i}"
+        );
+    }
+    eprintln!(
+        "noise: {seeds} random (B, A) seed pairs bit-exact (factors, pairs, noised operands) in {:.1} s",
+        started.elapsed().as_secs_f64()
+    );
+}
+
+/// A full hit ring keeps counting: with every tile a hit (all-ones bound) and room for 100, the
+/// count is exact, 100 entries are stored and each is a real tile with its real digest.
+#[test]
+fn g0_hit_ring_overflow_is_counted() {
+    if !gpu_enabled() {
+        return;
+    }
+    let case = prepare(256, 256, 2048, 0x0f10);
+    let mut cfg = JobConfig::new(
+        case.m,
+        case.n,
+        case.k,
+        Operands::Generated { seed: case.seed },
+        case.b_noise_seed,
+    );
+    cfg.hit_capacity = 100;
+    let mut job = Job::new(&cfg).expect("job");
+    job.set_attempt(&case.a_noise_seed, &[0xff; 32]).unwrap();
+    assert!(job.run_attempt().unwrap().completed);
+    let (hits, total) = job.hits().unwrap();
+    assert_eq!(
+        total as usize,
+        case.expected.len(),
+        "every tile meets the all-ones bound"
+    );
+    assert_eq!(hits.len(), 100, "the ring holds its capacity");
+    let mut seen = std::collections::HashSet::new();
+    for h in &hits {
+        let t = case
+            .expected
+            .iter()
+            .find(|t| (t.t_rows, t.t_cols) == (h.t_rows, h.t_cols))
+            .expect("a real tile");
+        assert_eq!(t.digest, h.digest);
+        assert!(seen.insert((h.t_rows, h.t_cols)), "a tile stored twice");
+    }
+}
+
+/// Launch chunking never changes the result: on a 16384 x 16384 x 2048 job (8192 CTA tiles) the
+/// hit sets of adaptive chunks (three attempts, the size adapting in between), whole waves (240
+/// CTA tiles), an odd fixed size (1000) and tiny chunks (7) are identical.
+#[test]
+fn g0_chunking_does_not_change_the_hits() {
+    if !gpu_enabled() {
+        return;
+    }
+    let (m, n, k) = (16384u32, 16384u32, 2048u32);
+    // Digest <= 2^250: about 1/64 of the 2^21 hash tiles hit.
+    let mut bound = [0u8; 32];
+    bound[31] = 0x04;
+    let run = |chunk: Option<u32>, attempts: usize| -> Vec<Vec<(u32, u32, [u8; 32])>> {
+        let mut cfg = JobConfig::new(m, n, k, Operands::Generated { seed: 0xc4 }, [0x42; 32]);
+        cfg.chunk_tiles = chunk;
+        cfg.hit_capacity = 1 << 16;
+        let mut job = Job::new(&cfg).expect("job");
+        (0..attempts)
+            .map(|_| {
+                job.set_attempt(&[0x17; 32], &bound).expect("attempt");
+                let stats = job.run_attempt().expect("run");
+                assert!(stats.completed);
+                let (hits, total) = job.hits().expect("hits");
+                assert_eq!(total as usize, hits.len(), "no hit dropped");
+                let mut v: Vec<_> = hits
+                    .iter()
+                    .map(|h| (h.t_rows, h.t_cols, h.digest))
+                    .collect();
+                v.sort_unstable();
+                v
+            })
+            .collect()
+    };
+    let auto = run(None, 3);
+    assert!(
+        auto[0].len() > 20_000 && auto[0].len() < 50_000,
+        "expected ~32768 hits, got {}",
+        auto[0].len()
+    );
+    assert_eq!(auto[0], auto[1], "adaptive, second attempt");
+    assert_eq!(auto[0], auto[2], "adaptive, third attempt");
+    assert_eq!(auto[0], run(Some(48 * 5), 1)[0], "fixed whole waves");
+    assert_eq!(auto[0], run(Some(1000), 1)[0], "fixed odd size");
+    assert_eq!(auto[0], run(Some(7), 1)[0], "tiny chunks");
 }
 
 /// The abort flag stops a running chunk within one CTA tile (< 1 ms), and chunks refuse to start
