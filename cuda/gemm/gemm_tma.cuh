@@ -1,19 +1,19 @@
 // Fused noised int8 GEMM + per-slice transcript + BLAKE3 digest + bound compare (strategy C):
-// a persistent kernel fed by TMA through an mbarrier ring.
+// a persistent, warp-specialized kernel fed by TMA through an mbarrier ring.
 //
 // Geometry
-//   * CTA tile 128 (m) x 256 (n) x 64 (k); 8 warps in a 2 x 4 grid of 64 x 64 warp tiles.
-//   * STAGES-deep ring of {A' 128x64, B'ᵀ 256x64} stages (24 KiB each), both loaded with
-//     cp.async.bulk.tensor (SWIZZLE_64B). A `full` mbarrier per stage completes on 1 arrival plus
-//     the transaction bytes; an `empty` mbarrier per stage completes when all 8 warps released it.
-//   * The producer is thread 0 (no extra warp: a 9th warp would put 3 warps on one SM
-//     sub-partition and cap every thread at 168 registers). It keeps STAGES - 1 k-tiles in flight
-//     and refills the stage released one k-tile earlier, so it only waits for warps that are more
-//     than one k-tile behind warp 0.
+//   * CTA tile 128 (m) x 256 (n) x 64 (k). 12 warps: warps 0-7 are the MMA warps (a 2 x 4 grid of
+//     64 x 64 warp tiles); warps 8-11 form the producer warpgroup, of which one thread issues the TMA
+//     loads. setmaxnreg moves registers from the producer warpgroup (40) to the MMA warps (232):
+//     every SM sub-partition then holds 2 MMA warps and 1 producer warp within its 16K registers.
+//   * STAGES-deep ring of {A' 128x64, B'ᵀ 256x64} stages (24 KiB each) loaded with
+//     cp.async.bulk.tensor (SWIZZLE_64B). A `full` mbarrier per stage completes on 1 arrival plus the
+//     transaction bytes; an `empty` mbarrier per stage completes when the 8 MMA warps released it,
+//     and the producer refills the stage right away.
 //   * Persistent grid (one CTA per SM): the producer takes CTA tiles from a global atomic counter in
 //     an L2-friendly band raster (bands of `band` CTA rows, column-major inside a band) and passes
-//     the tile id to the other warps in the first stage of the tile; -1 is the stop command. The
-//     abort flag (host-mapped) is read before every tile, so a cancel takes effect within one tile.
+//     the tile id to the MMA warps in the first stage of the tile; -1 is the stop command. The abort
+//     flag (host-mapped) is read before every tile, so a cancel takes effect within one tile.
 //   * mma.sync.m16n8k32 s8·s8 -> s32 from ldmatrix.x4 fragments. In a 64 x 64 warp tile made of
 //     4 x 8 m16n8 fragments, lane l holds rows l/4 + {0, 8, ..., 56} and columns
 //     2(l%4) + {0, 1, 8, 9, ..., 56, 57}: exactly one hash tile, so the per-slice XOR fold is
@@ -75,8 +75,11 @@ constexpr uint32_t BN = 256;
 constexpr uint32_t BK = 64;
 constexpr uint32_t SLICE_K = 128;  // noise rank r: one transcript update per 128 k
 constexpr uint32_t KTILES_PER_SLICE = SLICE_K / BK;
-constexpr int WARPS = 8;
-constexpr int THREADS = WARPS * 32;
+constexpr int MMA_WARPS = 8;
+constexpr int PRODUCER_WARPS = 4;  // a whole warpgroup: setmaxnreg acts per warpgroup
+constexpr int THREADS = (MMA_WARPS + PRODUCER_WARPS) * 32;
+constexpr uint32_t MMA_REGS = 232;
+constexpr uint32_t PRODUCER_REGS = 40;
 constexpr uint32_t STAGES = 4;
 constexpr uint32_t A_STAGE_BYTES = BM * BK;
 constexpr uint32_t B_STAGE_BYTES = BN * BK;
@@ -92,7 +95,8 @@ constexpr int32_t CMD_STOP = -1;
 
 static_assert(STAGE_BYTES % 1024 == 0, "stage buffers must keep the swizzle alignment");
 static_assert(SMEM_BYTES <= 101376, "GB10 allows at most 99 KiB of shared memory per block");
-static_assert(STAGES >= 3, "the producer runs STAGES - 1 k-tiles ahead with one stage of slack");
+// Per SM sub-partition: 2 MMA warps + 1 producer warp must fit in 16384 registers.
+static_assert((2 * MMA_REGS + PRODUCER_REGS) * 32 <= 16384, "register split exceeds a sub-partition");
 
 struct HitRecord {
   uint32_t t_rows;
@@ -130,26 +134,16 @@ __device__ __forceinline__ void tile_coords(const Params& p, uint32_t t, uint32_
   tm = first + (r - tn * rows);
 }
 
-// ---- producer (thread 0) ------------------------------------------------------------------
+// ---- producer ------------------------------------------------------------------------------
 
-/// Stage ring and position of the next k-tile to load. Only thread 0 uses it.
-struct Producer {
+/// The producer thread: fills every free stage, fetching a new CTA tile at each tile boundary,
+/// until the tile range (or the abort flag) runs out; then posts the stop command.
+__device__ __forceinline__ void produce(const CUtensorMap* tmap_a, const CUtensorMap* tmap_b,
+                                        const Params& p, uint32_t smem, uint32_t full0,
+                                        uint32_t empty0, volatile int32_t* cmd) {
+  const uint32_t ktiles = p.k_slices * KTILES_PER_SLICE;
   uint32_t stage = 0, phase = 0;
-  uint32_t kt = 0;  // k-tile of the current producer tile
-  int32_t row_a = 0, row_b = 0;
-  bool stopped = false;
-};
-
-/// Issues the next k-tile load (fetching a new tile first when the previous one is complete).
-/// Waits until the target stage has been released by all warps.
-__device__ __forceinline__ void produce_one(Producer& pr, const CUtensorMap* tmap_a,
-                                            const CUtensorMap* tmap_b, const Params& p,
-                                            uint32_t smem, uint32_t full0, uint32_t empty0,
-                                            volatile int32_t* cmd) {
-  if (pr.stopped) return;
-  const uint32_t full = full0 + 8 * pr.stage;
-  ptx::mbar_wait(empty0 + 8 * pr.stage, pr.phase ^ 1u);
-  if (pr.kt == 0) {
+  for (;;) {
     int32_t tile = CMD_STOP;
     if (*p.abort_flag == 0u) {
       const uint32_t t = p.tile_begin + atomicAdd(p.tile_counter, 1u);
@@ -157,30 +151,33 @@ __device__ __forceinline__ void produce_one(Producer& pr, const CUtensorMap* tma
     } else {
       atomicOr(p.status, STATUS_ABORTED);
     }
-    cmd[pr.stage] = tile;
+    ptx::mbar_wait(empty0 + 8 * stage, phase ^ 1u);
+    cmd[stage] = tile;
     if (tile == CMD_STOP) {
-      ptx::mbar_arrive(full);  // completes the phase with the stop command and no data
-      pr.stopped = true;
+      ptx::mbar_arrive(full0 + 8 * stage);  // completes the phase with the stop command only
       return;
     }
     uint32_t tm, tn;
     tile_coords(p, static_cast<uint32_t>(tile), tm, tn);
-    pr.row_a = static_cast<int32_t>(tm * BM);
-    pr.row_b = static_cast<int32_t>(tn * BN);
-  }
-  const uint32_t dst = smem + pr.stage * STAGE_BYTES;
-  const int32_t k0 = static_cast<int32_t>(pr.kt * BK);
-  ptx::mbar_arrive_expect_tx(full, STAGE_BYTES);
-  ptx::tma_load_2d(dst, tmap_a, k0, pr.row_a, full);
-  ptx::tma_load_2d(dst + A_STAGE_BYTES, tmap_b, k0, pr.row_b, full);
-  if (++pr.kt == p.k_slices * KTILES_PER_SLICE) pr.kt = 0;
-  if (++pr.stage == STAGES) {
-    pr.stage = 0;
-    pr.phase ^= 1u;
+    const int32_t row_a = static_cast<int32_t>(tm * BM);
+    const int32_t row_b = static_cast<int32_t>(tn * BN);
+    for (uint32_t kt = 0; kt < ktiles; ++kt) {
+      if (kt != 0) ptx::mbar_wait(empty0 + 8 * stage, phase ^ 1u);
+      const uint32_t full = full0 + 8 * stage;
+      const uint32_t dst = smem + stage * STAGE_BYTES;
+      const int32_t k0 = static_cast<int32_t>(kt * BK);
+      ptx::mbar_arrive_expect_tx(full, STAGE_BYTES);
+      ptx::tma_load_2d(dst, tmap_a, k0, row_a, full);
+      ptx::tma_load_2d(dst + A_STAGE_BYTES, tmap_b, k0, row_b, full);
+      if (++stage == STAGES) {
+        stage = 0;
+        phase ^= 1u;
+      }
+    }
   }
 }
 
-// ---- consumers ----------------------------------------------------------------------------
+// ---- MMA warps -----------------------------------------------------------------------------
 
 /// t <- t rotated right by kBy positions when `apply` (static indices only, stays in registers).
 template <uint32_t kBy>
@@ -193,39 +190,10 @@ __device__ __forceinline__ void rotate_right_if(uint32_t (&t)[16], bool apply) {
 }
 
 template <class Mma>
-__global__ void __launch_bounds__(THREADS, 1)
-    gemm_hash_kernel(const __grid_constant__ CUtensorMap tmap_a,
-                     const __grid_constant__ CUtensorMap tmap_b, const __grid_constant__ Params p) {
+__device__ __forceinline__ void consume(const Params& p, uint32_t smem, uint32_t full0,
+                                        uint32_t empty0, const volatile int32_t* cmd,
+                                        uint32_t warp, uint32_t lane) {
   using Acc = typename Mma::Acc;
-  extern __shared__ __align__(1024) uint8_t smem_raw[];
-  const uint32_t raw = ptx::smem_addr(smem_raw);
-  const uint32_t smem = (raw + 1023u) & ~1023u;
-  uint8_t* aligned = smem_raw + (smem - raw);
-  const uint32_t full0 = smem + STAGES * STAGE_BYTES;
-  const uint32_t empty0 = full0 + 8 * STAGES;
-  volatile int32_t* cmd =
-      reinterpret_cast<volatile int32_t*>(aligned + STAGES * STAGE_BYTES + 16 * STAGES);
-  const uint32_t warp = threadIdx.x >> 5;
-  const uint32_t lane = threadIdx.x & 31u;
-  const bool producer = threadIdx.x == 0;
-
-  Producer pr;
-  if (producer) {
-    for (uint32_t s = 0; s < STAGES; ++s) {
-      ptx::mbar_init(full0 + 8 * s, 1);
-      ptx::mbar_init(empty0 + 8 * s, WARPS);
-    }
-    ptx::mbar_fence_init();
-    ptx::tma_prefetch_descriptor(&tmap_a);
-    ptx::tma_prefetch_descriptor(&tmap_b);
-  }
-  __syncthreads();
-  if (producer) {
-    for (uint32_t s = 0; s + 1 < STAGES; ++s)
-      produce_one(pr, &tmap_a, &tmap_b, p, smem, full0, empty0, cmd);
-  }
-  __syncwarp();
-
   const uint32_t wm = warp >> 2;  // 0..1
   const uint32_t wn = warp & 3u;  // 0..3
   // SWIZZLE_64B: 16-byte chunk c of smem row r sits at chunk c ^ ((r >> 1) & 3). Bits 1..2 of every
@@ -244,7 +212,7 @@ __global__ void __launch_bounds__(THREADS, 1)
   for (;;) {
     ptx::mbar_wait(full0 + 8 * stage, phase);
     const int32_t tile = cmd[stage];
-    if (tile == CMD_STOP) break;
+    if (tile == CMD_STOP) return;
     uint32_t tm, tn;
     tile_coords(p, static_cast<uint32_t>(tile), tm, tn);
     const uint32_t row0 = tm * BM + wm * 64u;
@@ -287,14 +255,13 @@ __global__ void __launch_bounds__(THREADS, 1)
               for (int j = 0; j < 8; ++j) Mma::mma(acc[i][j], a[i], b[j][0], b[j][1]);
           }
         }
+        // The MMAs above already consumed every lane's ldmatrix results: release the stage.
         __syncwarp();
         if (lane == 0) ptx::mbar_arrive(empty0 + 8 * stage);
         if (++stage == STAGES) {
           stage = 0;
           phase ^= 1u;
         }
-        if (producer) produce_one(pr, &tmap_a, &tmap_b, p, smem, full0, empty0, cmd);
-        __syncwarp();
       }
       // Fold the cumulative accumulators of slice s into slot s mod 16 (kept at t[0]).
       uint32_t f[8];
@@ -356,6 +323,48 @@ __global__ void __launch_bounds__(THREADS, 1)
     }
   }
 }
+
+// ---- kernel -------------------------------------------------------------------------------
+
+template <class Mma>
+__global__ void __launch_bounds__(THREADS, 1)
+    gemm_hash_kernel(const __grid_constant__ CUtensorMap tmap_a,
+                     const __grid_constant__ CUtensorMap tmap_b, const __grid_constant__ Params p) {
+  extern __shared__ __align__(1024) uint8_t smem_raw[];
+  const uint32_t raw = ptx::smem_addr(smem_raw);
+  const uint32_t smem = (raw + 1023u) & ~1023u;
+  uint8_t* aligned = smem_raw + (smem - raw);
+  const uint32_t full0 = smem + STAGES * STAGE_BYTES;
+  const uint32_t empty0 = full0 + 8 * STAGES;
+  volatile int32_t* cmd =
+      reinterpret_cast<volatile int32_t*>(aligned + STAGES * STAGE_BYTES + 16 * STAGES);
+  const uint32_t warp = threadIdx.x >> 5;
+  const uint32_t lane = threadIdx.x & 31u;
+
+  if (threadIdx.x == 0) {
+    for (uint32_t s = 0; s < STAGES; ++s) {
+      ptx::mbar_init(full0 + 8 * s, 1);
+      ptx::mbar_init(empty0 + 8 * s, MMA_WARPS);
+    }
+    ptx::mbar_fence_init();
+  }
+  __syncthreads();
+
+  if (warp >= static_cast<uint32_t>(MMA_WARPS)) {
+    ptx::setmaxnreg_dec<PRODUCER_REGS>();
+    if (warp == static_cast<uint32_t>(MMA_WARPS) && lane == 0) {
+      ptx::tma_prefetch_descriptor(&tmap_a);
+      ptx::tma_prefetch_descriptor(&tmap_b);
+      produce(&tmap_a, &tmap_b, p, smem, full0, empty0, cmd);
+    }
+    return;
+  }
+  ptx::setmaxnreg_inc<MMA_REGS>();
+  consume<Mma>(p, smem, full0, empty0, cmd, warp, lane);
+}
+
+/// Sets the dynamic shared-memory limit of the int8 kernel (idempotent; also loads the module).
+cudaError_t configure_gemm_hash_s8();
 
 /// Launches the int8 instantiation: `grid` persistent CTAs over tiles [tile_begin, tile_end).
 cudaError_t launch_gemm_hash_s8(const CUtensorMap& tmap_a, const CUtensorMap& tmap_b,

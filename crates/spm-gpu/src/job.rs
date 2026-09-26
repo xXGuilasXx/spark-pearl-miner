@@ -60,9 +60,13 @@ impl GpuError {
             code::BUDGET => Self::Budget,
             code::NO_ATTEMPT => Self::NoAttempt,
             code::NOT_DUMP => Self::NotDump,
-            code::CUDA => Self::Cuda { code: ffi::last_cuda_error() },
+            code::CUDA => Self::Cuda {
+                code: ffi::last_cuda_error(),
+            },
             code::TMA => Self::Tma,
-            code::OOM => Self::OutOfMemory { code: ffi::last_cuda_error() },
+            code::OOM => Self::OutOfMemory {
+                code: ffi::last_cuda_error(),
+            },
             code::SIZE => Self::Size,
             other => Self::Unknown(other, ffi::status_str(other)),
         }
@@ -85,7 +89,9 @@ pub struct AbortHandle(Arc<ffi::AbortPtr>);
 
 impl AbortHandle {
     pub fn new() -> Result<Self, GpuError> {
-        ffi::AbortPtr::new().map(|p| Self(Arc::new(p))).map_err(GpuError::from_code)
+        ffi::AbortPtr::new()
+            .map(|p| Self(Arc::new(p)))
+            .map_err(GpuError::from_code)
     }
     pub fn set(&self) {
         self.0.set(1);
@@ -100,7 +106,9 @@ impl AbortHandle {
 
 impl std::fmt::Debug for AbortHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AbortHandle").field("set", &self.is_set()).finish()
+        f.debug_struct("AbortHandle")
+            .field("set", &self.is_set())
+            .finish()
     }
 }
 
@@ -129,7 +137,7 @@ pub struct JobConfig<'a> {
     pub hit_capacity: u32,
     /// CTA tiles (128×256) per launch; `None` = adaptive to `target_chunk`.
     pub chunk_tiles: Option<u32>,
-    /// Adaptive chunk duration target (default 8 ms; the contract is ≤ 10 ms).
+    /// Adaptive chunk duration target (default 6 ms, leaving margin under the 10 ms contract).
     pub target_chunk: Duration,
     /// L2 raster band height in CTA rows (0 = 16).
     pub band_rows: u32,
@@ -150,7 +158,7 @@ impl<'a> JobConfig<'a> {
             dump: false,
             hit_capacity: 0,
             chunk_tiles: None,
-            target_chunk: Duration::from_millis(8),
+            target_chunk: Duration::from_millis(6),
             band_rows: 0,
             mem_budget_bytes: DEFAULT_MEM_BUDGET,
             abort: None,
@@ -200,7 +208,8 @@ pub struct TileRecord {
 impl TileRecord {
     /// Parses one 104-byte record (`t_rows`, `t_cols`, 16 words, digest; all LE).
     pub fn from_bytes(b: &[u8; DUMP_RECORD_LEN]) -> Self {
-        let word = |i: usize| u32::from_le_bytes([b[4 * i], b[4 * i + 1], b[4 * i + 2], b[4 * i + 3]]);
+        let word =
+            |i: usize| u32::from_le_bytes([b[4 * i], b[4 * i + 1], b[4 * i + 2], b[4 * i + 3]]);
         let mut transcript = [0u32; 16];
         for (i, w) in transcript.iter_mut().enumerate() {
             *w = word(2 + i);
@@ -326,7 +335,9 @@ impl Job {
             Some(a) => a.clone(),
             None => AbortHandle::new()?,
         };
-        let target_us = u32::try_from(cfg.target_chunk.as_micros()).unwrap_or(u32::MAX).max(1);
+        let target_us = u32::try_from(cfg.target_chunk.as_micros())
+            .unwrap_or(u32::MAX)
+            .max(1);
         let args = ffi::CreateArgs {
             m: cfg.m,
             n: cfg.n,
@@ -349,13 +360,21 @@ impl Job {
             n: cfg.n,
             k: cfg.k,
             dump: cfg.dump,
-            hit_capacity: if cfg.hit_capacity == 0 { 4096 } else { cfg.hit_capacity },
+            hit_capacity: if cfg.hit_capacity == 0 {
+                4096
+            } else {
+                cfg.hit_capacity
+            },
         })
     }
 
     /// Starts an attempt: builds A_L, the A_R pairs and A' for `a_noise_seed`, sets the bound
     /// (32 bytes, little-endian U256), clears the hits and rewinds to the first tile.
-    pub fn set_attempt(&mut self, a_noise_seed: &[u8; 32], bound: &[u8; 32]) -> Result<(), GpuError> {
+    pub fn set_attempt(
+        &mut self,
+        a_noise_seed: &[u8; 32],
+        bound: &[u8; 32],
+    ) -> Result<(), GpuError> {
         check(self.raw.set_attempt(a_noise_seed, bound, &[]))
     }
 
@@ -452,12 +471,10 @@ impl Job {
     pub fn dump_records(&mut self) -> Result<Vec<TileRecord>, GpuError> {
         let bytes = self.dump_bytes()?;
         Ok(bytes
-            .chunks_exact(DUMP_RECORD_LEN)
-            .map(|c| {
-                let mut rec = [0u8; DUMP_RECORD_LEN];
-                rec.copy_from_slice(c);
-                TileRecord::from_bytes(&rec)
-            })
+            .as_chunks::<DUMP_RECORD_LEN>()
+            .0
+            .iter()
+            .map(TileRecord::from_bytes)
             .collect())
     }
 
@@ -510,11 +527,31 @@ impl Job {
 
 /// Bytes the job would hold on the device (the same formula `spm_job_create` checks against the
 /// budget).
-pub fn job_device_bytes(m: u32, n: u32, k: u32, host_operands: bool, dump: bool, hit_capacity: u32) -> u64 {
+pub fn job_device_bytes(
+    m: u32,
+    n: u32,
+    k: u32,
+    host_operands: bool,
+    dump: bool,
+    hit_capacity: u32,
+) -> u64 {
     let (m, n, k) = (u64::from(m), u64::from(n), u64::from(k));
-    let hits = u64::from(if hit_capacity == 0 { 4096 } else { hit_capacity });
-    m * k + n * k + if host_operands { m * k } else { 0 } + (m + n) * 128 + 4 * k + 4096
-        + if dump { m * n / 128 * DUMP_RECORD_LEN as u64 } else { 0 }
+    let hits = u64::from(if hit_capacity == 0 {
+        4096
+    } else {
+        hit_capacity
+    });
+    m * k
+        + n * k
+        + if host_operands { m * k } else { 0 }
+        + (m + n) * 128
+        + 4 * k
+        + 4096
+        + if dump {
+            m * n / 128 * DUMP_RECORD_LEN as u64
+        } else {
+            0
+        }
         + hits * 40
         + 16
 }

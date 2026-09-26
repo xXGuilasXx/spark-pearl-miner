@@ -27,11 +27,20 @@ struct Args {
 }
 
 fn parse_args() -> anyhow::Result<Args> {
-    let mut a = Args { m: 16384, n: 16384, k: 4096, seconds: 10.0, band: 0, chunk_ms: 8.0 };
+    let mut a = Args {
+        m: 16384,
+        n: 16384,
+        k: 4096,
+        seconds: 10.0,
+        band: 0,
+        chunk_ms: 8.0,
+    };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut it = argv.iter();
     while let Some(flag) = it.next() {
-        let val = it.next().ok_or_else(|| anyhow::anyhow!("{flag} needs a value"))?;
+        let val = it
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("{flag} needs a value"))?;
         match flag.as_str() {
             "--m" => a.m = val.parse()?,
             "--n" => a.n = val.parse()?,
@@ -56,12 +65,21 @@ impl Sampler {
     fn start() -> Self {
         let samples = Arc::new(Mutex::new(Vec::new()));
         let child = Command::new("nvidia-smi")
-            .args(["--query-gpu=clocks.sm,power.draw", "--format=csv,noheader,nounits", "-lms", "100"])
+            .args([
+                "--query-gpu=clocks.sm,power.draw",
+                "--format=csv,noheader,nounits",
+                "-lms",
+                "100",
+            ])
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
             .ok();
-        let mut me = Self { child, samples: samples.clone(), reader: None };
+        let mut me = Self {
+            child,
+            samples: samples.clone(),
+            reader: None,
+        };
         if let Some(out) = me.child.as_mut().and_then(|c| c.stdout.take()) {
             me.reader = Some(std::thread::spawn(move || {
                 for line in BufReader::new(out).lines().map_while(Result::ok) {
@@ -115,7 +133,13 @@ fn seed_bytes(i: u64) -> [u8; 32] {
 fn main() -> anyhow::Result<()> {
     let args = parse_args()?;
     let dev = spm_gpu::device_info()?;
-    let mut cfg = JobConfig::new(args.m, args.n, args.k, Operands::Generated { seed: 0x5eed }, seed_bytes(u64::MAX));
+    let mut cfg = JobConfig::new(
+        args.m,
+        args.n,
+        args.k,
+        Operands::Generated { seed: 0x5eed },
+        seed_bytes(u64::MAX),
+    );
     cfg.band_rows = args.band;
     cfg.target_chunk = Duration::from_secs_f64(args.chunk_ms / 1e3);
     let t_create = Instant::now();
@@ -124,7 +148,11 @@ fn main() -> anyhow::Result<()> {
     let info = job.info()?;
     println!(
         "device {} ({} SMs, cc {}.{}), libspm_cuda: {}",
-        dev.name, dev.sm_count, dev.compute_capability.0, dev.compute_capability.1, spm_gpu::version()
+        dev.name,
+        dev.sm_count,
+        dev.compute_capability.0,
+        dev.compute_capability.1,
+        spm_gpu::version()
     );
     println!(
         "job m={} n={} k={}: {} x {} CTA tiles, {} slices, {:.1} MiB on device, B side built in {:.1} ms",
@@ -179,7 +207,10 @@ fn main() -> anyhow::Result<()> {
         prep.as_secs_f64() * 1e3 / attempts as f64
     );
     println!("credited T-MAC/s: {kernel_rate:.2} kernel-only, {wall_rate:.2} end-to-end (prep + launch gaps included)");
-    println!("chunk: {chunk_ms:.2} ms mean, {:.2} ms max", max_chunk.as_secs_f64() * 1e3);
+    println!(
+        "chunk: {chunk_ms:.2} ms mean, {:.2} ms max",
+        max_chunk.as_secs_f64() * 1e3
+    );
     println!(
         "SM clock {mhz:.0} MHz, board power {watts:.1} W mean / {watts_max:.1} W max ({nsamples} nvidia-smi samples)"
     );
@@ -189,7 +220,10 @@ fn main() -> anyhow::Result<()> {
         if peak_at_clock > 0.0 { 100.0 * kernel_rate / peak_at_clock } else { 0.0 }
     );
     if watts > 0.0 {
-        println!("energy: {:.2} T-MAC/J end-to-end at the mean board power", wall_rate / watts);
+        println!(
+            "energy: {:.2} T-MAC/J end-to-end at the mean board power",
+            wall_rate / watts
+        );
     }
     Ok(())
 }

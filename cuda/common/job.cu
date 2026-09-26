@@ -24,9 +24,12 @@ thread_local int32_t g_last_cuda_error = 0;
 
 constexpr uint64_t kDefaultBudget = 2ull << 30;
 constexpr uint32_t kDefaultHitCapacity = 4096;
-constexpr uint32_t kDefaultTargetChunkUs = 7000;
+constexpr uint32_t kDefaultTargetChunkUs = 6000;
 constexpr uint32_t kDefaultBand = 16;
 constexpr uint32_t kMaxPrefix = 4096;
+// Adaptive chunks never go below this many CTA tiles per CTA (shorter chunks are dominated by the
+// ramp-up and the tail wave, and their timing is not representative).
+constexpr uint32_t kMinTilesPerCta = 4;
 constexpr uint32_t kCounterTile = 0, kCounterStatus = 1, kCounterHits = 2, kCounterWords = 4;
 
 int32_t fail_cuda(cudaError_t e) {
@@ -311,8 +314,8 @@ int32_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
   } else {
     // First guess: 1 T-MAC/s per SM (below the measured ~2), adapted after every chunk.
     const double tile_us = (double)spm::gemm::BM * spm::gemm::BN * (double)(j->k_slices * spm::gemm::SLICE_K) / 1e6;
-    const double per_cta = std::max(1.0, (double)j->target_chunk_us / tile_us);
-    j->chunk_tiles = (uint32_t)std::max<double>(j->ctas, per_cta * j->ctas);
+    const double per_cta = std::max<double>(kMinTilesPerCta, (double)j->target_chunk_us / tile_us);
+    j->chunk_tiles = (uint32_t)(per_cta * j->ctas);
   }
 
   if (p.abort_flag != nullptr) {
@@ -322,6 +325,12 @@ int32_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
     if (rc != SPM_OK) return fail(rc);
     j->owns_abort = true;
   }
+
+  // Load the GEMM kernel now (lazy module loading would otherwise land inside the first chunk).
+  cudaFuncAttributes attr;
+  e = spm::gemm::gemm_hash_s8_attributes(&attr);
+  if (e == cudaSuccess) e = spm::gemm::configure_gemm_hash_s8();
+  if (e != cudaSuccess) return fail(fail_cuda(e));
 
   e = cudaStreamCreateWithFlags(&j->stream, cudaStreamNonBlocking);
   if (e == cudaSuccess) e = cudaEventCreate(&j->ev_begin);
@@ -443,7 +452,7 @@ int32_t spm_job_run_chunk(spm_job_t* j, spm_chunk_info_t* info) {
     j->us_per_tile = j->us_per_tile > 0.0 ? (1.0 - w) * j->us_per_tile + w * sample : sample;
     double next = std::floor((double)j->target_chunk_us / j->us_per_tile) * grid;
     next = std::min(next, 1.25 * j->chunk_tiles);  // grow slowly, shrink at once
-    j->chunk_tiles = (uint32_t)std::max<double>(j->ctas, next);
+    j->chunk_tiles = (uint32_t)std::max<double>(kMinTilesPerCta * j->ctas, next);
   }
   return j->next_tile >= j->tiles_total ? SPM_DONE : SPM_OK;
 }

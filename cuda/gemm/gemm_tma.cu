@@ -14,6 +14,8 @@ cudaError_t configure_once() {
 }
 }  // namespace
 
+cudaError_t configure_gemm_hash_s8() { return configure_once(); }
+
 cudaError_t launch_gemm_hash_s8(const CUtensorMap& tmap_a, const CUtensorMap& tmap_b,
                                 const Params& p, uint32_t grid, cudaStream_t stream) {
   const cudaError_t cfg = configure_once();

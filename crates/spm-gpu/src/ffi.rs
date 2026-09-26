@@ -1,7 +1,6 @@
 //! The only module with `unsafe`: raw declarations of cuda/include/spm_cuda.h and owned handles
 //! whose methods are safe. Every call passes pointers derived from live Rust references with the
 //! sizes the C side expects, and every handle is destroyed exactly once, in `Drop`.
-#![allow(unsafe_code)]
 
 use std::ffi::CStr;
 use std::os::raw::c_char;
@@ -105,7 +104,12 @@ extern "C" {
         a_prefix_len: u32,
     ) -> i32;
     fn spm_job_run_chunk(job: *mut JobOpaque, info: *mut ChunkInfoRaw) -> i32;
-    fn spm_job_read_hits(job: *mut JobOpaque, out: *mut HitRaw, capacity: u32, total: *mut u32) -> i32;
+    fn spm_job_read_hits(
+        job: *mut JobOpaque,
+        out: *mut HitRaw,
+        capacity: u32,
+        total: *mut u32,
+    ) -> i32;
     fn spm_job_read_dump(job: *mut JobOpaque, out: *mut u8, len: u64) -> i32;
     fn spm_job_read_buffer(job: *mut JobOpaque, which: i32, out: *mut u8, len: u64) -> i32;
     fn spm_job_info(job: *const JobOpaque, out: *mut JobInfoRaw) -> i32;
@@ -255,7 +259,12 @@ impl JobPtr {
         }
     }
 
-    pub(crate) fn set_attempt(&mut self, a_noise_seed: &[u8; 32], bound: &[u8; 32], prefix: &[u8]) -> i32 {
+    pub(crate) fn set_attempt(
+        &mut self,
+        a_noise_seed: &[u8; 32],
+        bound: &[u8; 32],
+        prefix: &[u8],
+    ) -> i32 {
         let Ok(len) = u32::try_from(prefix.len()) else {
             return -1;
         };
@@ -266,7 +275,11 @@ impl JobPtr {
                 self.0.as_ptr(),
                 a_noise_seed.as_ptr(),
                 bound.as_ptr(),
-                if prefix.is_empty() { ptr::null() } else { prefix.as_ptr() },
+                if prefix.is_empty() {
+                    ptr::null()
+                } else {
+                    prefix.as_ptr()
+                },
                 len,
             )
         }

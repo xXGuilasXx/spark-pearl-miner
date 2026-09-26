@@ -101,23 +101,43 @@ fn diagnose(case: &Case, job: &mut Job, got: &[TileResult], idx: usize) -> Strin
     let a = job.read_buffer(Buffer::ANoised).expect("A'");
     let bt = job.read_buffer(Buffer::BtNoised).expect("B'ᵀ");
     match first_diff(&case.noised_a, &a) {
-        Some(i) => msg += &format!("\n  A' differs first at entry {i} (row {}, col {})", i / case.k as usize, i % case.k as usize),
+        Some(i) => {
+            msg += &format!(
+                "\n  A' differs first at entry {i} (row {}, col {})",
+                i / case.k as usize,
+                i % case.k as usize
+            )
+        }
         None => msg += "\n  A' equal",
     }
     match first_diff(&case.noised_bt, &bt) {
-        Some(i) => msg += &format!("\n  B'ᵀ differs first at entry {i} (row {}, col {})", i / case.k as usize, i % case.k as usize),
+        Some(i) => {
+            msg += &format!(
+                "\n  B'ᵀ differs first at entry {i} (row {}, col {})",
+                i / case.k as usize,
+                i % case.k as usize
+            )
+        }
         None => msg += "\n  B'ᵀ equal",
     }
     msg
 }
 
 fn run_case(case: &Case) -> Result<(), String> {
-    let mut cfg = JobConfig::new(case.m, case.n, case.k, Operands::Generated { seed: case.seed }, case.b_noise_seed);
+    let mut cfg = JobConfig::new(
+        case.m,
+        case.n,
+        case.k,
+        Operands::Generated { seed: case.seed },
+        case.b_noise_seed,
+    );
     cfg.dump = true;
     let mut job = Job::new(&cfg).map_err(|e| format!("{}: create: {e}", case.label))?;
     job.set_attempt(&case.a_noise_seed, &le_bytes(case.bound))
         .map_err(|e| format!("{}: attempt: {e}", case.label))?;
-    let stats = job.run_attempt().map_err(|e| format!("{}: run: {e}", case.label))?;
+    let stats = job
+        .run_attempt()
+        .map_err(|e| format!("{}: run: {e}", case.label))?;
     if !stats.completed {
         return Err(format!("{}: attempt did not complete", case.label));
     }
@@ -129,7 +149,12 @@ fn run_case(case: &Case) -> Result<(), String> {
         .collect();
     if let Some(idx) = first_mismatch(&case.expected, &got) {
         if idx >= got.len() || idx >= case.expected.len() {
-            return Err(format!("{}: {} tiles expected, {} dumped", case.label, case.expected.len(), got.len()));
+            return Err(format!(
+                "{}: {} tiles expected, {} dumped",
+                case.label,
+                case.expected.len(),
+                got.len()
+            ));
         }
         return Err(diagnose(case, &mut job, &got, idx));
     }
@@ -137,7 +162,9 @@ fn run_case(case: &Case) -> Result<(), String> {
         return Err(format!("{}: tiles_digest differs", case.label));
     }
     // The hit ring holds exactly the tiles whose digest is <= bound.
-    let (mut hits, total) = job.hits().map_err(|e| format!("{}: hits: {e}", case.label))?;
+    let (mut hits, total) = job
+        .hits()
+        .map_err(|e| format!("{}: hits: {e}", case.label))?;
     let mut want: Vec<(u32, u32, [u8; 32])> = case
         .expected
         .iter()
@@ -145,10 +172,18 @@ fn run_case(case: &Case) -> Result<(), String> {
         .map(|t| (t.t_rows, t.t_cols, t.digest))
         .collect();
     hits.sort_by_key(|h| (h.t_rows, h.t_cols));
-    let got_hits: Vec<(u32, u32, [u8; 32])> = hits.iter().map(|h| (h.t_rows, h.t_cols, h.digest)).collect();
+    let got_hits: Vec<(u32, u32, [u8; 32])> = hits
+        .iter()
+        .map(|h| (h.t_rows, h.t_cols, h.digest))
+        .collect();
     want.sort_by_key(|h| (h.0, h.1));
     if total as usize != want.len() || got_hits != want {
-        return Err(format!("{}: {} GPU hits, {} expected", case.label, total, want.len()));
+        return Err(format!(
+            "{}: {} GPU hits, {} expected",
+            case.label,
+            total,
+            want.len()
+        ));
     }
     Ok(())
 }
@@ -214,14 +249,20 @@ fn g0_odd_shapes_host_operands_and_prefix() {
         p.bt[7] = 64;
         p.bt[n * k - 2] = -64;
         let full = p.a.clone();
-        let prefix: Vec<i8> = (0..prefix_len).map(|i| ((i * 37 + 11) % 129) as i8 - 64).collect();
+        let prefix: Vec<i8> = (0..prefix_len)
+            .map(|i| ((i * 37 + 11) % 129) as i8 - 64)
+            .collect();
         let base = Problem::from_matrices(p.header, m, n, k, full, p.bt.clone()).unwrap();
         let mut patched = base.clone();
         patched.a[..prefix_len].copy_from_slice(&prefix);
         // B side comes from the unpatched job; the A side (and so a_noise_seed) from the patched A.
         let b_seed = Oracle::new(&base).unwrap().commitment().b_noise_seed;
         let oracle = Oracle::new(&patched).unwrap();
-        assert_eq!(oracle.commitment().b_noise_seed, b_seed, "the prefix only touches A");
+        assert_eq!(
+            oracle.commitment().b_noise_seed,
+            b_seed,
+            "the prefix only touches A"
+        );
         odd.push(Odd {
             expected: oracle.transcripts().unwrap(),
             a_seed: oracle.commitment().a_noise_seed,
@@ -233,14 +274,27 @@ fn g0_odd_shapes_host_operands_and_prefix() {
     let mut failures = Vec::new();
     for o in &odd {
         let (m, n, k) = (o.p.m as u32, o.p.n as u32, o.p.k as u32);
-        let mut cfg = JobConfig::new(m, n, k, Operands::Host { a: &o.p.a, bt: &o.p.bt }, o.b_seed);
+        let mut cfg = JobConfig::new(
+            m,
+            n,
+            k,
+            Operands::Host {
+                a: &o.p.a,
+                bt: &o.p.bt,
+            },
+            o.b_seed,
+        );
         cfg.dump = true;
         let mut job = Job::new(&cfg).expect("job");
-        job.set_attempt_with_prefix(&o.a_seed, &[0u8; 32], &o.prefix).expect("attempt");
+        job.set_attempt_with_prefix(&o.a_seed, &[0u8; 32], &o.prefix)
+            .expect("attempt");
         assert!(job.run_attempt().expect("run").completed);
         let got: Vec<TileResult> = job.dump_records().unwrap().iter().map(to_tile).collect();
         if let Some(i) = first_mismatch(&o.expected, &got) {
-            failures.push(format!("m={m} n={n} k={k} prefix={}: first mismatch at tile {i}", o.prefix.len()));
+            failures.push(format!(
+                "m={m} n={n} k={k} prefix={}: first mismatch at tile {i}",
+                o.prefix.len()
+            ));
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
@@ -277,19 +331,40 @@ fn g0_forced_hits_verify() {
     let easy = spm_pow::extract_difficulty_bound(EASY_NBITS, &problems[0].config);
     let mut verified = 0usize;
     for (p, prep) in problems.iter().zip(&preps) {
-        let cfg = JobConfig::new(256, 256, 2048, Operands::Generated { seed: p.seed.unwrap() }, prep.b_seed);
+        let cfg = JobConfig::new(
+            256,
+            256,
+            2048,
+            Operands::Generated {
+                seed: p.seed.unwrap(),
+            },
+            prep.b_seed,
+        );
         let mut job = Job::new(&cfg).expect("job");
 
         // 1. Bound = the smallest digest: exactly that tile hits.
         let min = prep.tiles.iter().min_by_key(|t| t.digest_value()).unwrap();
-        job.set_attempt(&prep.a_seed, &le_bytes(min.digest_value())).unwrap();
+        job.set_attempt(&prep.a_seed, &le_bytes(min.digest_value()))
+            .unwrap();
         assert!(job.run_attempt().unwrap().completed);
         let (hits, total) = job.hits().unwrap();
-        let ties = prep.tiles.iter().filter(|t| t.digest_value() <= min.digest_value()).count();
+        let ties = prep
+            .tiles
+            .iter()
+            .filter(|t| t.digest_value() <= min.digest_value())
+            .count();
         assert_eq!(total as usize, ties);
-        let hit = hits.iter().find(|h| (h.t_rows, h.t_cols) == (min.t_rows, min.t_cols)).expect("min tile hit");
+        let hit = hits
+            .iter()
+            .find(|h| (h.t_rows, h.t_cols) == (min.t_rows, min.t_cols))
+            .expect("min tile hit");
         assert_eq!(hit.digest, min.digest);
-        let tile = TileResult { t_rows: hit.t_rows, t_cols: hit.t_cols, transcript: min.transcript, digest: hit.digest };
+        let tile = TileResult {
+            t_rows: hit.t_rows,
+            t_cols: hit.t_cols,
+            transcript: min.transcript,
+            digest: hit.digest,
+        };
         let proof = build_plain_proof(p, &tile).unwrap();
         verify_v3(&hdr, &proof, Some(EASY_NBITS)).expect("forced hit verifies");
         verified += 1;
@@ -298,16 +373,27 @@ fn g0_forced_hits_verify() {
         job.set_attempt(&prep.a_seed, &le_bytes(easy)).unwrap();
         assert!(job.run_attempt().unwrap().completed);
         let (hits, total) = job.hits().unwrap();
-        assert_eq!(total as usize, prep.tiles.iter().filter(|t| t.meets(easy)).count());
+        assert_eq!(
+            total as usize,
+            prep.tiles.iter().filter(|t| t.meets(easy)).count()
+        );
         for h in &hits {
-            let t = prep.tiles.iter().find(|t| (t.t_rows, t.t_cols) == (h.t_rows, h.t_cols)).unwrap();
+            let t = prep
+                .tiles
+                .iter()
+                .find(|t| (t.t_rows, t.t_cols) == (h.t_rows, h.t_cols))
+                .unwrap();
             assert_eq!(t.digest, h.digest);
             let proof = build_plain_proof(p, t).unwrap();
             verify_v3(&hdr, &proof, Some(EASY_NBITS)).expect("hit verifies");
             verified += 1;
         }
         // 3. A tampered proof of a GPU hit fails.
-        let t = prep.tiles.iter().find(|t| (t.t_rows, t.t_cols) == (hits[0].t_rows, hits[0].t_cols)).unwrap();
+        let t = prep
+            .tiles
+            .iter()
+            .find(|t| (t.t_rows, t.t_cols) == (hits[0].t_rows, hits[0].t_cols))
+            .unwrap();
         let mut bad = build_plain_proof(p, t).unwrap();
         bad.a.proof.leaf_data[0][3] ^= 1;
         assert!(verify_v3(&hdr, &bad, Some(EASY_NBITS)).is_err());
@@ -328,7 +414,11 @@ fn g0_abort_is_prompt() {
     cfg.chunk_tiles = Some(u32::MAX); // one chunk for the whole attempt (~14 ms)
     let mut job = Job::new(&cfg).expect("job");
     job.set_attempt(&[4u8; 32], &[0u8; 32]).unwrap();
-    assert_eq!(job.run_chunk().unwrap().status, ChunkStatus::Done, "warm-up (module load)");
+    assert_eq!(
+        job.run_chunk().unwrap().status,
+        ChunkStatus::Done,
+        "warm-up (module load)"
+    );
     job.set_attempt(&[5u8; 32], &[0u8; 32]).unwrap();
     let full = job.run_chunk().unwrap();
     assert_eq!(full.status, ChunkStatus::Done);
@@ -345,11 +435,23 @@ fn g0_abort_is_prompt() {
     let chunk = job.run_chunk().unwrap();
     let returned = Instant::now();
     let set_at = setter.join().unwrap();
-    assert_eq!(chunk.status, ChunkStatus::Aborted, "chunk of {:?} not aborted after {delay:?}", full.kernel);
+    assert_eq!(
+        chunk.status,
+        ChunkStatus::Aborted,
+        "chunk of {:?} not aborted after {delay:?}",
+        full.kernel
+    );
     let latency = returned.saturating_duration_since(set_at);
-    eprintln!("full chunk {:?}, abort set after {delay:?}, run_chunk returned {latency:?} later", full.kernel);
+    eprintln!(
+        "full chunk {:?}, abort set after {delay:?}, run_chunk returned {latency:?} later",
+        full.kernel
+    );
     assert!(latency < Duration::from_millis(1), "abort took {latency:?}");
-    assert_eq!(job.run_chunk().unwrap().status, ChunkStatus::Aborted, "flag still set");
+    assert_eq!(
+        job.run_chunk().unwrap().status,
+        ChunkStatus::Aborted,
+        "flag still set"
+    );
     job.abort_handle().clear();
     assert_eq!(job.run_chunk().unwrap().status, ChunkStatus::Done);
 }

@@ -1,6 +1,6 @@
 // Thin inline-PTX wrappers used by the kernels: shared-memory addresses, mbarrier, TMA
-// (cp.async.bulk.tensor), ldmatrix. Everything here is valid on sm_90+ and was checked on the GB10
-// (sm_121a, CUDA 13.0): see cuda/probes/tma_swizzle.cu for the TMA layout probe.
+// (cp.async.bulk.tensor), setmaxnreg, ldmatrix. Checked on the GB10 (sm_121a, CUDA 13.0); the TMA
+// swizzle layout the ldmatrix addressing relies on is verified by cuda/probes/tma_swizzle.cu.
 #pragma once
 #include <cuda.h>
 #include <stdint.h>
@@ -51,22 +51,17 @@ __device__ __forceinline__ void mbar_wait(uint32_t bar, uint32_t parity) {
 
 /// 2-D tiled bulk tensor load global -> shared, completing `bar`'s transaction count.
 /// `c0` is the innermost (contiguous) coordinate, `c1` the row.
+///
+/// The destination is spelled `.shared::cta` (the sm_120-family form). With `.shared::cluster`,
+/// ptxas for sm_121a guards the instruction with a runtime check and a call to
+/// `__cuda_syscall_cp_async_bulk_tensor_2d_tile_unicast`, and that extern call makes it ignore
+/// setmaxnreg for the whole kernel (warning C7506).
 __device__ __forceinline__ void tma_load_2d(uint32_t dst, const CUtensorMap* map, int32_t c0,
                                             int32_t c1, uint32_t bar) {
   asm volatile(
-      "cp.async.bulk.tensor.2d.shared::cluster.global.mbarrier::complete_tx::bytes"
+      "cp.async.bulk.tensor.2d.shared::cta.global.mbarrier::complete_tx::bytes"
       " [%0], [%1, {%2, %3}], [%4];" ::"r"(dst),
       "l"(reinterpret_cast<uint64_t>(map)), "r"(c0), "r"(c1), "r"(bar)
-      : "memory");
-}
-
-/// Same as tma_load_2d with an L2 cache-eviction policy (from createpolicy).
-__device__ __forceinline__ void tma_load_2d_hint(uint32_t dst, const CUtensorMap* map, int32_t c0,
-                                                 int32_t c1, uint32_t bar, uint64_t policy) {
-  asm volatile(
-      "cp.async.bulk.tensor.2d.shared::cluster.global.mbarrier::complete_tx::bytes.L2::cache_hint"
-      " [%0], [%1, {%2, %3}], [%4], %5;" ::"r"(dst),
-      "l"(reinterpret_cast<uint64_t>(map)), "r"(c0), "r"(c1), "r"(bar), "l"(policy)
       : "memory");
 }
 
@@ -74,16 +69,18 @@ __device__ __forceinline__ void tma_prefetch_descriptor(const CUtensorMap* map) 
   asm volatile("prefetch.tensormap [%0];" ::"l"(reinterpret_cast<uint64_t>(map)) : "memory");
 }
 
-__device__ __forceinline__ uint64_t l2_policy_evict_last() {
-  uint64_t policy;
-  asm volatile("createpolicy.fractional.L2::evict_last.b64 %0, 1.0;" : "=l"(policy));
-  return policy;
+// ---- register reallocation between warpgroups ----------------------------------------------
+
+/// Lowers this warpgroup's register budget to kRegs per thread (all 4 warps must execute it).
+template <uint32_t kRegs>
+__device__ __forceinline__ void setmaxnreg_dec() {
+  asm volatile("setmaxnreg.dec.sync.aligned.u32 %0;" ::"n"(kRegs) : "memory");
 }
 
-__device__ __forceinline__ uint64_t l2_policy_evict_first() {
-  uint64_t policy;
-  asm volatile("createpolicy.fractional.L2::evict_first.b64 %0, 1.0;" : "=l"(policy));
-  return policy;
+/// Raises this warpgroup's register budget to kRegs per thread (waits for released registers).
+template <uint32_t kRegs>
+__device__ __forceinline__ void setmaxnreg_inc() {
+  asm volatile("setmaxnreg.inc.sync.aligned.u32 %0;" ::"n"(kRegs) : "memory");
 }
 
 // ---- ldmatrix -----------------------------------------------------------------------------
