@@ -94,7 +94,7 @@ const dashboard = {
         h('div', { class: 'card' }, h('div', { class: 'label' }, t('dash.state')), h('div', { class: 'value' }, chip(s.state)),
           h('div', { class: 'sub' }, s.pause_reason ? (tt(`pause.${s.pause_reason}`) || s.pause_reason) : managerText(s))),
         card(t('dash.pool'), active ? t('pools.slot', { n: active.index }) : '—', active ? `${active.name ? `${active.name} · ` : ''}${active.host}:${active.port}` : t('dash.no_pool')),
-        card(t('dash.hashrate'), fmtRate(s.hashrate_tmacs), s.worker && s.worker.simulated ? t('dash.hashrate.sim') : t('dash.hashrate.sub')),
+        card(t('dash.hashrate'), fmtRate(s.hashrate_tmacs_60s != null ? s.hashrate_tmacs_60s : s.hashrate_tmacs), s.worker && s.worker.simulated ? t('dash.hashrate.sim') : t('dash.hashrate.sub')),
         card(t('dash.shares'), `${sh.accepted || 0} / ${sh.rejected || 0}`, t('dash.shares.sub', { stale: sh.stale || 0, discarded: sh.discarded || 0 })),
         h('div', { class: 'card' }, h('div', { class: 'label' }, t('dash.worker')), h('div', { class: 'value' }, chip(s.worker ? s.worker.state : 'absent', 'worker')),
           h('div', { class: 'sub' }, s.worker && s.worker.device ? s.worker.device : t(`launch.${s.worker ? s.worker.launch : 'spawn'}`))),
