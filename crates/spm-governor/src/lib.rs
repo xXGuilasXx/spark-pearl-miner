@@ -14,7 +14,8 @@
 //! * [`marker`]: the `running.marker` file. A marker left by the previous run means it did not
 //!   stop cleanly (possibly a power-off), so the next run steps the profile down one notch.
 //! * [`ClockCapDetector`]: tells from the telemetry whether the clock cap is in force.
-//! * [`thermal`]: the `acpitz` reader; `nvml` (cargo feature `nvml`): the NVML sampler.
+//! * [`thermal`]: the `acpitz` reader; `nvml` (cargo feature `nvml`): the NVML sampler;
+//!   [`smi`]: the `nvidia-smi` query the daemon falls back to when NVML cannot be loaded.
 //! * [`sim`]: a first-order power/thermal plant used by the tests and for dry runs.
 //!
 //! Everything except the two readers and the marker file helpers is pure: no threads, no clock,
@@ -31,6 +32,7 @@ mod governor;
 pub mod marker;
 pub mod profile;
 pub mod sim;
+pub mod smi;
 pub mod thermal;
 
 #[cfg(feature = "nvml")]

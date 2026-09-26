@@ -67,6 +67,8 @@ spm-fee = { path = "crates/spm-fee" }
 spm-pool = { path = "crates/spm-pool" }
 spm-api = { path = "crates/spm-api" }
 spm-mockpool = { path = "crates/spm-mockpool" }
+spm-governor = { path = "crates/spm-governor" }
+spm-coexist = { path = "crates/spm-coexist" }
 
 [profile.release]
 codegen-units = 1

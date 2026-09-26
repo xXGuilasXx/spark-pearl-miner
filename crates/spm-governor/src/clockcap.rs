@@ -24,6 +24,17 @@ pub enum CapStatus {
     Uncapped { max_seen_mhz: u32 },
 }
 
+impl CapStatus {
+    /// Stable identifier for logs and the API.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            CapStatus::Unknown => "unknown",
+            CapStatus::Capped { .. } => "capped",
+            CapStatus::Uncapped { .. } => "uncapped",
+        }
+    }
+}
+
 /// Accumulates evidence about the cap.
 #[derive(Debug, Clone)]
 pub struct ClockCapDetector {
@@ -45,6 +56,11 @@ impl ClockCapDetector {
             last_loaded_ts: None,
             exceeded: false,
         }
+    }
+
+    /// The cap this detector checks against, in MHz.
+    pub fn cap_mhz(&self) -> u32 {
+        self.cap_mhz
     }
 
     /// Feeds one sample with the duty in force while it was taken.

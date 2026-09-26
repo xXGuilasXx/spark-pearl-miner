@@ -6,10 +6,15 @@
 //! CUDA worker lands (M5). The reference miner can only hit the header's own nbits, so it finds
 //! shares at trivial difficulty (spm-mockpool) and practically never on a real pool.
 //! It never touches the GPU.
+//!
+//! It speaks the pause/resume handshake of `spm_coexist::handshake`: IPC `Pause`/`Resume` and
+//! SIGUSR1/SIGUSR2 drive one state machine (the last command wins) and every acknowledgement is
+//! written to `worker.ack` next to the socket. Having no GPU work in flight, it is quiescent as
+//! soon as a pause arrives.
 
 use std::io;
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
@@ -17,6 +22,7 @@ use std::time::{Duration, Instant};
 
 use rand::rngs::StdRng;
 use rand::SeedableRng;
+use spm_coexist::handshake::{write_ack_file, Signal, WorkerHandshake, ACK_FILE};
 use spm_ipc::{read_frame, write_frame, FaultKind, IpcError, ToDaemon, ToWorker, WorkUnit, IPC_VERSION};
 use spm_pow::{check_cert_version_eligible, mining_config, IncompleteBlockHeader, SeedDerivation};
 use spm_work::Shape;
@@ -47,6 +53,55 @@ struct Shared {
     running: bool,
     duty: u8,
     exit: bool,
+    hs: WorkerHandshake,
+}
+
+type State = Arc<(Mutex<Shared>, Condvar)>;
+
+/// Feeds a pause (SIGUSR1 / IPC `Pause`) or resume (SIGUSR2 / IPC `Resume`) to the handshake and
+/// publishes the acknowledgement.
+fn command(s: &mut Shared, sig: Signal, ack_path: &Path) {
+    let mut ack = s.hs.on_signal(sig);
+    if sig == Signal::Usr1 {
+        // No GPU work is ever in flight here: quiescent at once.
+        ack = ack.or_else(|| s.hs.on_quiescent());
+    }
+    s.running = s.hs.may_issue_gpu_work();
+    if let Some(a) = ack {
+        if let Err(e) = write_ack_file(ack_path, &a) {
+            tracing::warn!(error = %e, path = %ack_path.display(), "could not write the ACK");
+        }
+    }
+}
+
+/// SIGUSR1/SIGUSR2 for controllers outside the daemon. The handlers are installed before
+/// `Ready`, so no signal can hit the default action (terminate) once the daemon knows us.
+fn listen_for_signals(state: State, ack_path: PathBuf) -> io::Result<()> {
+    use tokio::signal::unix::{signal, SignalKind};
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+    let (mut usr1, mut usr2) = {
+        let _guard = rt.enter();
+        (signal(SignalKind::user_defined1())?, signal(SignalKind::user_defined2())?)
+    };
+    thread::spawn(move || {
+        rt.block_on(async move {
+            loop {
+                let sig = tokio::select! {
+                    Some(()) = usr1.recv() => Signal::Usr1,
+                    Some(()) = usr2.recv() => Signal::Usr2,
+                    else => return,
+                };
+                let (lock, cv) = &*state;
+                let Ok(mut s) = lock.lock() else { return };
+                if s.exit {
+                    return;
+                }
+                command(&mut s, sig, &ack_path);
+                cv.notify_all();
+            }
+        });
+    });
+    Ok(())
 }
 
 struct Counters {
@@ -129,10 +184,9 @@ fn miner_loop(state: Arc<(Mutex<Shared>, Condvar)>, w: Writer, c: Arc<Counters>,
             if s.exit {
                 return;
             }
-            let pause = interval.mul_f64(100.0 / f64::from(s.duty.clamp(1, 100)));
-            (s.job.clone(), pause)
+            s.job.clone()
         };
-        let (Some(wu), pause) = wu else { continue };
+        let Some(wu) = wu else { continue };
         if wu.shape.m > SIM_MAX_DIM || wu.shape.n > SIM_MAX_DIM {
             let _ = send(&w, &ToDaemon::Fault {
                 kind: FaultKind::Other,
@@ -173,12 +227,23 @@ fn miner_loop(state: Arc<(Mutex<Shared>, Condvar)>, w: Writer, c: Arc<Counters>,
                 let _ = send(&w, &ToDaemon::Fault { kind: FaultKind::VerifyFailed, msg: e });
             }
         }
-        let deadline = Instant::now() + pause;
-        while Instant::now() < deadline {
-            if stop.load(Ordering::Relaxed) || state.0.lock().map(|s| s.exit).unwrap_or(true) {
+        // The pause stretches with the duty (100 % → `interval`, 10 % → 10 × `interval`) and
+        // follows a SetDuty that arrives meanwhile.
+        let since = Instant::now();
+        loop {
+            let duty = match state.0.lock() {
+                Ok(s) if !s.exit => s.duty.clamp(1, 100),
+                _ => return,
+            };
+            if stop.load(Ordering::Relaxed) {
                 return;
             }
-            thread::sleep(Duration::from_millis(20).min(pause));
+            let pause = interval.mul_f64(100.0 / f64::from(duty));
+            let left = pause.saturating_sub(since.elapsed());
+            if left.is_zero() {
+                break;
+            }
+            thread::sleep(left.min(Duration::from_millis(20)));
         }
     }
 }
@@ -202,6 +267,11 @@ pub fn run(opts: SimOptions) -> anyhow::Result<()> {
             anyhow::bail!("protocol error: expected Hello");
         }
     }
+    let ack_path = opts.sock.with_file_name(ACK_FILE);
+    let state: State = Arc::new((Mutex::new(Shared { duty: 100, ..Shared::default() }), Condvar::new()));
+    if let Err(e) = listen_for_signals(state.clone(), ack_path.clone()) {
+        tracing::warn!(error = %e, "SIGUSR1/SIGUSR2 handlers not installed");
+    }
     let kat_ok = known_answer_test();
     send(&w, &ToDaemon::Ready { kat_ok, device: SIM_DEVICE.to_string() })?;
     if !kat_ok {
@@ -209,7 +279,6 @@ pub fn run(opts: SimOptions) -> anyhow::Result<()> {
         anyhow::bail!("known-answer test failed");
     }
 
-    let state = Arc::new((Mutex::new(Shared { duty: 100, ..Shared::default() }), Condvar::new()));
     let counters = Arc::new(Counters { macs: AtomicU64::new(0), attempts: AtomicU64::new(0), tiles: AtomicU64::new(0) });
     let stop = Arc::new(AtomicBool::new(false));
 
@@ -256,8 +325,8 @@ pub fn run(opts: SimOptions) -> anyhow::Result<()> {
         match msg {
             ToWorker::Hello { .. } => {}
             ToWorker::SetJob { wu } => s.job = Some(*wu),
-            ToWorker::Pause => s.running = false,
-            ToWorker::Resume => s.running = true,
+            ToWorker::Pause => command(&mut s, Signal::Usr1, &ack_path),
+            ToWorker::Resume => command(&mut s, Signal::Usr2, &ack_path),
             ToWorker::SetDuty { pct } => s.duty = pct.clamp(1, 100),
             ToWorker::Release | ToWorker::Shutdown => break Ok(()),
         }

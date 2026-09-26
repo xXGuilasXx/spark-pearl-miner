@@ -17,8 +17,16 @@ path = "src/lib.rs"
 name = "spark-pearl-miner"
 path = "src/main.rs"
 
+[features]
+default = ["nvml"]
+# Power-governor telemetry through NVML, loaded at runtime (read-only, never a CUDA context).
+# Without it, or when NVML cannot be loaded, the daemon falls back to `nvidia-smi --query-gpu`.
+nvml = ["spm-governor/nvml"]
+
 [dependencies]
 spm-api.workspace = true
+spm-governor.workspace = true
+spm-coexist.workspace = true
 spm-fee.workspace = true
 spm-pool.workspace = true
 spm-proto.workspace = true

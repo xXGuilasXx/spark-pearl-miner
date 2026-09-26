@@ -19,6 +19,9 @@
 //!
 //! Both sides are pure state machines; time comes from the caller.
 
+use std::fs;
+use std::io;
+use std::path::Path;
 use std::time::Duration;
 
 /// Name of the ACK file inside `$XDG_RUNTIME_DIR/spark-pearl-miner/`.
@@ -89,6 +92,24 @@ impl Ack {
             return None;
         }
         Some(Ack { state, seq })
+    }
+}
+
+/// Writes an ACK atomically (temporary file in the same directory, then rename), so a reader
+/// never sees half a line. The worker calls this after every acknowledged command.
+pub fn write_ack_file(path: &Path, ack: &Ack) -> io::Result<()> {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or(ACK_FILE);
+    let tmp = path.with_file_name(format!(".{name}.tmp{}", std::process::id()));
+    fs::write(&tmp, ack.encode())?;
+    fs::rename(&tmp, path)
+}
+
+/// Reads the ACK file. `Ok(None)` when it does not exist or does not hold a valid ACK line.
+pub fn read_ack_file(path: &Path) -> io::Result<Option<Ack>> {
+    match fs::read_to_string(path) {
+        Ok(text) => Ok(text.lines().next().and_then(Ack::parse)),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
     }
 }
 

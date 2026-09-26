@@ -6,12 +6,14 @@
 #![forbid(unsafe_code)]
 
 pub mod arbiter;
+pub mod coexist;
 pub mod configsvc;
 pub mod control;
 pub mod daemon;
 pub mod feetest;
 pub mod logring;
 pub mod paths;
+pub mod power;
 pub mod smi;
 pub mod state;
 pub mod supervisor;

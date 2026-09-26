@@ -48,7 +48,7 @@ async fn next_event(rx: &mut UnboundedReceiver<WorkerEvent>, timeout: Duration) 
 async fn silent_worker_trips_the_watchdog() {
     let path = sock("wd");
     let (cmd, mut ev, _st) = Supervisor::start(path.clone(), PathBuf::from("/bin/false"), LaunchMode::External, false, 1000).await.unwrap();
-    cmd.send(SupCmd::Desire { job: Some(wu()), run: true }).unwrap();
+    cmd.send(SupCmd::Desire { job: Some(wu()), run: true, keep_context: false }).unwrap();
     let p = path.clone();
     let mut s = tokio::task::spawn_blocking(move || attach(&p)).await.unwrap();
     assert!(matches!(next_event(&mut ev, Duration::from_secs(5)).await, WorkerEvent::Ready { .. }));
@@ -81,7 +81,7 @@ async fn silent_worker_trips_the_watchdog() {
 async fn three_failures_in_ten_minutes_raise_the_hardware_fault_alert() {
     let path = sock("hw");
     let (cmd, mut ev, st) = Supervisor::start(path.clone(), PathBuf::from("/bin/false"), LaunchMode::External, false, 1000).await.unwrap();
-    cmd.send(SupCmd::Desire { job: Some(wu()), run: true }).unwrap();
+    cmd.send(SupCmd::Desire { job: Some(wu()), run: true, keep_context: false }).unwrap();
     let mut failures = 0;
     for _ in 0..3 {
         let p = path.clone();

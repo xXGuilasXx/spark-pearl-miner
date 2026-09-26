@@ -278,7 +278,7 @@
   "power.max.phrase": "EU ACEITO O RISCO",
   "power.max.type": "Digite \"{phrase}\" para usar o Máximo",
   "power.max.warn": "O Máximo pode provocar o desligamento abrupto do DGX Spark sob carga contínua. Trabalho não salvo nesta máquina pode ser perdido.",
-  "power.governor_note": "O controlador de energia que aplica estes perfis chega numa versão futura (M11); a escolha já fica salva.",
+  "power.governor_note": "O controlador de energia do daemon aplica o perfil: leva a GPU ao alvo e pausa a mineração acima do corte. A mudança vale na hora.",
   "power.clockcap": "Limite de clock da GPU (opcional)",
   "power.clockcap.text": "Um limite de 2200 MHz aplicado no boot torna picos de energia bem menos prováveis. Precisa de sudo uma vez; este comando só imprime os passos:",
 
@@ -293,7 +293,7 @@
   "coex.yield-release.desc": "Pausa e libera a memória da GPU enquanto outro programa usa a GPU.",
   "coex.exclusive": "Exclusivo",
   "coex.exclusive.desc": "A GPU fica dedicada à mineração.",
-  "coex.note": "A detecção dos modos Ceder e Ceder e liberar chega com o controlador de energia (M11); até lá eles se comportam como Exclusivo.",
+  "coex.note": "Ceder e Ceder e liberar acompanham as métricas do vLLM (http://127.0.0.1:8001/metrics por padrão) e saem da frente enquanto ele tem requisições; endereço e tempos ficam no config.toml ([coexistence]).",
 
   "sim.enable": "Simulação na CPU no lugar do worker de GPU (só para testes)",
   "sim.interval": "Pausa entre tentativas simuladas (ms)",

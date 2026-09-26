@@ -57,6 +57,18 @@ pub enum TripReason {
     Fault(FaultSignature),
 }
 
+impl TripReason {
+    /// Stable identifier for logs and the API.
+    pub const fn code(&self) -> &'static str {
+        match self {
+            TripReason::OverPower { .. } => "over_power",
+            TripReason::GpuOverTemp { .. } => "gpu_over_temp",
+            TripReason::AcpitzOverTemp { .. } => "acpitz_over_temp",
+            TripReason::Fault(_) => "fault",
+        }
+    }
+}
+
 /// A trip in force.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Trip {
