@@ -49,7 +49,7 @@ typedef int32_t spm_status_t;
 
 #define SPM_CHUNK_MORE 1          // chunk done, more chunks remain in this attempt
 #define SPM_CHUNK_DONE 2          // last chunk done: hits (and dump) are complete
-#define SPM_CHUNK_ABORTED 3       // the abort flag was seen between chunks; running again resumes the attempt
+#define SPM_CHUNK_ABORTED 3       // the abort flag was seen: the attempt stopped early and is void
 
 // Job flags.
 #define SPM_JOB_DUMP 1u           // debug dump: every tile writes its 104-byte record
@@ -124,8 +124,11 @@ spm_status_t spm_job_set_attempt(spm_job_t* job, const uint8_t* a_noise_seed, co
 // Runs the next chunk of the attempt synchronously; *status = SPM_CHUNK_MORE or SPM_CHUNK_DONE.
 spm_status_t spm_job_run_chunk(spm_job_t* job, int32_t* status);
 
-// Runs the remaining chunks, reading *abort_flag (atomically, relaxed) before each chunk; a
-// non-zero flag stops the attempt with *status = SPM_CHUNK_ABORTED. abort_flag may be NULL.
+// Runs the remaining chunks (two in flight), reading *abort_flag (atomically, relaxed) before each
+// chunk and every few tens of microseconds while waiting. A non-zero flag raises the device abort
+// word, so the CTAs in flight that have not started their MMAs leave at once: the call returns
+// within about one CTA tile time with *status = SPM_CHUNK_ABORTED, and the attempt is void (its
+// hits so far stay readable; spm_job_set_attempt starts the next attempt). abort_flag may be NULL.
 spm_status_t spm_job_run_attempt(spm_job_t* job, const uint32_t* abort_flag, int32_t* status);
 
 // Copies up to `cap` hits of the current attempt to `out` (ring order, not tile order) and sets

@@ -584,10 +584,13 @@ fn host_matrices_edges_chunks_and_abort() {
     assert_eq!(info.chunks, info.cta_tiles);
     job.set_attempt(&c.a_noise_seed, None).expect("attempt");
 
-    // Abort before anything runs: nothing happens, the cursor stays.
+    // An abort voids the attempt: running again needs a new set_attempt.
     let abort = AtomicU32::new(1);
     assert_eq!(job.run_attempt(&abort).expect("run"), ChunkStatus::Aborted);
-    // One chunk by hand, then resume the rest.
+    assert_eq!(job.run_chunk().unwrap_err().kind, ErrorKind::State);
+    job.set_attempt(&c.a_noise_seed, None)
+        .expect("attempt again");
+    // One chunk by hand, then the rest.
     assert_eq!(job.run_chunk().expect("chunk"), ChunkStatus::More);
     abort.store(0, Ordering::Relaxed);
     assert_eq!(job.run_attempt(&abort).expect("run"), ChunkStatus::Done);
@@ -718,4 +721,94 @@ fn hit_ring_overflow_is_counted() {
             .expect("a real tile");
         assert_eq!(t.digest, h.digest);
     }
+}
+
+/// An abort raised from another thread in the middle of an attempt stops it within about one CTA
+/// tile (the device abort word makes the CTAs in flight leave), voids it, and leaves the job
+/// clean: the next attempt gives exactly the hits of an undisturbed run.
+#[test]
+fn mid_attempt_abort_is_fast_and_leaves_the_job_clean() {
+    if !enabled() {
+        return;
+    }
+    let (m, n, k) = (16384u32, 16384u32, 4096u32);
+    let mut bound = [0u8; 32];
+    bound[31] = 0x02; // ~1/128 of the tiles
+    let mut job = Job::new(&JobParams {
+        m,
+        n,
+        k,
+        config52: config52_for(k),
+        matrices: Matrices::Generated { seed: 0xab07 },
+        b_noise_seed: [0x33; 32],
+        bound,
+        dump: false,
+        chunk_ctas: None,
+        hit_capacity: Some(1 << 15),
+    })
+    .expect("job");
+    let seed = [0x5c; 32];
+    let sorted_hits = |job: &mut Job| {
+        let h = job.hits().expect("hits");
+        assert_eq!(h.dropped(), 0);
+        let mut v: Vec<_> = h
+            .hits
+            .iter()
+            .map(|h| (h.t_rows, h.t_cols, h.digest))
+            .collect();
+        v.sort_unstable();
+        v
+    };
+    job.set_attempt(&seed, None).expect("attempt");
+    job.run_to_completion().expect("run");
+    let clean = sorted_hits(&mut job);
+    assert!(
+        clean.len() > 5_000,
+        "expected ~16384 hits, got {}",
+        clean.len()
+    );
+
+    let mut latencies = Vec::new();
+    for delay_ms in [1u64, 3, 5] {
+        job.set_attempt(&seed, None).expect("attempt");
+        let flag = std::sync::Arc::new(AtomicU32::new(0));
+        let raiser = {
+            let flag = std::sync::Arc::clone(&flag);
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                let t = std::time::Instant::now();
+                flag.store(1, Ordering::Relaxed);
+                t
+            })
+        };
+        let st = job.run_attempt(&flag).expect("run");
+        let returned = std::time::Instant::now();
+        let raised_at = raiser.join().expect("raiser");
+        assert_eq!(
+            st,
+            ChunkStatus::Aborted,
+            "a 14 ms attempt must still be running after {delay_ms} ms"
+        );
+        latencies.push(returned.saturating_duration_since(raised_at));
+        assert_eq!(
+            job.run_chunk().unwrap_err().kind,
+            ErrorKind::State,
+            "aborted attempts are void"
+        );
+        // Whatever was found before the abort is a subset of the clean hits.
+        let partial = sorted_hits(&mut job);
+        assert!(partial.iter().all(|h| clean.binary_search(h).is_ok()));
+    }
+    eprintln!("abort latencies: {latencies:?}");
+    assert!(
+        latencies.iter().all(|l| l.as_millis() < 10),
+        "abort must land within 10 ms: {latencies:?}"
+    );
+    job.set_attempt(&seed, None).expect("attempt");
+    job.run_to_completion().expect("run");
+    assert_eq!(
+        sorted_hits(&mut job),
+        clean,
+        "the job is clean after aborts"
+    );
 }

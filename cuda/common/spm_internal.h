@@ -51,6 +51,9 @@ struct GemmArgs {
   DeviceHit* hits;
   uint32_t hit_capacity;
   uint8_t* dump;  // m*n/128 records of 104 bytes, or nullptr
+  // Device word read by every CTA before its first MMA; non-zero = skip the tile (abort). May be
+  // nullptr.
+  const uint32_t* abort_flag;
 };
 
 struct GemmGeometry {

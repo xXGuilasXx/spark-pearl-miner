@@ -93,7 +93,7 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 - [x] G0: 100% of debug-dump transcripts and digests equal spm-cpuref for m,n in {256,512,1024}, k in {2048,4096}, 3 seeds each. (54 problems, 150,528 tiles, 0 mismatches; see crates/spm-gpu/README.md.)
 - [x] Forced-hit test: at least 100 GPU PlainProofs pass verify_plain_proof(Salted) and check_rank_penalty; mutated proofs fail. (166 GPU hits through `verify_v3` + `check_rank_penalty`; flipped bytes, shifted rows, wrong rank and another header are rejected.)
 - [x] compute-sanitizer memcheck, racecheck and synccheck are clean. (On the small-shape tests: edges/chunks/abort/patch, forced hits, operands.)
-- [ ] gpu-worker runs the KAT at start, heartbeats, cancels on epoch change in 10 ms or less, and recomputes one canary tile per attempt; spark-pearl-miner selftest and bench --minutes 10 (JSON: credited MAC/s, clocks, W, temperatures) recorded at 2200 MHz. (libspm_cuda side ready: `spm_job_run_attempt` reads an abort flag between adaptive ~4 ms chunks with two in flight; the worker process, KAT and canary are still to do.)
+- [ ] gpu-worker runs the KAT at start, heartbeats, cancels on epoch change in 10 ms or less, and recomputes one canary tile per attempt; spark-pearl-miner selftest and bench --minutes 10 (JSON: credited MAC/s, clocks, W, temperatures) recorded at 2200 MHz. (libspm_cuda side ready: adaptive ~4 ms chunks, two in flight, and a device abort word that stops an attempt in 0.23–0.53 ms measured; the worker process, KAT and canary are still to do.)
 
 ### M6
 

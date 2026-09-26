@@ -94,6 +94,12 @@ __device__ __forceinline__ void ldmatrix_x4(uint32_t (&r)[4], uint32_t addr) {
 
 __device__ __forceinline__ uint32_t rotl32(uint32_t x, int n) { return __funnelshift_l(x, x, n); }
 
+__device__ __forceinline__ uint32_t ld_volatile_u32(const uint32_t* p) {
+  uint32_t v;
+  asm volatile("ld.volatile.global.u32 %0, [%1];" : "=r"(v) : "l"(p));
+  return v;
+}
+
 /// XOR of the 128 accumulators as a balanced tree (short dependency chains).
 template <class Mma>
 __device__ __forceinline__ uint32_t fold_tile(const typename Mma::Acc (&acc)[kFragM][kFragN][4]) {
@@ -135,6 +141,10 @@ __global__ void __launch_bounds__(kThreads, 1)
   const uint32_t n0 = (in_group / group_rows) * kBN;
   const uint32_t k = args.k;
   const uint32_t smem_base = static_cast<uint32_t>(__cvta_generic_to_shared(smem));
+  // Abort word: read now, tested once k-tile 0 has landed, so its latency hides behind the first
+  // cp.async wait; a CTA that sees it set leaves before its first MMA (the host then voids the
+  // attempt). This is what bounds the cancel latency to about one CTA tile instead of a chunk.
+  const uint32_t abort_word = (tid == 0 && args.abort_flag != nullptr) ? ld_volatile_u32(args.abort_flag) : 0u;
 
   // ---- global -> shared: thread copies chunk (tid & 3) of rows (tid >> 2) + 64 j. -----------------
   // m and n are multiples of 64, so a 64-row pass is either wholly inside the matrix or wholly
@@ -222,6 +232,11 @@ __global__ void __launch_bounds__(kThreads, 1)
   for (int s = 0; s < kStages - 1; ++s) {
     load_stage(s, s);
     cp_async_commit();
+  }
+  cp_async_wait<kStages - 2>();
+  if (__syncthreads_or(abort_word != 0u)) {
+    cp_async_wait<0>();
+    return;
   }
   uint32_t st_compute = 0;
   uint32_t st_load = kStages - 1;

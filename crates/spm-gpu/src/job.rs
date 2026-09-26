@@ -121,8 +121,9 @@ pub enum ChunkStatus {
     More,
     /// The attempt is complete: hits (and the dump) are final.
     Done,
-    /// The abort flag was seen between chunks. The cursor is kept, so running again resumes
-    /// the attempt; a new [`Job::set_attempt`] starts over.
+    /// The abort flag was seen: the CTAs in flight that had not started their MMAs left at once
+    /// and the attempt is void. Hits found so far stay valid and readable; call
+    /// [`Job::set_attempt`] before running again.
     Aborted,
 }
 
@@ -376,8 +377,9 @@ impl Job {
         self.chunk_status("spm_job_run_chunk", rc, status)
     }
 
-    /// Runs the rest of the attempt, two chunks in flight, checking `abort` before each chunk.
-    /// Another thread may store a non-zero value into `abort` to stop it.
+    /// Runs the rest of the attempt, two chunks in flight. Another thread may store a non-zero
+    /// value into `abort` to stop it; the call then returns within about one CTA tile time
+    /// ([`ChunkStatus::Aborted`], attempt void).
     pub fn run_attempt(&mut self, abort: &AtomicU32) -> Result<ChunkStatus, GpuError> {
         let (rc, status) = self.handle.run_attempt(abort);
         self.chunk_status("spm_job_run_attempt", rc, status)

@@ -3,9 +3,11 @@
 //
 // Nothing here throws: allocations use nothrow new, every CUDA call is checked and turned into
 // SPM_ERR_CUDA with the CUDA code kept on the job (or per thread for spm_job_create).
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <new>
+#include <thread>
 
 #include <cuda_runtime.h>
 
@@ -105,6 +107,7 @@ struct spm_job {
   uint8_t* a_pairs = nullptr;
   uint8_t* b_pairs = nullptr;
   uint32_t* hit_count = nullptr;
+  uint32_t* abort_dev = nullptr;  // device abort word polled by the fused kernel's CTAs
   DeviceHit* hits = nullptr;
   uint32_t hit_capacity = 0;
   uint8_t* dump_buf = nullptr;
@@ -113,6 +116,7 @@ struct spm_job {
   Words8 bound{};
 
   cudaStream_t stream = nullptr;
+  cudaStream_t side_stream = nullptr;  // raises the abort word while chunks run on `stream`
   cudaEvent_t ev[4] = {nullptr, nullptr, nullptr, nullptr};
   int32_t last_cuda_error = 0;
   float last_chunk_ms = 0.f;
@@ -140,6 +144,7 @@ struct spm_job {
     a.hits = hits;
     a.hit_capacity = hit_capacity;
     a.dump = dump ? dump_buf : nullptr;
+    a.abort_flag = abort_dev;
     return a;
   }
 
@@ -160,14 +165,14 @@ struct spm_job {
     return cudaSuccess;
   }
 
-  cudaError_t finish_chunk(int slot) {
+  cudaError_t finish_chunk(int slot, bool adapt = true) {
     cudaError_t e = cudaEventSynchronize(ev[2 * slot + 1]);
     if (e != cudaSuccess) return e;
     float ms = 0.f;
     e = cudaEventElapsedTime(&ms, ev[2 * slot], ev[2 * slot + 1]);
     if (e != cudaSuccess) return e;
     last_chunk_ms = ms;
-    if (adaptive && ms > 0.f && slot_ctas[slot] >= wave) {
+    if (adapt && adaptive && ms > 0.f && slot_ctas[slot] >= wave) {
       // Next chunks: kChunkTargetMs at the rate just measured, in whole waves, within
       // [one wave, chunk_max].
       const double per_ms = static_cast<double>(slot_ctas[slot]) / ms;
@@ -181,12 +186,15 @@ struct spm_job {
 
   void release() {
     if (stream) cudaStreamSynchronize(stream);
+    if (side_stream) cudaStreamSynchronize(side_stream);
     for (cudaEvent_t& e : ev) {
       if (e) cudaEventDestroy(e);
       e = nullptr;
     }
     if (stream) cudaStreamDestroy(stream);
     stream = nullptr;
+    if (side_stream) cudaStreamDestroy(side_stream);
+    side_stream = nullptr;
     if (arena) cudaFree(arena);
     arena = nullptr;
   }
@@ -250,6 +258,8 @@ spm_status_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
   off = align_up(off + 2ull * k);
   const size_t off_count = off;
   off = align_up(off + sizeof(uint32_t));
+  const size_t off_abort = off;
+  off = align_up(off + sizeof(uint32_t));
   const size_t off_hits = off;
   off = align_up(off + static_cast<uint64_t>(hit_capacity) * sizeof(DeviceHit));
   const size_t off_dump = off;
@@ -303,6 +313,8 @@ spm_status_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
 
   e = cudaStreamCreateWithFlags(&job->stream, cudaStreamNonBlocking);
   if (e != cudaSuccess) return bail(e);
+  e = cudaStreamCreateWithFlags(&job->side_stream, cudaStreamNonBlocking);
+  if (e != cudaSuccess) return bail(e);
   for (cudaEvent_t& ev : job->ev) {
     e = cudaEventCreate(&ev);
     if (e != cudaSuccess) return bail(e);
@@ -319,6 +331,7 @@ spm_status_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
   job->a_pairs = base + off_a_pairs;
   job->b_pairs = base + off_b_pairs;
   job->hit_count = reinterpret_cast<uint32_t*>(base + off_count);
+  job->abort_dev = reinterpret_cast<uint32_t*>(base + off_abort);
   job->hits = reinterpret_cast<DeviceHit*>(base + off_hits);
   job->dump_buf = dump ? base + off_dump : nullptr;
 
@@ -344,6 +357,8 @@ spm_status_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
                               job->stream);
   if (e != cudaSuccess) return bail(e);
   e = cudaMemsetAsync(job->hit_count, 0, sizeof(uint32_t), job->stream);
+  if (e != cudaSuccess) return bail(e);
+  e = cudaMemsetAsync(job->abort_dev, 0, sizeof(uint32_t), job->stream);
   if (e != cudaSuccess) return bail(e);
   e = cudaEventRecord(job->ev[1], job->stream);
   if (e != cudaSuccess) return bail(e);
@@ -389,6 +404,8 @@ spm_status_t spm_job_set_attempt(spm_job_t* job, const uint8_t* a_noise_seed, co
   if (e != cudaSuccess) return job->fail(e);
   e = cudaMemsetAsync(job->hit_count, 0, sizeof(uint32_t), job->stream);
   if (e != cudaSuccess) return job->fail(e);
+  e = cudaMemsetAsync(job->abort_dev, 0, sizeof(uint32_t), job->stream);
+  if (e != cudaSuccess) return job->fail(e);
   e = cudaEventRecord(job->ev[1], job->stream);
   if (e != cudaSuccess) return job->fail(e);
   e = cudaEventSynchronize(job->ev[1]);
@@ -421,12 +438,22 @@ spm_status_t spm_job_run_attempt(spm_job_t* job, const uint32_t* abort_flag, int
   cudaError_t e = cudaSetDevice(0);
   if (e != cudaSuccess) return job->fail(e);
   auto aborted = [&]() { return abort_flag && __atomic_load_n(abort_flag, __ATOMIC_RELAXED) != 0; };
-  // Two chunks in flight: the next one is queued while the previous runs, so the GPU never
-  // idles between chunks; the flag is read before queuing each chunk, so an abort takes effect
-  // within at most two chunk times.
+  // Two chunks in flight: the next one is queued while the previous runs, so the GPU never idles
+  // between chunks. The host flag is checked before queuing and polled (every few tens of us)
+  // while waiting; once it is seen, the device abort word is raised through the side stream, so
+  // every CTA of the chunks in flight that has not reached its first MMA leaves at once. The
+  // attempt then stops within about one CTA tile time and is void (hits found so far stay valid
+  // and readable); spm_job_set_attempt starts the next one.
+  static const uint32_t kOne = 1;
+  bool stop = false;    // host flag seen
+  bool raised = false;  // device word raised
+  auto raise = [&]() -> cudaError_t {
+    raised = true;
+    return cudaMemcpyAsync(job->abort_dev, &kOne, sizeof(kOne), cudaMemcpyHostToDevice,
+                           job->side_stream);
+  };
   int pending = -1;  // event slot of the chunk in flight, if any
   int slot = 0;
-  bool stop = false;
   for (;;) {
     int queued = -1;
     if (!stop && job->cursor < job->cta_tiles) {
@@ -440,13 +467,30 @@ spm_status_t spm_job_run_attempt(spm_job_t* job, const uint32_t* abort_flag, int
       }
     }
     if (pending >= 0) {
-      e = job->finish_chunk(pending);
+      for (;;) {
+        e = cudaEventQuery(job->ev[2 * pending + 1]);
+        if (e == cudaSuccess) break;
+        if (e != cudaErrorNotReady) return job->fail(e);
+        if (!stop && aborted()) stop = true;
+        if (stop && !raised) {
+          e = raise();
+          if (e != cudaSuccess) return job->fail(e);
+        }
+        std::this_thread::sleep_for(std::chrono::microseconds(20));
+      }
+      e = job->finish_chunk(pending, /*adapt=*/!raised);
       if (e != cudaSuccess) return job->fail(e);
     }
     pending = queued;
     if (pending < 0) break;
   }
-  *status = job->cursor < job->cta_tiles ? SPM_CHUNK_ABORTED : SPM_CHUNK_DONE;
+  if (raised) {
+    // The word must have landed before spm_job_set_attempt clears it on the main stream.
+    e = cudaStreamSynchronize(job->side_stream);
+    if (e != cudaSuccess) return job->fail(e);
+  }
+  if (stop) job->attempt_ready = false;
+  *status = stop ? SPM_CHUNK_ABORTED : SPM_CHUNK_DONE;
   return SPM_OK;
 }
 
@@ -563,7 +607,7 @@ const char* spm_status_string(spm_status_t status) {
     case SPM_ERR_INTERNAL: return "internal error";
     case SPM_CHUNK_MORE: return "chunk done, more remain";
     case SPM_CHUNK_DONE: return "attempt done";
-    case SPM_CHUNK_ABORTED: return "attempt aborted between chunks";
+    case SPM_CHUNK_ABORTED: return "attempt aborted (void; set up a new attempt)";
     default: return "unknown status";
   }
 }
