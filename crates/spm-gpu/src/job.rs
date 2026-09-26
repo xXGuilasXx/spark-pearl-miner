@@ -369,7 +369,9 @@ impl Job {
     }
 
     /// Starts an attempt: builds A_L, the A_R pairs and A' for `a_noise_seed`, sets the bound
-    /// (32 bytes, little-endian U256), clears the hits and rewinds to the first tile.
+    /// (32 bytes, little-endian U256), clears the hits and rewinds to the first tile. A chunk of
+    /// the previous attempt that is still queued runs to its end first (set the abort flag to cut
+    /// it short).
     pub fn set_attempt(
         &mut self,
         a_noise_seed: &[u8; 32],
@@ -390,7 +392,9 @@ impl Job {
         check(self.raw.set_attempt(a_noise_seed, bound, &bytes))
     }
 
-    /// Runs the next chunk (blocking, ≤ ~10 ms with the default target).
+    /// Waits for the next chunk (≤ ~10 ms of kernel time with the default target) and reports
+    /// it. Launches are pipelined: the chunk after it is already queued when this returns
+    /// [`ChunkStatus::More`], so the GPU does not idle between calls.
     pub fn run_chunk(&mut self) -> Result<Chunk, GpuError> {
         let (rc, info) = self.raw.run_chunk();
         let status = match rc {
@@ -438,7 +442,9 @@ impl Job {
     }
 
     /// Hits of the current attempt (at most the ring capacity) and the total count found; the
-    /// order is the order in which CTAs found them, not the reference order.
+    /// order is the order in which CTAs found them, not the reference order. The list is complete
+    /// once [`Job::run_chunk`] returned [`ChunkStatus::Done`]; before that, hits of the chunk that is
+    /// still running may be missing.
     pub fn hits(&mut self) -> Result<(Vec<Hit>, u32), GpuError> {
         let mut raw = vec![ffi::HitRaw::default(); self.hit_capacity as usize];
         let (rc, total) = self.raw.read_hits(&mut raw);

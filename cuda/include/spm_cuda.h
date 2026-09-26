@@ -129,12 +129,17 @@ int32_t spm_job_create(const spm_job_params_t* params, spm_job_t** out);
 int32_t spm_job_set_attempt(spm_job_t* job, const uint8_t a_noise_seed[32], const uint8_t bound[32],
                             const uint8_t* a_prefix, uint32_t a_prefix_len);
 
-// Runs the next chunk of the attempt (blocking). Returns SPM_OK, SPM_DONE, SPM_ABORTED or an error.
-// An aborted chunk is re-run from its first tile by the next call (hits may then repeat).
+// Waits for the next chunk of the attempt and describes it in `info`. Returns SPM_OK, SPM_DONE,
+// SPM_ABORTED or an error. Launches are pipelined: while a chunk is waited on, the following one is
+// already queued, so after SPM_OK one chunk may still be running (the abort flag stops it within a
+// tile). The abort flag is checked before every launch and by every CTA before every tile; an
+// aborted chunk is re-run from its first tile by the next call once the flag is cleared (hits of
+// the partial chunk may then repeat).
 int32_t spm_job_run_chunk(spm_job_t* job, spm_chunk_info_t* info);
 
 // Copies up to `capacity` hits; *total receives the number of hits found so far (it can exceed
-// the ring capacity, in which case the extra hits were dropped).
+// the ring capacity, in which case the extra hits were dropped). Complete for the attempt once
+// run_chunk returned SPM_DONE; before that, hits of a still-running chunk may be missing.
 int32_t spm_job_read_hits(spm_job_t* job, spm_hit_t* out, uint32_t capacity, uint32_t* total);
 
 // Dump mode: copies the m*n/128 records of 104 bytes (t_rows, t_cols, transcript[16], digest; LE)

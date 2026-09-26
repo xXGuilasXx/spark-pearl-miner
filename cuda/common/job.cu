@@ -30,7 +30,11 @@ constexpr uint32_t kMaxPrefix = 4096;
 // Adaptive chunks never go below this many CTA tiles per CTA (shorter chunks are dominated by the
 // ramp-up and the tail wave, and their timing is not representative).
 constexpr uint32_t kMinTilesPerCta = 4;
-constexpr uint32_t kCounterTile = 0, kCounterStatus = 1, kCounterHits = 2, kCounterWords = 4;
+// Chunks kept in flight: the next chunk is queued behind the running one, so the GPU does not idle
+// while the host reads the finished chunk back and launches the following one.
+constexpr uint32_t kPipeline = 2;
+// Device counters: {tile counter, status} per pipeline slot, then the hit count.
+constexpr uint32_t kCounterHits = 2 * kPipeline, kCounterWords = 2 * kPipeline + 4;
 
 int32_t fail_cuda(cudaError_t e) {
   g_last_cuda_error = static_cast<int32_t>(e);
@@ -121,13 +125,24 @@ struct spm_job {
 
   CUtensorMap tmap_a, tmap_b;
   cudaStream_t stream = nullptr;
-  cudaEvent_t ev_begin = nullptr, ev_end = nullptr;
+
+  // Chunks in flight, oldest at `head`; slot s owns counters[2s], counters[2s + 1], its events and
+  // h_status[s] (pinned copy of its status word, written by the stream after the kernel).
+  struct Chunk {
+    uint32_t begin = 0, end = 0, grid = 0;
+  };
+  Chunk inflight[kPipeline];
+  cudaEvent_t ev_begin[kPipeline] = {}, ev_end[kPipeline] = {};
+  uint32_t* h_status = nullptr;
+  uint32_t head = 0, count = 0;
+  uint32_t enqueue_tile = 0;  // first tile not yet handed to a launch
 
   uint8_t b_seed[32] = {0};
   uint32_t key[8] = {0}, bound[8] = {0};
   bool attempt_ready = false;
 
-  uint32_t tiles_m = 0, tiles_n = 0, tiles_total = 0, next_tile = 0;
+  uint32_t tiles_m = 0, tiles_n = 0, tiles_total = 0;
+  uint32_t next_tile = 0;  // first tile not yet evaluated by a finished chunk
   uint32_t ctas = 0, band = kDefaultBand;
   uint32_t chunk_tiles = 0;
   bool adaptive = true;
@@ -151,8 +166,11 @@ void release(spm_job* j) {
   cudaFree(j->dump);
   cudaFree(j->hits);
   cudaFree(j->counters);
-  if (j->ev_begin) cudaEventDestroy(j->ev_begin);
-  if (j->ev_end) cudaEventDestroy(j->ev_end);
+  if (j->h_status) cudaFreeHost(j->h_status);
+  for (uint32_t s = 0; s < kPipeline; ++s) {
+    if (j->ev_begin[s]) cudaEventDestroy(j->ev_begin[s]);
+    if (j->ev_end[s]) cudaEventDestroy(j->ev_end[s]);
+  }
   if (j->stream) cudaStreamDestroy(j->stream);
   if (j->owns_abort) spm_abort_destroy(j->abort_flag);
   (void)cudaGetLastError();
@@ -333,8 +351,15 @@ int32_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
   if (e != cudaSuccess) return fail(fail_cuda(e));
 
   e = cudaStreamCreateWithFlags(&j->stream, cudaStreamNonBlocking);
-  if (e == cudaSuccess) e = cudaEventCreate(&j->ev_begin);
-  if (e == cudaSuccess) e = cudaEventCreate(&j->ev_end);
+  for (uint32_t s = 0; s < kPipeline && e == cudaSuccess; ++s) {
+    e = cudaEventCreate(&j->ev_begin[s]);
+    if (e == cudaSuccess) e = cudaEventCreate(&j->ev_end[s]);
+  }
+  if (e == cudaSuccess) {
+    void* hs = nullptr;
+    e = cudaHostAlloc(&hs, kPipeline * sizeof(uint32_t), cudaHostAllocDefault);
+    j->h_status = static_cast<uint32_t*>(hs);
+  }
   if (e == cudaSuccess && !generated) e = alloc(j, &j->a_stored, m * k);
   if (e == cudaSuccess) e = alloc(j, &j->a_noised, m * k);
   if (e == cudaSuccess) e = alloc(j, &j->bt_noised, n * k);
@@ -373,6 +398,9 @@ int32_t spm_job_set_attempt(spm_job_t* j, const uint8_t a_noise_seed[32], const 
   if (a_prefix_len > kMaxPrefix || (a_prefix_len != 0 && a_prefix == nullptr)) return SPM_E_INVALID;
   if ((uint64_t)a_prefix_len > (uint64_t)j->m * j->k) return SPM_E_INVALID;
   j->attempt_ready = false;
+  // Chunks of the previous attempt still in flight finish first (abort them for a faster switch).
+  SPM_TRY(cudaStreamSynchronize(j->stream));
+  j->head = j->count = 0;
   spm::le_words_from_bytes(a_noise_seed, j->key);
   spm::le_words_from_bytes(bound, j->bound);
   j->prefix_len = a_prefix_len;
@@ -381,28 +409,23 @@ int32_t spm_job_set_attempt(spm_job_t* j, const uint8_t a_noise_seed[32], const 
   SPM_TRY(build_operand(j, true, a_noise_seed, j->a_noised, false, false));
   SPM_TRY(cudaMemsetAsync(j->counters, 0, kCounterWords * 4, j->stream));
   SPM_TRY(cudaStreamSynchronize(j->stream));
-  j->next_tile = 0;
+  j->next_tile = j->enqueue_tile = 0;
   j->attempt_ready = true;
   return SPM_OK;
 }
 
-int32_t spm_job_run_chunk(spm_job_t* j, spm_chunk_info_t* info) {
-  if (j == nullptr) return SPM_E_INVALID;
-  if (!j->attempt_ready) return SPM_E_NO_ATTEMPT;
-  const uint32_t begin = j->next_tile;
+namespace {
+
+// Queues the next chunk of the attempt on the job stream (pipeline slot head + count).
+cudaError_t enqueue_chunk(spm_job* j) {
+  const uint32_t begin = j->enqueue_tile;
   // Split what is left of the attempt into equal chunks no larger than chunk_tiles.
-  const uint64_t left = j->tiles_total > begin ? j->tiles_total - begin : 0;
-  const uint64_t pieces = std::max<uint64_t>(1, (left + j->chunk_tiles - 1) / std::max<uint32_t>(1, j->chunk_tiles));
+  const uint64_t left = j->tiles_total - begin;
+  const uint64_t cap = std::max<uint32_t>(1, j->chunk_tiles);
+  const uint64_t pieces = std::max<uint64_t>(1, (left + cap - 1) / cap);
   const uint32_t end = begin + (uint32_t)((left + pieces - 1) / pieces);
-  if (info != nullptr) {
-    info->tile_begin = begin;
-    info->tile_end = end;
-    info->tiles_total = j->tiles_total;
-    info->ctas = 0;
-    info->ms = 0.f;
-  }
-  if (begin >= j->tiles_total) return SPM_DONE;
-  if (spm_abort_get(j->abort_flag) != 0) return SPM_ABORTED;
+  const uint32_t slot = (j->head + j->count) % kPipeline;
+  const uint32_t grid = std::min<uint32_t>(j->ctas, end - begin);
 
   spm::gemm::Params prm;
   memset(&prm, 0, sizeof(prm));
@@ -414,8 +437,8 @@ int32_t spm_job_run_chunk(spm_job_t* j, spm_chunk_info_t* info) {
   prm.band = std::max<uint32_t>(1, std::min(j->band, j->tiles_m));
   prm.tile_begin = begin;
   prm.tile_end = end;
-  prm.tile_counter = j->counters + kCounterTile;
-  prm.status = j->counters + kCounterStatus;
+  prm.tile_counter = j->counters + 2 * slot;
+  prm.status = j->counters + 2 * slot + 1;
   prm.abort_flag = j->abort_flag->dev;
   memcpy(prm.key, j->key, sizeof(prm.key));
   memcpy(prm.bound, j->bound, sizeof(prm.bound));
@@ -425,22 +448,78 @@ int32_t spm_job_run_chunk(spm_job_t* j, spm_chunk_info_t* info) {
   prm.hit_count = j->counters + kCounterHits;
   prm.hit_capacity = j->hit_capacity;
 
-  const uint32_t grid = std::min<uint32_t>(j->ctas, end - begin);
-  SPM_TRY(cudaMemsetAsync(j->counters + kCounterTile, 0, 2 * sizeof(uint32_t), j->stream));
-  SPM_TRY(cudaEventRecord(j->ev_begin, j->stream));
-  SPM_TRY(spm::gemm::launch_gemm_hash_s8(j->tmap_a, j->tmap_b, prm, grid, j->stream));
-  SPM_TRY(cudaEventRecord(j->ev_end, j->stream));
-  SPM_TRY(cudaEventSynchronize(j->ev_end));
-  float ms = 0.f;
-  SPM_TRY(cudaEventElapsedTime(&ms, j->ev_begin, j->ev_end));
-  uint32_t status = 0;
-  SPM_TRY(cudaMemcpy(&status, j->counters + kCounterStatus, sizeof(status), cudaMemcpyDeviceToHost));
+  cudaError_t e = cudaMemsetAsync(j->counters + 2 * slot, 0, 2 * sizeof(uint32_t), j->stream);
+  if (e == cudaSuccess) e = cudaEventRecord(j->ev_begin[slot], j->stream);
+  if (e == cudaSuccess) e = spm::gemm::launch_gemm_hash_s8(j->tmap_a, j->tmap_b, prm, grid, j->stream);
+  if (e == cudaSuccess)
+    e = cudaMemcpyAsync(j->h_status + slot, prm.status, sizeof(uint32_t), cudaMemcpyDeviceToHost, j->stream);
+  if (e == cudaSuccess) e = cudaEventRecord(j->ev_end[slot], j->stream);
+  if (e != cudaSuccess) return e;
+  j->inflight[slot].begin = begin;
+  j->inflight[slot].end = end;
+  j->inflight[slot].grid = grid;
+  j->count += 1;
+  j->enqueue_tile = end;
+  return cudaSuccess;
+}
+
+// Drops every queued chunk after an abort or an error: waits for the stream and rewinds the launch
+// cursor to the first unfinished tile.
+void drain(spm_job* j) {
+  cudaStreamSynchronize(j->stream);
+  (void)cudaGetLastError();
+  j->head = j->count = 0;
+  j->enqueue_tile = j->next_tile;
+}
+
+}  // namespace
+
+int32_t spm_job_run_chunk(spm_job_t* j, spm_chunk_info_t* info) {
+  if (j == nullptr) return SPM_E_INVALID;
+  if (!j->attempt_ready) return SPM_E_NO_ATTEMPT;
   if (info != nullptr) {
-    info->ctas = grid;
+    info->tile_begin = info->tile_end = j->next_tile;
+    info->tiles_total = j->tiles_total;
+    info->ctas = 0;
+    info->ms = 0.f;
+  }
+  // Keep the pipeline full while tiles remain and no abort is pending.
+  while (j->count < kPipeline && j->enqueue_tile < j->tiles_total && spm_abort_get(j->abort_flag) == 0) {
+    const cudaError_t e = enqueue_chunk(j);
+    if (e != cudaSuccess) {
+      const int32_t rc = fail_cuda(e);
+      drain(j);
+      return rc;
+    }
+  }
+  if (j->count == 0) return j->next_tile >= j->tiles_total ? SPM_DONE : SPM_ABORTED;
+
+  const uint32_t slot = j->head;
+  const spm_job::Chunk c = j->inflight[slot];
+  float ms = 0.f;
+  cudaError_t e = cudaEventSynchronize(j->ev_end[slot]);
+  if (e == cudaSuccess) e = cudaEventElapsedTime(&ms, j->ev_begin[slot], j->ev_end[slot]);
+  if (e != cudaSuccess) {
+    const int32_t rc = fail_cuda(e);
+    drain(j);
+    return rc;
+  }
+  const uint32_t status = j->h_status[slot];
+  j->head = (j->head + 1) % kPipeline;
+  j->count -= 1;
+  if (info != nullptr) {
+    info->tile_begin = c.begin;
+    info->tile_end = c.end;
+    info->ctas = c.grid;
     info->ms = ms;
   }
-  if (status & spm::gemm::STATUS_ABORTED) return SPM_ABORTED;
+  if (status & spm::gemm::STATUS_ABORTED) {
+    // The chunk stopped early; the next call re-runs it from its first tile.
+    drain(j);
+    return SPM_ABORTED;
+  }
 
+  const uint32_t begin = c.begin, end = c.end, grid = c.grid;
   j->next_tile = end;
   const double per_cta_tiles = (double)(end - begin) / grid;
   if (j->adaptive && ms > 0.f && per_cta_tiles >= 4.0) {
@@ -471,6 +550,7 @@ int32_t spm_job_read_dump(spm_job_t* j, uint8_t* out, uint64_t len) {
   if (j == nullptr || out == nullptr) return SPM_E_INVALID;
   if (!j->dump_mode) return SPM_E_NOT_DUMP;
   if (len != j->dump_bytes) return SPM_E_SIZE;
+  SPM_TRY(cudaStreamSynchronize(j->stream));
   SPM_TRY(cudaMemcpy(out, j->dump, len, cudaMemcpyDeviceToHost));
   return SPM_OK;
 }

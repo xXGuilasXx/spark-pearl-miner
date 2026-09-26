@@ -455,3 +455,58 @@ fn g0_abort_is_prompt() {
     job.abort_handle().clear();
     assert_eq!(job.run_chunk().unwrap().status, ChunkStatus::Done);
 }
+
+/// Pipelined chunks: a 2048 x 2048 x 4096 attempt split into 8-tile chunks, aborted between two
+/// calls (so a queued chunk sees the flag mid-flight), cleared and resumed. The dump must still be
+/// the oracle's, tile for tile, and the hit ring must contain every hit (repeats allowed).
+#[test]
+fn g0_pipelined_chunks_abort_and_resume() {
+    if !gpu_enabled() {
+        return;
+    }
+    let (m, n, k, seed) = (2048usize, 2048usize, 4096usize, 0x7069_7065u64);
+    let case = prepare(m, n, k, seed);
+    let mut cfg = JobConfig::new(
+        m as u32,
+        n as u32,
+        k as u32,
+        Operands::Generated { seed },
+        case.b_noise_seed,
+    );
+    cfg.dump = true;
+    cfg.chunk_tiles = Some(8);
+    cfg.hit_capacity = 16384; // ~1/8 of the 32768 tiles hit at this bound, plus repeats
+    let mut job = Job::new(&cfg).expect("job");
+    job.set_attempt(&case.a_noise_seed, &le_bytes(case.bound))
+        .unwrap();
+    let first = job.run_chunk().unwrap();
+    assert_eq!(first.status, ChunkStatus::More);
+    assert_eq!((first.tile_begin, first.tile_end), (0, 8));
+    let abort = job.abort_handle();
+    abort.set();
+    let mut aborted = 0;
+    let mut done = false;
+    for _ in 0..4 {
+        match job.run_chunk().unwrap().status {
+            ChunkStatus::Aborted => aborted += 1,
+            ChunkStatus::More => {}
+            ChunkStatus::Done => done = true,
+        }
+    }
+    assert!(aborted >= 1 && !done, "the flag must stop the attempt");
+    abort.clear();
+    let stats = job.run_attempt().unwrap();
+    assert!(stats.completed);
+    let got: Vec<TileResult> = job.dump_records().unwrap().iter().map(to_tile).collect();
+    assert_eq!(
+        first_mismatch(&case.expected, &got),
+        None,
+        "dump after abort + resume"
+    );
+    let (hits, _) = job.hits().unwrap();
+    let mut seen: Vec<(u32, u32)> = hits.iter().map(|h| (h.t_rows, h.t_cols)).collect();
+    seen.sort_unstable();
+    seen.dedup();
+    let want = case.expected.iter().filter(|t| t.meets(case.bound)).count();
+    assert_eq!(seen.len(), want, "every hit found (repeats allowed)");
+}

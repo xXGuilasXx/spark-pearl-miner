@@ -65,6 +65,14 @@ __device__ __forceinline__ void tma_load_2d(uint32_t dst, const CUtensorMap* map
       : "memory");
 }
 
+/// Prefetches a 2-D box into L2 only (no shared-memory destination, no completion tracking).
+__device__ __forceinline__ void tma_prefetch_l2_2d(const CUtensorMap* map, int32_t c0, int32_t c1) {
+  asm volatile("cp.async.bulk.prefetch.tensor.2d.L2.global.tile [%0, {%1, %2}];" ::"l"(
+                   reinterpret_cast<uint64_t>(map)),
+               "r"(c0), "r"(c1)
+               : "memory");
+}
+
 __device__ __forceinline__ void tma_prefetch_descriptor(const CUtensorMap* map) {
   asm volatile("prefetch.tensormap [%0];" ::"l"(reinterpret_cast<uint64_t>(map)) : "memory");
 }

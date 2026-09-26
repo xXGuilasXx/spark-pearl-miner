@@ -14,6 +14,9 @@
 //     an L2-friendly band raster (bands of `band` CTA rows, column-major inside a band) and passes
 //     the tile id to the MMA warps in the first stage of the tile; -1 is the stop command. The abort
 //     flag (host-mapped) is read before every tile, so a cancel takes effect within one tile.
+//   * The kernel is bound by load latency (3 stages instead of 4 lose ~10%), not by L2 bandwidth.
+//     The first CTA row of each band therefore prefetches its B'ᵀ k-tiles into L2 a few k-tiles
+//     ahead, since it is the one that meets the DRAM misses of its column.
 //   * mma.sync.m16n8k32 s8·s8 -> s32 from ldmatrix.x4 fragments. In a 64 x 64 warp tile made of
 //     4 x 8 m16n8 fragments, lane l holds rows l/4 + {0, 8, ..., 56} and columns
 //     2(l%4) + {0, 1, 8, 9, ..., 56, 57}: exactly one hash tile, so the per-slice XOR fold is
@@ -81,6 +84,10 @@ constexpr int THREADS = (MMA_WARPS + PRODUCER_WARPS) * 32;
 constexpr uint32_t MMA_REGS = 232;
 constexpr uint32_t PRODUCER_REGS = 40;
 constexpr uint32_t STAGES = 4;
+// L2 prefetch distance (k-tiles) of the band leader's B'ᵀ loads. Measured on the GB10 at
+// 16384^2 x 4096: 4 -> +1.6 points of peak, 8 -> +0.9; prefetching from every CTA (both operands)
+// costs 5-12 points, because the column's other 15 CTAs already hit L2.
+constexpr uint32_t B_PREFETCH_KTILES = 4;
 constexpr uint32_t A_STAGE_BYTES = BM * BK;
 constexpr uint32_t B_STAGE_BYTES = BN * BK;
 constexpr uint32_t STAGE_BYTES = A_STAGE_BYTES + B_STAGE_BYTES;
@@ -161,6 +168,10 @@ __device__ __forceinline__ void produce(const CUtensorMap* tmap_a, const CUtenso
     tile_coords(p, static_cast<uint32_t>(tile), tm, tn);
     const int32_t row_a = static_cast<int32_t>(tm * BM);
     const int32_t row_b = static_cast<int32_t>(tn * BN);
+    // The first CTA row of a band is the first to touch each B'ᵀ k-tile of its column (usually a
+    // DRAM miss); it pulls its own B k-tile B_PREFETCH_KTILES ahead into L2, which also serves the
+    // other CTAs of the column right behind it.
+    const bool leader = tm % p.band == 0;
     for (uint32_t kt = 0; kt < ktiles; ++kt) {
       if (kt != 0) ptx::mbar_wait(empty0 + 8 * stage, phase ^ 1u);
       const uint32_t full = full0 + 8 * stage;
@@ -169,6 +180,8 @@ __device__ __forceinline__ void produce(const CUtensorMap* tmap_a, const CUtenso
       ptx::mbar_arrive_expect_tx(full, STAGE_BYTES);
       ptx::tma_load_2d(dst, tmap_a, k0, row_a, full);
       ptx::tma_load_2d(dst + A_STAGE_BYTES, tmap_b, k0, row_b, full);
+      if (leader && kt + B_PREFETCH_KTILES < ktiles)
+        ptx::tma_prefetch_l2_2d(tmap_b, static_cast<int32_t>((kt + B_PREFETCH_KTILES) * BK), row_b);
       if (++stage == STAGES) {
         stage = 0;
         phase ^= 1u;
