@@ -103,6 +103,12 @@ extern "C" {
         a_prefix: *const u8,
         a_prefix_len: u32,
     ) -> i32;
+    fn spm_job_prepare_attempt(
+        job: *mut JobOpaque,
+        a_noise_seed: *const u8,
+        a_prefix: *const u8,
+        a_prefix_len: u32,
+    ) -> i32;
     fn spm_job_run_chunk(job: *mut JobOpaque, info: *mut ChunkInfoRaw) -> i32;
     fn spm_job_read_hits(
         job: *mut JobOpaque,
@@ -275,6 +281,26 @@ impl JobPtr {
                 self.0.as_ptr(),
                 a_noise_seed.as_ptr(),
                 bound.as_ptr(),
+                if prefix.is_empty() {
+                    ptr::null()
+                } else {
+                    prefix.as_ptr()
+                },
+                len,
+            )
+        }
+    }
+
+    pub(crate) fn prepare_attempt(&mut self, a_noise_seed: &[u8; 32], prefix: &[u8]) -> i32 {
+        let Ok(len) = u32::try_from(prefix.len()) else {
+            return -1;
+        };
+        // SAFETY: the seed is 32 readable bytes; `prefix` is `len` readable bytes that the C side
+        // copies (host copy and pageable-to-device staging) before returning.
+        unsafe {
+            spm_job_prepare_attempt(
+                self.0.as_ptr(),
+                a_noise_seed.as_ptr(),
                 if prefix.is_empty() {
                     ptr::null()
                 } else {

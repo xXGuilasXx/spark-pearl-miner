@@ -26,6 +26,10 @@ mod code {
 pub const DUMP_RECORD_LEN: usize = 104;
 /// Default device-memory budget of a job.
 pub const DEFAULT_MEM_BUDGET: u64 = 2 << 30;
+/// Default adaptive chunk target (`JobConfig::target_chunk`). The library also caps adaptive
+/// chunks at the tile count that takes ~8 ms at an 1800 MHz SM clock, so a throttled GPU stays
+/// under the 10 ms cancellation rule.
+pub const DEFAULT_TARGET_CHUNK: Duration = Duration::from_micros(4500);
 
 /// Failure of a GPU call.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -137,7 +141,8 @@ pub struct JobConfig<'a> {
     pub hit_capacity: u32,
     /// CTA tiles (128×256) per launch; `None` = adaptive to `target_chunk`.
     pub chunk_tiles: Option<u32>,
-    /// Adaptive chunk duration target (default 6 ms, leaving margin under the 10 ms contract).
+    /// Adaptive chunk duration target (default [`DEFAULT_TARGET_CHUNK`], 4.5 ms: chunks of one size
+    /// vary by ~25 %, and the library caps them at ~8 ms of work at 1800 MHz whatever the target).
     pub target_chunk: Duration,
     /// L2 raster band height in CTA rows (0 = 16).
     pub band_rows: u32,
@@ -158,7 +163,7 @@ impl<'a> JobConfig<'a> {
             dump: false,
             hit_capacity: 0,
             chunk_tiles: None,
-            target_chunk: Duration::from_millis(6),
+            target_chunk: DEFAULT_TARGET_CHUNK,
             band_rows: 0,
             mem_budget_bytes: DEFAULT_MEM_BUDGET,
             abort: None,
@@ -392,9 +397,31 @@ impl Job {
         check(self.raw.set_attempt(a_noise_seed, bound, &bytes))
     }
 
-    /// Waits for the next chunk (≤ ~10 ms of kernel time with the default target) and reports
-    /// it. Launches are pipelined: the chunk after it is already queued when this returns
-    /// [`ChunkStatus::More`], so the GPU does not idle between calls.
+    /// Double buffering: builds A_L, the A_R pairs and A' of a future attempt on a second,
+    /// lowest-priority stream while the chunks of the current attempt run (the build uses the SMs
+    /// the GEMM leaves idle at chunk tails), and returns without waiting. The next
+    /// [`Job::set_attempt`] with the same `a_noise_seed` (and no prefix) swaps the prepared
+    /// buffers in instead of building them; one with other arguments builds as usual. A new call
+    /// replaces the prepared attempt. The first call allocates a spare A side (m·k + m·128 bytes
+    /// and change) inside the job's memory budget; [`GpuError::Budget`] leaves the job usable
+    /// without double buffering.
+    pub fn prepare_attempt(&mut self, a_noise_seed: &[u8; 32]) -> Result<(), GpuError> {
+        check(self.raw.prepare_attempt(a_noise_seed, &[]))
+    }
+
+    /// [`Job::prepare_attempt`] for [`Job::set_attempt_with_prefix`] with the same `prefix`.
+    pub fn prepare_attempt_with_prefix(
+        &mut self,
+        a_noise_seed: &[u8; 32],
+        prefix: &[i8],
+    ) -> Result<(), GpuError> {
+        let bytes: Vec<u8> = prefix.iter().map(|&x| x as u8).collect();
+        check(self.raw.prepare_attempt(a_noise_seed, &bytes))
+    }
+
+    /// Waits for the next chunk (~4.5 ms of kernel time with the default target, ≤ ~8 ms at an
+    /// 1800 MHz clock) and reports it. Launches are pipelined: the chunk after it is already
+    /// queued when this returns [`ChunkStatus::More`], so the GPU does not idle between calls.
     pub fn run_chunk(&mut self) -> Result<Chunk, GpuError> {
         let (rc, info) = self.raw.run_chunk();
         let status = match rc {
