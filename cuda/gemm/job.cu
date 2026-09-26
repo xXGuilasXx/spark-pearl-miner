@@ -261,7 +261,9 @@ spm_status_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
   if (e != cudaSuccess) return bail(e);
   job->geo.ctas_per_sm = ctas_per_sm;
 
-  // Chunk size: whole waves, about kChunkTargetSeconds each even at the IMMA peak.
+  // Chunk size: at most kChunkTargetSeconds at the IMMA peak, then balanced so that every chunk
+  // of the attempt is (nearly) the same whole number of waves -- a short last chunk would leave
+  // most SMs idle for its partial wave.
   const uint32_t wave = job->sm_count * ctas_per_sm;
   uint32_t chunk = params->chunk_ctas;
   if (chunk == 0) {
@@ -269,7 +271,10 @@ spm_status_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
     const double wave_seconds = macs_per_cta * ctas_per_sm / kPerSmMacRateCeiling;
     uint32_t waves = static_cast<uint32_t>(kChunkTargetSeconds / wave_seconds);
     if (waves == 0) waves = 1;
-    chunk = waves * wave;
+    const uint64_t max_chunk = static_cast<uint64_t>(waves) * wave;
+    const uint64_t n_chunks = (cta_tiles + max_chunk - 1) / max_chunk;
+    const uint64_t even = (cta_tiles + n_chunks - 1) / n_chunks;
+    chunk = static_cast<uint32_t>((even + wave - 1) / wave * wave);
   }
   job->chunk_ctas = chunk < job->cta_tiles ? chunk : job->cta_tiles;
 

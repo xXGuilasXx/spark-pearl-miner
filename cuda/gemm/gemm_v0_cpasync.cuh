@@ -12,17 +12,22 @@
 //   * Per k32 step a warp issues 4 x 8 = 32 mma.sync.m16n8k32 (4 ldmatrix.x4 for A, 4 for B);
 //     per 64-wide k-tile 64 MMAs; per 128-wide transcript slice (r = 128) 128 MMAs per warp,
 //     1024 per CTA.
-//   * After every slice s the thread XOR-folds its 128 cumulative accumulators and updates
-//     transcript word s % 16 (t = rotl13(t) ^ fold); the 16 words live in shared memory, one
-//     column per thread (bank-conflict free, no local memory).
+//   * After every slice s the thread XOR-folds its 128 cumulative accumulators into transcript
+//     word s % 16 (t = rotl13(t) ^ fold). The 16 words stay in registers as a rotating queue whose
+//     head is always the current slot, so no dynamic register indexing (and no local memory) is
+//     needed; the queue is rotated back into slot order once, before the digest.
 //   * Epilogue: digest = BLAKE3_keyed(a_noise_seed, t[0..16]); if LE-U256(digest) <= bound the
 //     tile goes to the hit ring (atomic counter). In dump mode every tile also writes its
 //     104-byte record (t_rows, t_cols, t[16], digest) at its reference index.
 //
-// Shared memory per stage: A 128 x 64 B + B'ᵀ 256 x 64 B = 24 KiB, x 3 stages = 72 KiB, plus
-// 16 KiB of transcripts = 88 KiB (<= 99 KiB opt-in). Rows are 64 bytes (four 16-byte chunks);
-// chunk c of row r is stored at chunk c ^ ((r >> 1) & 3), which makes both the 16-byte cp.async
-// stores and the 8-row ldmatrix phases conflict free.
+// Shared memory: A 128 x 64 B + B'ᵀ 256 x 64 B = 24 KiB per stage, x 3 stages = 72 KiB (73,728 B).
+// Rows are 64 bytes (four 16-byte chunks); chunk c of row r is stored at chunk c ^ ((r >> 1) & 3),
+// which makes both the 16-byte cp.async stores and the 8-row ldmatrix phases conflict free.
+//
+// What bounds it (measured, see crates/spm-gpu/README.md): with the operands already in shared
+// memory the loop runs at ~94 T-MAC/s; the L2 -> SM traffic of the 128 x 256 tile (1.5 MiB per
+// CTA tile at k = 4096, ~0.95 TB/s at 80 T-MAC/s) costs ~10 % and the DRAM misses ~5 %. Sharing B'ᵀ
+// between CTA pairs of a cluster is the next lever.
 #pragma once
 
 #include <cstdint>
@@ -50,19 +55,18 @@ constexpr int kSlice = 128;                       // transcript slice width (noi
 constexpr int kTilesPerSlice = kSlice / kBK;      // 2
 constexpr int kTranscriptWords = 16;
 constexpr int kRotl = 13;
-constexpr int kStageA = kBM * kBK;               // 8192
-constexpr int kStageB = kBN * kBK;               // 16384
-constexpr int kStageBytes = kStageA + kStageB;   // 24576
-constexpr int kSmemPipe = kStages * kStageBytes;  // 73728
-constexpr int kSmemTranscript = kTranscriptWords * kThreads * 4;  // 16384
-constexpr int kSmemBytes = kSmemPipe + kSmemTranscript;         // 90112
+constexpr int kStageA = kBM * kBK;                // 8192
+constexpr int kStageB = kBN * kBK;                // 16384
+constexpr int kStageBytes = kStageA + kStageB;    // 24576
+constexpr int kSmemBytes = kStages * kStageBytes;  // 73728
 constexpr int kDumpRecordBytes = 104;
 constexpr int kRowsPerCopy = kThreads / (kBK / 16);  // 64 rows per pass of 16-byte copies
-constexpr int kGroupM = 8;  // CTA-tile rows swept together (L2 reuse of B'ᵀ)
+constexpr int kGroupM = 8;  // CTA-tile rows swept together (L2 reuse of A' and B'ᵀ)
 
 static_assert(kWM == 64 && kWN == 64, "the hash tile <-> fragment mapping needs 64 x 64 warp tiles");
 static_assert(kSlice % kBK == 0, "a transcript slice must be a whole number of k-tiles");
 static_assert(kBM % kRowsPerCopy == 0 && kBN % kRowsPerCopy == 0, "copy passes must tile the stage");
+static_assert(kTranscriptWords == 16, "the queue rotation below assumes 16 words");
 
 /// Byte offset of 16-byte chunk `chunk` of row `row` inside a swizzled [rows][64 B] stage.
 __device__ __forceinline__ uint32_t swizzle(uint32_t row, uint32_t chunk) {
@@ -130,11 +134,7 @@ __global__ void __launch_bounds__(kThreads, 1)
   const uint32_t m0 = (first_m + in_group % group_rows) * kBM;
   const uint32_t n0 = (in_group / group_rows) * kBN;
   const uint32_t k = args.k;
-
   const uint32_t smem_base = static_cast<uint32_t>(__cvta_generic_to_shared(smem));
-  uint32_t* const s_t = reinterpret_cast<uint32_t*>(smem + kSmemPipe) + tid;
-#pragma unroll
-  for (int i = 0; i < kTranscriptWords; ++i) s_t[i * kThreads] = 0u;
 
   // ---- global -> shared: thread copies chunk (tid & 3) of rows (tid >> 2) + 64 j. -----------------
   // m and n are multiples of 64, so a 64-row pass is either wholly inside the matrix or wholly
@@ -144,8 +144,8 @@ __global__ void __launch_bounds__(kThreads, 1)
   const int8_t* const a_src = args.a + static_cast<size_t>(m0 + cp_row) * k + (tid & 3u) * 16u;
   const int8_t* const b_src = args.bt + static_cast<size_t>(n0 + cp_row) * k + (tid & 3u) * 16u;
   const size_t pass_stride = static_cast<size_t>(kRowsPerCopy) * k;
-  const uint32_t a_passes = min(static_cast<uint32_t>(kBM / kRowsPerCopy), (args.m - m0) / kRowsPerCopy);
-  const uint32_t b_passes = min(static_cast<uint32_t>(kBN / kRowsPerCopy), (args.n - n0) / kRowsPerCopy);
+  const uint32_t a_rows = args.m - m0;  // >= 64
+  const uint32_t b_rows = args.n - n0;  // >= 64
 
   auto load_stage = [&](uint32_t stage, uint32_t kt) {
     const uint32_t sa = smem_base + stage * kStageBytes;
@@ -153,13 +153,13 @@ __global__ void __launch_bounds__(kThreads, 1)
     const size_t ko = static_cast<size_t>(kt) * kBK;
 #pragma unroll
     for (int j = 0; j < kBM / kRowsPerCopy; ++j) {
-      const bool ok = static_cast<uint32_t>(j) < a_passes;
+      const bool ok = static_cast<uint32_t>(j * kRowsPerCopy) < a_rows;
       cp_async_16(sa + cp_dst + j * (kRowsPerCopy * kBK), a_src + (ok ? j * pass_stride : 0) + ko,
                   ok ? 16u : 0u);
     }
 #pragma unroll
     for (int j = 0; j < kBN / kRowsPerCopy; ++j) {
-      const bool ok = static_cast<uint32_t>(j) < b_passes;
+      const bool ok = static_cast<uint32_t>(j * kRowsPerCopy) < b_rows;
       cp_async_16(sb + cp_dst + j * (kRowsPerCopy * kBK), b_src + (ok ? j * pass_stride : 0) + ko,
                   ok ? 16u : 0u);
     }
@@ -212,6 +212,10 @@ __global__ void __launch_bounds__(kThreads, 1)
   };
 
   // ---- mainloop: only full slices enter the transcript, so only they are computed. -------------
+  // Transcript queue invariant: at the start of slice s, q[i] holds word (s + i) % 16.
+  uint32_t q[kTranscriptWords];
+#pragma unroll
+  for (int i = 0; i < kTranscriptWords; ++i) q[i] = 0u;
   const uint32_t slices = k / kSlice;
   const uint32_t kt_total = slices * kTilesPerSlice;
 #pragma unroll
@@ -234,23 +238,32 @@ __global__ void __launch_bounds__(kThreads, 1)
       st_load = (st_load == kStages - 1) ? 0 : st_load + 1;
       ++kt;
     }
-    const uint32_t fold = fold_tile<Mma>(acc);
-    uint32_t* const word = s_t + (s % kTranscriptWords) * kThreads;
-    *word = rotl32(*word, kRotl) ^ fold;
+    const uint32_t word = rotl32(q[0], kRotl) ^ fold_tile<Mma>(acc);
+#pragma unroll
+    for (int i = 0; i < kTranscriptWords - 1; ++i) q[i] = q[i + 1];
+    q[kTranscriptWords - 1] = word;
   }
   cp_async_wait<0>();
 
   // ---- epilogue: digest, difficulty compare, hit ring, dump. ---------------------------------------
-  uint32_t msg[kTranscriptWords];
+  // After `slices` updates q[i] holds word (slices + i) % 16: rotate right by slices % 16 (four
+  // conditional power-of-two rotations with a uniform predicate) to get t[0..16] in order.
+  const uint32_t rot = slices % kTranscriptWords;
 #pragma unroll
-  for (int i = 0; i < kTranscriptWords; ++i) msg[i] = s_t[i * kThreads];
+  for (int b = 1; b < kTranscriptWords; b <<= 1) {
+    uint32_t t[kTranscriptWords];
+#pragma unroll
+    for (int i = 0; i < kTranscriptWords; ++i) t[i] = q[(i - b) & (kTranscriptWords - 1)];
+#pragma unroll
+    for (int i = 0; i < kTranscriptWords; ++i) q[i] = (rot & b) ? t[i] : q[i];
+  }
   uint32_t key[8], bound[8], digest[8];
 #pragma unroll
   for (int i = 0; i < 8; ++i) {
     key[i] = args.key[i];
     bound[i] = args.bound[i];
   }
-  blake3::keyed_hash64(key, msg, digest);
+  blake3::keyed_hash64(key, q, digest);
 
   const bool warp_in_range = (m0 + wm * kWM < args.m) && (n0 + wn * kWN < args.n);
   if (!warp_in_range) return;
@@ -266,7 +279,7 @@ __global__ void __launch_bounds__(kThreads, 1)
     uint2* rec = reinterpret_cast<uint2*>(args.dump + tile * kDumpRecordBytes);
     rec[0] = make_uint2(t_rows, t_cols);
 #pragma unroll
-    for (int i = 0; i < kTranscriptWords / 2; ++i) rec[1 + i] = make_uint2(msg[2 * i], msg[2 * i + 1]);
+    for (int i = 0; i < kTranscriptWords / 2; ++i) rec[1 + i] = make_uint2(q[2 * i], q[2 * i + 1]);
 #pragma unroll
     for (int i = 0; i < 4; ++i) rec[9 + i] = make_uint2(digest[2 * i], digest[2 * i + 1]);
   }
