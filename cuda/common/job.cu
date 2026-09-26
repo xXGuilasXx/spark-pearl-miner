@@ -25,12 +25,22 @@ thread_local int32_t g_last_cuda_error = 0;
 
 constexpr uint64_t kDefaultBudget = 2ull << 30;
 constexpr uint32_t kDefaultHitCapacity = 4096;
-constexpr uint32_t kDefaultTargetChunkUs = 6000;
+// Adaptive chunk target. Consecutive chunks of the same size differ by up to ~25 % in kernel time
+// (per CTA tile: 62-94 us at 2330 MHz, 131072^2 x 4096), so the target sits well below the 10 ms
+// cancellation rule.
+constexpr uint32_t kDefaultTargetChunkUs = 4500;
 constexpr uint32_t kDefaultBand = 16;
 constexpr uint32_t kMaxPrefix = 4096;
 // Adaptive chunks never go below this many CTA tiles per CTA (shorter chunks are dominated by the
 // ramp-up and the tail wave, and their timing is not representative).
 constexpr uint32_t kMinTilesPerCta = 4;
+// Hard ceiling of adaptive chunks, whatever the target and the timing history: the CTA tiles per
+// CTA that take kChunkCeilingUs at the clock floor with the slowest per-SM rate seen in a chunk
+// (612 MAC/clk/SM, a slow chunk of the 131072^2 x 4096 job at 2333 MHz). A throttled GPU or an
+// estimate that lags a clock drop therefore still ends its chunks within ~8 ms, under the 10 ms rule.
+constexpr double kClockFloorMhz = 1800.0;
+constexpr double kFloorMacPerClkPerSm = 600.0;
+constexpr double kChunkCeilingUs = 8000.0;
 // Chunks kept in flight: the next chunk is queued behind the running one, so the GPU does not idle
 // while the host reads the finished chunk back and launches the following one.
 constexpr uint32_t kPipeline = 2;
@@ -146,6 +156,7 @@ struct spm_job {
   uint32_t next_tile = 0;  // first tile not yet evaluated by a finished chunk
   uint32_t ctas = 0, band = kDefaultBand;
   uint32_t chunk_tiles = 0;
+  uint32_t max_chunk_tiles = 0;  // adaptive ceiling (kChunkCeilingUs at the clock floor)
   bool adaptive = true;
   double us_per_tile = 0.0;  // EMA of the kernel time per CTA tile per CTA (adaptive chunks)
   uint32_t target_chunk_us = kDefaultTargetChunkUs;
@@ -334,10 +345,14 @@ int32_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
     j->adaptive = false;
     j->chunk_tiles = p.chunk_tiles;
   } else {
-    // First guess: 1 T-MAC/s per SM (below the measured ~2), adapted after every chunk.
-    const double tile_us = (double)spm::gemm::BM * spm::gemm::BN * (double)(j->k_slices * spm::gemm::SLICE_K) / 1e6;
+    const double tile_macs = (double)spm::gemm::BM * spm::gemm::BN * (double)(j->k_slices * spm::gemm::SLICE_K);
+    const double ceiling = std::floor(kChunkCeilingUs * kClockFloorMhz * kFloorMacPerClkPerSm / tile_macs);
+    j->max_chunk_tiles = (uint32_t)std::min<double>(
+        UINT32_MAX, std::max<double>(kMinTilesPerCta, ceiling) * j->ctas);
+    // First guess: 1 T-MAC/s per SM (below the measured ~1.8), adapted after every chunk.
+    const double tile_us = tile_macs / 1e6;
     const double per_cta = std::max<double>(kMinTilesPerCta, (double)j->target_chunk_us / tile_us);
-    j->chunk_tiles = (uint32_t)(per_cta * j->ctas);
+    j->chunk_tiles = (uint32_t)std::min<double>(per_cta * j->ctas, j->max_chunk_tiles);
   }
 
   if (p.abort_flag != nullptr) {
@@ -535,6 +550,7 @@ int32_t spm_job_run_chunk(spm_job_t* j, spm_chunk_info_t* info) {
     j->us_per_tile = j->us_per_tile > 0.0 ? (1.0 - w) * j->us_per_tile + w * sample : sample;
     double next = std::floor((double)j->target_chunk_us / j->us_per_tile) * grid;
     next = std::min(next, 1.25 * j->chunk_tiles);  // grow slowly, shrink at once
+    next = std::min<double>(next, j->max_chunk_tiles);
     j->chunk_tiles = (uint32_t)std::max<double>(kMinTilesPerCta * j->ctas, next);
   }
   return j->next_tile >= j->tiles_total ? SPM_DONE : SPM_OK;

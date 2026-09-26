@@ -9,7 +9,8 @@ mod job;
 
 pub use job::{
     job_device_bytes, AbortHandle, AttemptStats, Buffer, Chunk, ChunkStatus, GpuError, Hit, Job,
-    JobConfig, JobInfo, Operands, TileRecord, DEFAULT_MEM_BUDGET, DUMP_RECORD_LEN,
+    JobConfig, JobInfo, Operands, TileRecord, DEFAULT_MEM_BUDGET, DEFAULT_TARGET_CHUNK,
+    DUMP_RECORD_LEN,
 };
 
 #[derive(Debug, Clone)]

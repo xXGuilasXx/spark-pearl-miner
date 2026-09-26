@@ -81,7 +81,8 @@ typedef struct {
   uint8_t b_noise_seed[32];
   uint32_t hit_capacity;      // hit ring entries; 0 = 4096
   uint32_t chunk_tiles;       // CTA tiles (128 x 256) per launch; 0 = adaptive
-  uint32_t target_chunk_us;   // adaptive chunk target; 0 = 6000
+  uint32_t target_chunk_us;   // adaptive chunk target; 0 = 4500 (adaptive chunks are also capped
+                              // at ~8 ms of work at an 1800 MHz SM clock)
   uint32_t band_rows;         // raster band height in CTA rows; 0 = 16
   uint64_t mem_budget_bytes;  // 0 = 2 GiB
   spm_abort_t* abort_flag;    // optional; polled before every tile and before every chunk
