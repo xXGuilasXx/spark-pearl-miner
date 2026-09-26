@@ -1,0 +1,16 @@
+[package]
+name = "spm-gpu"
+description = "Rust side of the GPU worker: builds libspm_cuda (CUDA C++ for sm_121a) and exposes a safe wrapper"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+build = "build.rs"
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+
+[build-dependencies]
+cc = "1"

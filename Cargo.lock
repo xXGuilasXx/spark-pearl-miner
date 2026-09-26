@@ -1365,6 +1365,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "spm-gpu"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "cc",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "spm-pow"
 version = "0.0.1"
 dependencies = [
