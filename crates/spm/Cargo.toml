@@ -1,0 +1,44 @@
+[package]
+name = "spark-pearl-miner"
+description = "Pearl (PRL) miner for the NVIDIA DGX Spark: daemon, simulated GPU worker and command line (alias spm)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+build = "build.rs"
+default-run = "spark-pearl-miner"
+
+[lib]
+name = "spm"
+path = "src/lib.rs"
+
+[[bin]]
+name = "spark-pearl-miner"
+path = "src/main.rs"
+
+[dependencies]
+spm-api.workspace = true
+spm-fee.workspace = true
+spm-pool.workspace = true
+spm-proto.workspace = true
+spm-work.workspace = true
+spm-ipc.workspace = true
+spm-pow.workspace = true
+zk-pow.workspace = true
+tokio = { workspace = true, features = ["process", "signal", "fs"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+bincode.workspace = true
+rand.workspace = true
+sha2.workspace = true
+hex.workspace = true
+getrandom.workspace = true
+
+[dev-dependencies]
+spm-mockpool.workspace = true

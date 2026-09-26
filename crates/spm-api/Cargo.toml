@@ -1,0 +1,30 @@
+[package]
+name = "spm-api"
+description = "Local HTTP API of spark-pearl-miner (127.0.0.1:4078): config schema and validation, token/cookie/CSRF security, REST + SSE and the embedded web GUI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+build = "build.rs"
+
+[dependencies]
+spm-fee.workspace = true
+spm-proto.workspace = true
+axum.workspace = true
+futures-util.workspace = true
+include_dir.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+base64.workspace = true
+hex.workspace = true
+getrandom.workspace = true
+
+[dev-dependencies]
+tower.workspace = true
+http-body-util.workspace = true
+spm-mockpool.workspace = true
