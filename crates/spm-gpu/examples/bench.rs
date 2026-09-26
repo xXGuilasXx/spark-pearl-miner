@@ -222,6 +222,22 @@ impl Sampler {
     }
 }
 
+/// Aggregate CPU time counters from /proc/stat: (busy, total) jiffies. On the GB10 the CPU cores
+/// share the SoC power budget and the LPDDR5x memory with the GPU, so heavy host load lowers the
+/// GPU clock and bandwidth; the bench reports it next to the throughput.
+fn cpu_jiffies() -> Option<(u64, u64)> {
+    let stat = std::fs::read_to_string("/proc/stat").ok()?;
+    let line = stat.lines().next()?;
+    let v: Vec<u64> = line
+        .split_whitespace()
+        .skip(1)
+        .filter_map(|x| x.parse().ok())
+        .collect();
+    let total: u64 = v.iter().sum();
+    let idle = v.get(3).copied().unwrap_or(0) + v.get(4).copied().unwrap_or(0);
+    Some((total - idle, total))
+}
+
 /// Names of the `clocks_event_reasons` bits (nvidia-smi --help-query-gpu).
 fn clock_reasons(mask: u64) -> Vec<&'static str> {
     const NAMES: [(u64, &str); 9] = [
@@ -310,6 +326,7 @@ fn main() -> Result<()> {
     } else {
         String::from("pass,chunks,gpu_ms,max_chunk_ms,wall_ms\n")
     };
+    let cpu_before = cpu_jiffies();
     let started = Instant::now();
     while started.elapsed().as_secs_f64() < args.seconds {
         seed[..8].copy_from_slice(&(passes + 1).to_le_bytes());
@@ -352,6 +369,10 @@ fn main() -> Result<()> {
     }
     let wall = started.elapsed().as_secs_f64();
     let ended = Instant::now();
+    let host_cpu_pct = match (cpu_before, cpu_jiffies()) {
+        (Some((b0, t0)), Some((b1, t1))) if t1 > t0 => 100.0 * (b1 - b0) as f64 / (t1 - t0) as f64,
+        _ => f64::NAN,
+    };
 
     // Cancellation: another thread raises the abort flag mid-attempt; the latency is the time
     // until `run` returns (the rest of the running chunk: the queued one skips itself).
@@ -416,6 +437,10 @@ fn main() -> Result<()> {
         } else {
             "SHARED: numbers not reliable"
         }
+    );
+    println!(
+        "host CPU busy during the run: {host_cpu_pct:.0} % of {} cores",
+        std::thread::available_parallelism().map_or(0, |n| n.get())
     );
     println!(
         "passes: {passes} in {wall:.2} s ({:.2} ms GPU per pass, {:.2} ms A-side prep per pass)",
