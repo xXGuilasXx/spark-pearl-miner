@@ -1701,6 +1701,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "238653bedf881fede50103cb7838b029e2b73d3d3d8e70d36f0a96be32a65c7b"
 
 [[package]]
+name = "spm-cpuref"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "blake3",
+ "hex",
+ "pearl-blake3",
+ "primitive-types 0.12.2",
+ "rand 0.9.5",
+ "serde",
+ "serde_json",
+ "spm-pow",
+ "zk-pow",
+]
+
+[[package]]
 name = "spm-fee"
 version = "0.0.1"
 dependencies = [

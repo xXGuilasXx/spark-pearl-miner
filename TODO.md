@@ -55,7 +55,7 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 - [ ] bind_root_a/b and the commitment chain reproduce the zk-pow seed.rs pinned vectors.
 - [ ] Layer builder, multileaf sibling walker and attempt-path overlay match pearl_blake3 MerkleTree and get_multileaf_proof on 1000 random cases, and the root equals blake3::keyed_hash(job_key, data).
 - [x] try_mine_one with our config (m=n=256, k=2048, r=128, easy nbits) produces proofs that pass check_cert_version_eligible(3), verify_plain_proof(Salted) and check_rank_penalty; all 5 mutation classes fail.
-- [ ] spm-cpuref all-tile transcripts and digests equal the zk-pow reference on 3 random problems; golden fixtures and SHA256SUMS committed.
+- [x] spm-cpuref all-tile transcripts and digests equal the zk-pow reference on 3 random problems; golden fixtures and SHA256SUMS committed. (Five problems incl. k = 4096 and a ragged k; first hit and PlainProof byte-identical to try_mine_one on replayed RNG; golden-cpuref-{1,2,3}.json.)
 
 ### M2
 

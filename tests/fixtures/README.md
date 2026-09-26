@@ -14,3 +14,20 @@ because the 76-byte header and the target are public chain data.
 
 `crates/spm-proto/tests/pool_fixtures.rs` replays every file: our generated handshake must match the accepted
 one, and every recorded job must parse. `SHA256SUMS` pins the files; regenerate it whenever a capture is refreshed.
+
+# CPU oracle golden files
+
+Each `golden-cpuref-<seed>.json` is produced by `crates/spm-cpuref` for `Problem::generate(m, n, k, header, seed)`
+(the header is recorded as `header76`): shape, job key, Merkle roots, salted roots, both noise seeds, the first 8
+tiles in full (base offsets, 16-word transcript, jackpot digest) and `tiles_blake3`, a BLAKE3 over every tile's
+104-byte dump record in order. They are the fixed targets of gate G0.
+
+| File | m × n × k | Tiles |
+|---|---|---|
+| `golden-cpuref-1.json` | 256 × 256 × 2048 | 512 |
+| `golden-cpuref-2.json` | 256 × 512 × 4096 | 1024 |
+| `golden-cpuref-3.json` | 512 × 256 × 4096 | 1024 |
+
+`crates/spm-cpuref/tests/golden.rs` recomputes them (and seed 1 again through the zk-pow reference pieces). Only
+after an intentional change: `SPM_UPDATE_GOLDEN=1 cargo test --release -p spm-cpuref --test golden`, then refresh
+`SHA256SUMS`.
