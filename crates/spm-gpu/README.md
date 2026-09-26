@@ -117,7 +117,53 @@ racecheck 0 hazards, synccheck 0 errors, initcheck 0 errors.
 
 ## Throughput
 
-BENCH_RESULTS_PLACEHOLDER
+Measured on 2026-09-26 at **stock clocks** (locking the clock needs root) with the owner's vLLM
+resident but idle. Only runs that the bench reported as exclusive (no other process held a CUDA
+context during the run) with the host CPU mostly idle are listed. Under load the SM clock follows
+the SoC power budget — busy host CPUs moved it between ~1820 and ~2290 MHz in my runs — so every rate
+is given with the clock it was measured at and as a fraction of the MB1 register-only peak at that
+clock (919 MAC/clk/SM × 48 SMs).
+
+**Harness run** — `cargo run --release -p spm-gpu --example bench -- --seconds 10 --per-chunk`,
+m = n = 16384, k = 4096, 734 full attempts in 10.0 s (host CPU 9 % busy):
+
+| Metric | Value |
+|---|---|
+| Credited rate over kernel GPU time | **85.73 T-MAC/s** at **2230 MHz** average SM clock (47 NVML samples, no clock-event reason) |
+| Against the peaks | 89.3 % of 96.0 T-MAC/s (MB1 at the 2200 MHz cap); **87.2 %** of the MB1 register-only peak at 2230 MHz (98.4) |
+| Credited rate over wall time, incl. A-side prep | 80.58 T-MAC/s (0.33 ms prep and ~0.1 ms host round trip per chunk on a 12.8 ms attempt) |
+| Chunks | 1625, median 8064 CTA tiles; p50 **6.15 ms**, p99 8.78 ms, max 9.26 ms, none over 10 ms |
+| Abort latency | 2.1 / 2.4 / 3.8 ms (flag raised from another thread mid-attempt → `run` returns) |
+| GPU power | 90.5 W average, 94.6 W peak (16.3 W before the run, so +74 W); 0.95 T-MAC/s per GPU watt; 69 °C max |
+
+**Default job shape** — `--m 131072 --n 131072 --seconds 0.5` (1 warm-up + 1 timed attempt):
+
+| Metric | Value |
+|---|---|
+| Device memory of the job | **1,107,480,580 B (1056.2 MiB)** with the GPU fill; +512 MiB (A kept on the device) with host matrices |
+| B-side prep (at create) / A-side prep (per attempt) | 3.81 ms / 2.81 ms |
+| One attempt (7.04 × 10¹³ credited MACs) | 812.6 ms of GPU time, 0.84 s wall |
+| Credited rate | **86.60 T-MAC/s** kernel, **84.03 T-MAC/s** wall incl. prep, at 2206 MHz (89.0 % of the MB1 peak at that clock) |
+| Chunks | 126 per attempt, mean 6.45 ms, max **9.16 ms** |
+| Abort latency | 3.1 / 2.6 / 5.5 ms |
+| GPU power | 92.0 W average, 94.0 W peak (+74.5 W over the 17.5 W before the run) |
+
+**Variants** (3–6 s runs, same conditions; kernel GPU time):
+
+| Variant | T-MAC/s @ SM clock | % of MB1 peak at that clock |
+|---|---|---|
+| **default:** 3 stages (48 KiB), 2 CTAs/SM, L1 transcript, raster group 8 | 85.7–87.0 @ 2216–2238 MHz | 86.3–88.6 % |
+| transcript in registers (`-DSPM_TRANSCRIPT_IN_REGS=1`, 232 regs) | 83.3 @ 2240 MHz | 84.3 % |
+| raster group 4 / 16 (`-DSPM_GROUP_M=`) | 74.2 @ 2228 / 85.1 @ 2204 MHz | 75.5 % / 87.5 % |
+| slice-major k-loop (two k-tiles unrolled per fold) | 85.7 @ 2220 / 81.7 @ 2135 MHz | 87.5 % / 86.7 % |
+| 4 stages (64 KiB per CTA: only 1 CTA/SM fits the 100 KiB of smem per SM; `-DSPM_GEMM_STAGES=4`) | 74.7 @ 2348 MHz | 72.1 % |
+| two chunks queued (paired against one at a time, alternating attempts in one process) | kernel −1.5…−2.6 %, wall −1.2…+0.4 % | — (power-bound: dropped) |
+
+**Power.** At stock clocks the kernel holds the GPU at ~85–91 W with peaks of 93–98 W, i.e. about
+1 T-MAC/s per GPU watt; the rate is set by the power budget more than by the instruction mix (that is
+why closing the host gaps between chunks gained nothing). This sits inside the ~88–92 W band of the
+known DGX Spark power-off issue (`docs/en/VIABILITY.md`), so sustained mining needs the 2200 MHz cap or
+the Balanced governor (M11); no run here lasted more than 10 s.
 
 ## Reproduce
 
@@ -144,13 +190,13 @@ SPM_GPU_TESTS=1 cargo test --release -p spm-gpu --features gpu -- --test-threads
 SPM_GPU_TESTS=1 compute-sanitizer --tool racecheck \
   $CARGO_TARGET_DIR/release/deps/g0-<hash> ragged chunked --test-threads=1
 
-# throughput (~10 s at 16384² × 4096; run it when no other process is using the GPU)
-cargo run --release -p spm-gpu --example bench -- --seconds 10
-# default job shape: memory, prep, chunk times, abort latency (one ~0.9 s attempt, ~1.06 GiB)
+# throughput (~10 s at 16384² × 4096; the bench says whether another process used the GPU)
+cargo run --release -p spm-gpu --example bench -- --seconds 10 --per-chunk --csv chunks.csv
+# default job shape: memory, prep, chunk times, abort latency (one ~0.85 s attempt, ~1.06 GiB)
 cargo run --release -p spm-gpu --example bench -- --m 131072 --n 131072 --seconds 0.5
 
-# experiments: SPM_NVCC_FLAGS="-DSPM_TRANSCRIPT_IN_REGS=1" or "-DSPM_GROUP_M=16" or
-# "-DSPM_GEMM_STAGES=4" (the latter needs 64 KiB smem per CTA, so only 1 CTA/SM fits)
+# variants: SPM_NVCC_FLAGS="-DSPM_TRANSCRIPT_IN_REGS=1" | "-DSPM_GROUP_M=16" | "-DSPM_GEMM_STAGES=4"
+# (4 stages need 64 KiB of smem per CTA, so only 1 CTA/SM fits)
 ```
 
 ## Limits
