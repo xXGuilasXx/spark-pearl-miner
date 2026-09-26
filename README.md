@@ -12,7 +12,7 @@ _Português: [README.pt-BR.md](README.pt-BR.md)_
 - Built for the DGX Spark's realities: the known hard power-off under sustained GPU load (clock cap + non-root governor), unified-memory pressure, and coexistence with a resident vLLM.
 
 ## Developer fee (disclosed)
-`dev fee 2.00% → prl1pxtue3pmxcxjplpe6gsc57ctwv6z8t4lawq2l80wm88rqkyyc6eaqrveydh @ br.pearl.herominers.com:1200 (HeroMiners), worker "devfee", 120 s slices, only while mining`
+`dev fee 2.00% → prl1pkqprrek7pemaxyvl4deusyz2hrkywnkhl86w7yqv53x0qyvsd5fs57s90n @ br.pearl.herominers.com:1200 (HeroMiners), worker "devfee", 120 s slices, only while mining`
 All fee constants live in one file, `crates/spm-fee/src/lib.rs`; CI fails if this README disagrees with it. No remote configuration, no obfuscation, no packed binaries. The fee switches itself off when your wallet is the fee wallet.
 
 ## Honest expectations

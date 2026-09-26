@@ -1,0 +1,11 @@
+[package]
+name = "spm-fee"
+description = "ALL developer-fee constants for spark-pearl-miner live here (rate, wallet, pools, schedule) plus the debt scheduler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bech32.workspace = true

@@ -26,7 +26,7 @@
 | M15 | Contingência: padrão oficial 2×64 no mesmo mainloop (só se uma pool rejeitar o 8×16) | 2 | M6 | |
 
 ## Alerta registrado em 2026-09-26
-- **A carteira da fee é um endereço de depósito de exchange (SafeTrade).** Antes do v0.1.0: criar carteira própria (desktop wallet/oystercli) para `DEV_WALLET`; ajustar o limite de pagamento na HeroMiners para ≥ o depósito mínimo de PRL da SafeTrade (pagamentos de 1 PRL podem ser perdidos); a prova de controle (G4) só é possível com carteira própria.
+- ✅ **Carteira da taxa trocada em 2026-09-26 por carteira própria `oyster` (prl1pkqp…s90n).** Ainda pendente: Antes do v0.1.0: criar carteira própria (desktop wallet/oystercli) para `DEV_WALLET`; ajustar o limite de pagamento na HeroMiners para ≥ o depósito mínimo de PRL da SafeTrade (pagamentos de 1 PRL podem ser perdidos); a prova de controle (G4) só é possível com carteira própria.
 
 ## Regras que não mudam
 - Nunca enviar share sem verificar localmente com o `zk-pow` oficial; `cert_version` ≥ 4 ⇒ pausar com "atualização necessária".

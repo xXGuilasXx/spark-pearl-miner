@@ -13,3 +13,4 @@
 | 2026-09-26 | The initial fee address was an exchange deposit address; a self-custody wallet (official `oyster`/`oystercli`) is being created to replace it before v0.1.0 | user |
 | 2026-09-26 | New Rust host + CUDA library instead of forking CPPminer (3 designs, 3 judges unanimous); daemon without CUDA + disposable `gpu-worker`; embedded web GUI on 127.0.0.1:4078 | design panel, accepted |
 | 2026-09-26 | Every subagent runs on Opus 5.5 (`CLAUDE_CODE_SUBAGENT_MODEL`) | user |
+| 2026-09-26 | New self-custody fee wallet created with the official `oystercli` (SPV); `DEV_WALLET = prl1pkqp…s90n` | user |

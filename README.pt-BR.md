@@ -12,7 +12,7 @@ _English: [README.md](README.md)_
 - Feito para a realidade do DGX Spark: o desligamento abrupto conhecido sob carga sustentada de GPU (cap de clock + governor sem root), pressão de memória unificada e convivência com um vLLM residente.
 
 ## Taxa do desenvolvedor (divulgada)
-`dev fee 2.00% → prl1pxtue3pmxcxjplpe6gsc57ctwv6z8t4lawq2l80wm88rqkyyc6eaqrveydh @ br.pearl.herominers.com:1200 (HeroMiners), worker "devfee", fatias de 120 s, só enquanto minera`
+`dev fee 2.00% → prl1pkqprrek7pemaxyvl4deusyz2hrkywnkhl86w7yqv53x0qyvsd5fs57s90n @ br.pearl.herominers.com:1200 (HeroMiners), worker "devfee", fatias de 120 s, só enquanto minera`
 Todas as constantes da taxa vivem em um único arquivo, `crates/spm-fee/src/lib.rs`; o CI falha se este README divergir dele. Sem configuração remota, sem ofuscação, sem binários empacotados. A taxa se desliga sozinha quando a sua carteira é a carteira da taxa.
 
 ## Expectativas honestas

@@ -13,3 +13,4 @@
 | 2026-09-26 | O endereço inicial da taxa era de depósito de exchange; uma carteira própria (`oyster`/`oystercli` oficiais) está sendo criada para substituí-lo antes do v0.1.0 | usuário |
 | 2026-09-26 | Host Rust novo + biblioteca CUDA em vez de bifurcar o CPPminer (3 desenhos, 3 juízes unânimes); daemon sem CUDA + `gpu-worker` descartável; GUI web embutida em 127.0.0.1:4078 | painel de design, aceito |
 | 2026-09-26 | Todo subagente roda em Opus 5.5 (`CLAUDE_CODE_SUBAGENT_MODEL`) | usuário |
+| 2026-09-26 | Nova carteira própria da taxa criada com o `oystercli` oficial (SPV); `DEV_WALLET = prl1pkqp…s90n` | usuário |
