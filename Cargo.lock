@@ -2177,6 +2177,7 @@ dependencies = [
  "spm-pow",
  "spm-proto",
  "spm-work",
+ "spm-worker",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
@@ -2226,6 +2227,7 @@ dependencies = [
  "pearl-blake3",
  "primitive-types 0.12.2",
  "rand 0.9.5",
+ "rayon",
  "serde",
  "serde_json",
  "spm-pow",
@@ -2350,6 +2352,29 @@ dependencies = [
  "spm-pow",
  "spm-proto",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "spm-worker"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "clap 4.6.7",
+ "getrandom 0.3.4",
+ "nvml-wrapper",
+ "pearl-blake3",
+ "rayon",
+ "spm-coexist",
+ "spm-cpuref",
+ "spm-gpu",
+ "spm-ipc",
+ "spm-pow",
+ "spm-proto",
+ "spm-work",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

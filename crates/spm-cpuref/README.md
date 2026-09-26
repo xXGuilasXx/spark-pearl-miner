@@ -29,6 +29,19 @@ verify_v3(&p.header, &proof, Some(nbits_share))?;      // check_cert_version_eli
 `transcripts()` uses every core and is deterministic; the largest G0 shape (1024 × 1024 × 4096, 8192 tiles)
 takes about 0.1 s on the GB10's 20 CPU cores.
 
+### Full-size jobs without full-size matrices (used by the GPU worker)
+
+* `fill_int7_at` / `fill_int7_bytes_at`: any range of a generated matrix (SplitMix64 is counter based).
+* `NoiseSide`: the noise and noised entries of chosen rows, with the official generators for exactly those
+  row indices; `tile_from_rows`: one tile's transcript and digest from its 8 A' rows and 16 B'ᵀ rows (both
+  proven equal to `Oracle` in `rows.rs`).
+* `MatrixTree`: the Merkle layer cache of a matrix commitment — the same tree as `pearl_blake3::MerkleTree`
+  (root = `blake3::keyed_hash(job_key, data)`, byte-identical multileaf proofs), storing only the nodes at and
+  above 64-chunk segments (~0.5 MiB for 512 MiB of data) plus segment 0, with `patch_chunk0` replacing chunk 0
+  in one leaf hash plus one merge per level (`ChunkPatch`, the nonce patch). Data comes from a `ChunkSource`
+  (a generator), so building never holds the matrix. `tests/merkle.rs` checks roots, patched roots and
+  proofs against `pearl_blake3` on 1000 random trees.
+
 ## The algorithm the GPU must replicate
 
 Notation: `blake3(x)` is unkeyed BLAKE3-256, `blake3_k(key, x)` keyed BLAKE3, all integers little endian.
@@ -162,6 +175,7 @@ little-endian byte, entry = `(byte & 0x7f) − 64`. SplitMix64 is counter based
   saturates, so only difficulty rejects it); tampered proofs fail; invalid shapes and entries are refused.
 * `golden.rs`: `tests/fixtures/golden-cpuref-{1,2,3}.json` (pinned in `SHA256SUMS`).
 * `speed.rs`: the smallest valid shape end to end, and the largest G0 shape within a time budget.
+* `merkle.rs`: the layer cache against `pearl_blake3` (above); unit tests in `rows.rs` / `merkle.rs`.
 
 ## How G0 uses it
 
