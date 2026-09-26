@@ -9,6 +9,7 @@ members = [
     "crates/spm-ipc",
     "crates/spm-mockpool",
     "crates/spm-pool",
+    "crates/spm-cpuref",
 ]
 
 [workspace.package]

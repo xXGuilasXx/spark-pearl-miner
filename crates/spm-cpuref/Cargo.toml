@@ -1,0 +1,23 @@
+[package]
+name = "spm-cpuref"
+description = "Exact CPU oracle of the PearlHash V3 pipeline (commitment, noise, noised int8 GEMM, per-tile transcripts, PlainProof): the bit-exact target of the GPU kernel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+spm-pow = { path = "../spm-pow" }
+zk-pow.workspace = true
+pearl-blake3.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+hex.workspace = true
+primitive-types.workspace = true
+
+[dev-dependencies]
+rand = "0.9"
+bincode.workspace = true
+blake3.workspace = true
+serde_json.workspace = true
