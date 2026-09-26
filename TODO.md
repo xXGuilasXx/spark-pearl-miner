@@ -51,10 +51,10 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 
 - [x] Pattern bytes asserted: rows [0,8,...,56] give 07 07 00 00 00 00; cols [0,1,8,9,...,56,57] give 00 01 03 07 00 00. The 52-byte MiningConfiguration is asserted too.
 - [x] Partition test passes: tiles at t_rows = 64a+g (g<8) and t_cols = 64b+2t (t<4) cover a 512x512 output exactly once, matching offset_is_valid.
-- [ ] Bound math passes: diff 2,097,152 gives target 0x7fff8<<184, nbits 0x1a07fff8 and bound = target*2^19. expand(compact(t)) <= t holds under proptest, and overflow returns None.
+- [x] Bound math passes: diff 2,097,152 gives target 0x7fff8<<184, nbits 0x1a07fff8 and bound = target*2^19. expand(compact(t)) <= t holds under proptest, and overflow returns None.
 - [ ] bind_root_a/b and the commitment chain reproduce the zk-pow seed.rs pinned vectors.
 - [ ] Layer builder, multileaf sibling walker and attempt-path overlay match pearl_blake3 MerkleTree and get_multileaf_proof on 1000 random cases, and the root equals blake3::keyed_hash(job_key, data).
-- [ ] try_mine_one with our config (m=n=256, k=2048, r=128, easy nbits) produces proofs that pass check_cert_version_eligible(3), verify_plain_proof(Salted) and check_rank_penalty; all 5 mutation classes fail.
+- [x] try_mine_one with our config (m=n=256, k=2048, r=128, easy nbits) produces proofs that pass check_cert_version_eligible(3), verify_plain_proof(Salted) and check_rank_penalty; all 5 mutation classes fail.
 - [ ] spm-cpuref all-tile transcripts and digests equal the zk-pow reference on 3 random problems; golden fixtures and SHA256SUMS committed.
 
 ### M2
