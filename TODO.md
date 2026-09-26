@@ -62,9 +62,9 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 - [x] tools/spm-probe.py: sends one authorize per connection, allows at most 5 connections per pool per hour, listens 10 min, never submits, writes redacted JSONL.
 - [x] tools/spm-proxy.py: logging TCP/TLS forwarder recording both directions with timestamps; the wallet is replaced with a placeholder and proofs are logged as sha256 plus length.
 - [x] HeroMiners BR certificate chain, issuer and SAN recorded with openssl s_client, using no credentials.
-- [ ] HeroMiners BR authorize-only capture runs H1 object, then H1b wallet.worker, then H2 array, then H3 CryptoNote login, stopping at the first result:true. It records the notify fields, target endianness, cert_version presence, diff, job cadence and idle behaviour.
-- [ ] LuckyPool BR and Kryptex 7048 authorize-only captures done after the user's approval.
-- [ ] Redacted fixtures and the docs/protocol draft committed; notify.target == floor(0xFFFF*2^208/diff) confirmed per pool.
+- [x] HeroMiners BR authorize-only capture runs H1 object, then H1b wallet.worker, then H2 array, then H3 CryptoNote login, stopping at the first result:true. It records the notify fields, target endianness, cert_version presence, diff, job cadence and idle behaviour.
+- [x] LuckyPool BR (TLS, self-signed pinned) and Kryptex 8048/TLS authorize-only captures done (7048 plain does not answer)
+- [x] Redacted fixtures, SHA256SUMS and docs/protocol/{herominers,luckypool,kryptex}.md committed; notify.target == floor(0xFFFF*2^208/diff) on HeroMiners/LuckyPool, 2^224/diff-1 on Kryptex (always use notify.target)
 
 ### M3
 
