@@ -34,14 +34,14 @@
 
 ## Regras que não mudam
 - Nunca enviar share sem verificar localmente com o `zk-pow` oficial; `cert_version` ≥ 4 ⇒ pausar com "atualização necessária".
-- GPU nesta máquina só como runtime `miner` do `spark-modo`; avisar antes de parar o vLLM; clock 2200 MHz nos testes; perfil **Balanced** (75 W alvo / 85 W corte) por padrão.
+- GPU nesta máquina só como runtime `miner` do `spark-modo`; avisar antes de parar o vLLM; clock 2000 MHz nos testes (cap padrão desde o soak G1 nº 1: 2200 MHz deu 87 W e acpitz 97,5 °C); perfil **Balanced** (75 W alvo / 85 W corte) por padrão.
 - Fee: constantes só em `crates/spm-fee/src/lib.rs`; READMEs e `docs/FEE.md` idênticos (CI falha se divergirem); sem config remota; sem ofuscação; sem packing.
 - CI nunca minera; releases reprodutíveis e atestados; nunca copiar `akoya-miner`.
 - Semanal: vigiar `Fp8ForkHeight`/PR #311. Mensal: atualizar `docs/pt-BR/VIABILIDADE.md`.
 
 ## Portões
 - **G0** kernel INT8 bit-idêntico ao `zk-pow`; provas passam em `check_cert_version_eligible(3)` + `verify_plain_proof(Salted)`.
-- **G1** soaks de 60 min e 24 h a 2200 MHz sem power-off, zero divergências, ≥ ~70 TH/s creditados.
+- **G1** soaks de 60 min e 24 h a 2000 MHz sem power-off, zero divergências, ≥ ~70 TH/s creditados.
 - **G2** shares aceitas em LuckyPool BR e HeroMiners BR com o nosso minerador.
 - **G3** `QMMA` FP8 do GB10 bit-exato contra a referência `fp8-scheme`.
 - **G4** dono assina o endereço da fee (BIP-322 simples, oystercli) antes do release público.

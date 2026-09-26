@@ -1,0 +1,8 @@
+rows 102 over 0.3 h (1 session(s))
+max power 87.23 W at 2026/09/26 22:11:09.860; mean 79.96 W
+min SM clock 715 MHz at 2026/09/26 21:54:33.523; min under load (>= 30 W) 1878 MHz
+max GPU temperature 83 C; max acpitz 97.5 C
+rows with active clock event reasons: 0
+no gap > 20 s
+last session ended cleanly: yes
+uptime start=617652.19s end=619026.84s (a smaller end than start = the machine rebooted)
