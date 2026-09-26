@@ -16,7 +16,7 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 | M4 | Host core: proto, work, ipc, mockpool | 3 | M1, M2 |
 | M5a | GB10 microbenchmark window | 1 | M0 |
 | M5 | libspm_cuda v0 + gpu-worker, bit-exact (gate G0) | 8 | M1, M5a |
-| M6 | First accepted shares with our own miner (gate G2) | 1 | M4, M5 |
+| M6 | First accepted shares with our own miner (gate G2) — first shares accepted on LuckyPool BR and HeroMiners BR on 2026-09-26 | 1 | M4, M5 |
 | M7 | 3-pool failover state machine (backend of the user's P0 item) | 3 | M4 |
 | M8 | Transparent 2% dev fee | 1.5 | M6, M7 |
 | M9 | Daemon API + web GUI EN/PT-BR + systemd/desktop + spark-modo contrib (frontend of the user's P0 item) | 4 | M7 |
@@ -100,8 +100,8 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 ### M6
 - [x] Daemon spawns the real GPU worker in `spawn` mode (`worker.simulate = false`); `--sim` keeps the CPU simulation.
 
-- [ ] LuckyPool BR 3360: at least 5 accepted and 0 rejected with our miner.
-- [ ] HeroMiners BR for 1 h: at least 20 accepted, 0 invalid, stale under 1%; the working proof field (plain_proof_zst or plain_proof) stored in state.json; the worker visible in HeroMiners stats.
+- [x] LuckyPool BR 3360: at least 5 accepted and 0 rejected with our miner. (2026-09-26: 5 accepted, 0 rejected, 0 stale; pool-side `acceptedShares: 5`; `docs/benchmarks/m6-20260926T222707Z-first-shares.md`.)
+- [~] HeroMiners BR for 1 h: at least 20 accepted, 0 invalid, stale under 1%; the working proof field (plain_proof_zst or plain_proof) stored in state.json; the worker visible in HeroMiners stats. (2026-09-26: 4 accepted, 0 rejected in 11 min at diff 2 097 152 with `plain_proof`; worker `spark-def3` visible in the pool stats; the 1 h run is pending.)
 - [ ] Pool-side hashrate within Poisson bounds of the local credited MAC/s over at least 6 h; our 8x16 pattern accepted on both pools, otherwise start M15.
 
 ### M7
@@ -109,7 +109,7 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 - [x] spm-pool reducer with an injected clock passes at least 25 deterministic time-warped scenarios. (42 scenarios in `crates/spm-pool/tests/scenarios.rs`, plus 5 unit tests.)
 - [x] proptest invariants hold: one active user session; hits only on the originating session; no lost or duplicated shares; the dev session stays isolated. (`crates/spm-pool/tests/invariants.rs`, 1024 random sequences per run plus a state-coverage guard; the dev session is outside the reducer, which is asserted never to address a non-user slot.)
 - [ ] Mockpool faults (refuse, blackhole, TLS fail, auth reject, no job, reject storm, stall, EOF mid-submit, 4 MiB line) each lead to failover within 15 s.
-- [ ] Live check: with pool 1 pointed at a closed port, pool 2 becomes active within 15 s; after pool 1 is restored, mining returns to it after the 300 s probe plus 60 s stable; the timeline is logged.
+- [~] Live check: with pool 1 pointed at a closed port, pool 2 becomes active within 15 s; after pool 1 is restored, mining returns to it after the 300 s probe plus 60 s stable; the timeline is logged (2026-09-26, config path: pool 1 disabled → pool 2 mining in 1.1 s; pool 1 re-enabled → probe healthy, 60 s standby, switch, pool 2 drained in 5 s; the closed-port variant is pending).
 
 ### M8
 
