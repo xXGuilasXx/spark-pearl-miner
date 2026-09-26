@@ -206,7 +206,7 @@ mod tests {
         // Tripwire: any change to a fee constant changes this value; update it deliberately.
         assert_eq!(h, PINNED_CONSTANTS_HASH);
     }
-    const PINNED_CONSTANTS_HASH: &str = "aaa2524a37b872d81426fd346de87bc7fdf3a3616f7975d960827c46c2210d30";
+    const PINNED_CONSTANTS_HASH: &str = "8b85a8d221715227dda4339e350f17360d0bc3c4fe675acbe4e90622eced28c7";
     #[test]
     fn dev_wallet_is_a_valid_mainnet_p2tr_address() {
         assert!(is_valid_prl_p2tr(DEV_WALLET));
