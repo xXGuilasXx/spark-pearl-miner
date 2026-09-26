@@ -10,14 +10,22 @@
 //!   `X-SPM-CSRF`; a cross-site page can neither read it nor set the header without CORS.
 //! * The Host header must name the loopback listener (defeats DNS rebinding) and an Origin header, if
 //!   present, must be the same origin.
+//! * Trusted local user (`api.trust_local_user`, on by default): a loopback connection whose peer
+//!   socket belongs to the daemon's own UID (see [`crate::peer`]) may read without a cookie and gets
+//!   a session from `GET /api/v1/session` without the token. Mutations still need the cookie and the
+//!   CSRF header. Other accounts on the machine, and everything not on loopback, need the token.
 
 use std::collections::HashMap;
+use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
+use std::net::{Ipv4Addr, SocketAddr};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+
+use crate::peer::{self, PeerUidResolver};
 
 /// Cookie name.
 pub const COOKIE: &str = "spm_session";
@@ -92,21 +100,79 @@ struct Session {
 }
 
 /// In-memory security state of one API server.
-#[derive(Debug)]
 pub struct Security {
     token: String,
     sessions: Mutex<HashMap<String, Session>>,
     hosts: Vec<String>,
     origins: Vec<String>,
     failures: Mutex<(u32, Option<Instant>)>,
+    trust_local_user: bool,
+    listener: SocketAddr,
+    own_uid: Option<u32>,
+    peer_uid: PeerUidResolver,
+}
+
+impl fmt::Debug for Security {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Security")
+            .field("hosts", &self.hosts)
+            .field("trust_local_user", &self.trust_local_user)
+            .field("listener", &self.listener)
+            .field("own_uid", &self.own_uid)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Security {
-    /// `port` is the port the listener really bound (the Host allowlist uses it).
+    /// `port` is the port the listener really bound (the Host allowlist uses it). The trusted local
+    /// user is off until [`Security::trust_local_user`] turns it on.
     pub fn new(token: String, port: u16) -> Self {
         let hosts = vec![format!("127.0.0.1:{port}"), format!("localhost:{port}"), format!("[::1]:{port}")];
         let origins = hosts.iter().map(|h| format!("http://{h}")).collect();
-        Security { token, sessions: Mutex::new(HashMap::new()), hosts, origins, failures: Mutex::new((0, None)) }
+        Security {
+            token,
+            sessions: Mutex::new(HashMap::new()),
+            hosts,
+            origins,
+            failures: Mutex::new((0, None)),
+            trust_local_user: false,
+            listener: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port),
+            own_uid: peer::effective_uid(),
+            peer_uid: Box::new(peer::proc_peer_uid),
+        }
+    }
+
+    /// `api.trust_local_user`: let the same user account on this machine in without the token.
+    pub fn trust_local_user(mut self, on: bool) -> Self {
+        self.trust_local_user = on;
+        self
+    }
+
+    /// The address the listener really bound (the peer lookup matches connections to it).
+    pub fn listener(mut self, addr: SocketAddr) -> Self {
+        self.listener = addr;
+        self
+    }
+
+    /// Replace the peer-UID lookup (default: `/proc/net/tcp*`). For tests.
+    pub fn peer_uid_resolver(mut self, f: PeerUidResolver) -> Self {
+        self.peer_uid = f;
+        self
+    }
+
+    /// Whether the switch is on.
+    pub fn trusts_local_user(&self) -> bool {
+        self.trust_local_user
+    }
+
+    /// The connection from `peer` is the daemon's own user on this machine: the switch is on, the
+    /// peer is on loopback and its socket belongs to our effective UID. `None` (no peer address
+    /// known) is never trusted.
+    pub fn is_local_user(&self, peer: Option<SocketAddr>) -> bool {
+        let (Some(peer), Some(own)) = (peer, self.own_uid) else {
+            return false;
+        };
+        self.trust_local_user && peer::is_loopback(peer.ip()) && (self.peer_uid)(peer, self.listener) == Some(own)
     }
 
     /// Host header allowlist.
@@ -140,6 +206,11 @@ impl Security {
         if let Ok(mut g) = self.failures.lock() {
             *g = (0, None);
         }
+        self.open_session()
+    }
+
+    /// A new session without the token: only for a connection [`Security::is_local_user`] trusts.
+    pub(crate) fn open_session(&self) -> Option<(String, String)> {
         let id = random_hex(32).ok()?;
         let csrf = random_hex(32).ok()?;
         let now = Instant::now();

@@ -62,7 +62,8 @@ enum Cmd {
     Resume,
     /// Open the web GUI in the browser.
     Gui {
-        /// Only print the login URL (for `ssh -L 4078:127.0.0.1:4078`).
+        /// Only print the login URL with the token (for `ssh -L 4078:127.0.0.1:4078` or another
+        /// user account); on this machine, your own account needs no token by default.
         #[arg(long)]
         print_url: bool,
     },
@@ -308,10 +309,13 @@ async fn status(json: bool) -> ExitCode {
 
 async fn gui(print_url: bool) -> ExitCode {
     let paths = Paths::from_env();
-    let port = std::fs::read_to_string(paths.config_file())
+    let api = std::fs::read_to_string(paths.config_file())
         .ok()
         .and_then(|t| spm_api::Config::from_toml(&t).ok())
-        .map_or(spm_api::config::DEFAULT_API_PORT, |c| c.api.port);
+        .map(|c| c.api)
+        .unwrap_or_default();
+    let port = api.port;
+    let plain = format!("http://127.0.0.1:{port}/");
     let reachable = || async move { tokio::net::TcpStream::connect(("127.0.0.1", port)).await.is_ok() };
     if !reachable().await {
         eprintln!("The daemon is not running; starting it with systemctl --user …");
@@ -332,12 +336,22 @@ async fn gui(print_url: bool) -> ExitCode {
     };
     let url = format!("http://127.0.0.1:{port}/#token={token}");
     if print_url {
+        // stdout keeps only the URL (scripts read it); the explanation goes to stderr.
+        if api.trust_local_user {
+            eprintln!(
+                "On this machine, {plain} needs no token for this user account (api.trust_local_user).\n\
+                 From another account or machine, use the URL with the token:"
+            );
+        }
         println!("{url}");
         return ExitCode::SUCCESS;
     }
     match std::process::Command::new("xdg-open").arg(&url).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn() {
         Ok(_) => {
-            println!("Opened http://127.0.0.1:{port}/ in the browser.");
+            println!("Opened {plain} in the browser.");
+            if api.trust_local_user {
+                println!("On this machine, {plain} needs no token for this user account; other accounts use the token (gui --print-url).");
+            }
             ExitCode::SUCCESS
         }
         Err(e) => {

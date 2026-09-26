@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::body::Body;
-use axum::extract::{Path, Query, Request, State};
+use axum::extract::{ConnectInfo, Path, Query, Request, State};
 use axum::http::header::{self, HeaderValue};
 use axum::http::{Method, StatusCode};
 use axum::middleware::{self, Next};
@@ -87,44 +87,89 @@ fn set_security_headers(resp: &mut Response, api: bool) {
     }
 }
 
+/// Marks a request let through without a session because it comes from the daemon's own user on
+/// this machine (`GET /api/v1/session` then opens a session without the token).
+#[derive(Debug, Clone, Copy)]
+struct LocalUser;
+
 /// Host/Origin allowlist, session cookie and CSRF, then the security headers on every response.
-async fn guard<B: Backend>(State(st): State<Arc<AppState<B>>>, req: Request, next: Next) -> Response {
+async fn guard<B: Backend>(State(st): State<Arc<AppState<B>>>, mut req: Request, next: Next) -> Response {
     let path = req.uri().path().to_string();
     let api = path.starts_with("/api/");
     let mut resp = match check(&st.sec, &req, api, &path) {
-        Some(refused) => refused,
-        None => next.run(req).await,
+        Access::Refused(refused) => refused,
+        access => {
+            // Only `check` decides; never keep a marker that was already on the request.
+            req.extensions_mut().remove::<LocalUser>();
+            if matches!(access, Access::LocalUser) {
+                req.extensions_mut().insert(LocalUser);
+            }
+            next.run(req).await
+        }
     };
     set_security_headers(&mut resp, api);
     resp
 }
 
-/// `Some(response)` when the request is refused.
-fn check(sec: &Security, req: &Request, api: bool, path: &str) -> Option<Response> {
+/// What the guard decided.
+enum Access {
+    /// Not an API path, the token login, or a valid session (with CSRF on mutations).
+    Open,
+    /// No session, but a read from the daemon's own user on this machine.
+    LocalUser,
+    Refused(Response),
+}
+
+fn check(sec: &Security, req: &Request, api: bool, path: &str) -> Access {
     if !sec.host_allowed(header_str(req, header::HOST)) {
-        return Some(err(StatusCode::FORBIDDEN, "forbidden_host", "requests must address 127.0.0.1 or localhost on the API port"));
+        return Access::Refused(err(StatusCode::FORBIDDEN, "forbidden_host", "requests must address 127.0.0.1 or localhost on the API port"));
     }
     if !sec.origin_allowed(header_str(req, header::ORIGIN)) {
-        return Some(err(StatusCode::FORBIDDEN, "forbidden_origin", "cross-origin requests are refused"));
+        return Access::Refused(err(StatusCode::FORBIDDEN, "forbidden_origin", "cross-origin requests are refused"));
     }
     if !api {
-        return None;
+        return Access::Open;
     }
     let login = path == "/api/v1/session" && req.method() == Method::POST;
     if login {
-        return None;
+        return Access::Open;
     }
     let cookie = header_str(req, header::COOKIE).and_then(|c| cookie_value(c, COOKIE));
-    let Some(csrf) = cookie.and_then(|c| sec.session_csrf(c)) else {
-        return Some(err(StatusCode::UNAUTHORIZED, "unauthorized", "log in with the API token (spark-pearl-miner gui)"));
-    };
-    if is_mutation(req.method()) {
-        let sent = header_str(req, CSRF_HEADER);
-        if !sent.is_some_and(|s| ct_eq(s, &csrf)) {
-            return Some(err(StatusCode::FORBIDDEN, "csrf", "missing or wrong X-SPM-CSRF header"));
+    if let Some(csrf) = cookie.and_then(|c| sec.session_csrf(c)) {
+        if is_mutation(req.method()) {
+            let sent = header_str(req, CSRF_HEADER);
+            if !sent.is_some_and(|s| ct_eq(s, &csrf)) {
+                return Access::Refused(err(StatusCode::FORBIDDEN, "csrf", "missing or wrong X-SPM-CSRF header"));
+            }
         }
+        return Access::Open;
     }
-    None
+    // No session. Reads (and the session bootstrap) are open to the same user on this machine;
+    // mutations never are: a hostile page in that user's own browser runs under the same UID, so
+    // the cookie + CSRF pair stays the only way to change anything.
+    if !is_mutation(req.method()) && local_user(sec, req) {
+        return Access::LocalUser;
+    }
+    Access::Refused(err(StatusCode::UNAUTHORIZED, "unauthorized", "log in with the API token (spark-pearl-miner gui)"))
+}
+
+/// The request comes from the daemon's own user on this machine and not from another site in
+/// their browser, nor through a proxy.
+fn local_user(sec: &Security, req: &Request) -> bool {
+    if !sec.trusts_local_user() {
+        return false;
+    }
+    // Browsers say where a request comes from: only the GUI itself ("same-origin") or an address
+    // typed by the user ("none") qualify.
+    if header_str(req, "sec-fetch-site").is_some_and(|v| !matches!(v.trim(), "same-origin" | "none")) {
+        return false;
+    }
+    // A reverse proxy run by the same user would make every remote client look local.
+    if ["forwarded", "x-forwarded-for", "x-real-ip"].iter().any(|h| req.headers().contains_key(*h)) {
+        return false;
+    }
+    let peer = req.extensions().get::<ConnectInfo<SocketAddr>>().map(|c| c.0);
+    sec.is_local_user(peer)
 }
 
 #[derive(Deserialize)]
@@ -139,19 +184,24 @@ async fn login<B: Backend>(State(st): State<Arc<AppState<B>>>, body: Option<Json
     };
     match st.sec.login(&body.token) {
         Some((cookie, csrf)) => {
-            let mut resp = Json(json!({ "csrf": csrf })).into_response();
-            let c = format!("{COOKIE}={cookie}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400");
-            if let Ok(v) = HeaderValue::from_str(&c) {
-                resp.headers_mut().insert(header::SET_COOKIE, v);
-            }
             tracing::info!("API: browser session opened");
-            resp
+            session_opened(&cookie, &csrf)
         }
         None => {
             tracing::warn!("API: login with a wrong token");
             err(StatusCode::UNAUTHORIZED, "bad_token", "wrong API token")
         }
     }
+}
+
+/// `{"csrf"}` plus the session cookie.
+fn session_opened(cookie: &str, csrf: &str) -> Response {
+    let mut resp = Json(json!({ "csrf": csrf })).into_response();
+    let c = format!("{COOKIE}={cookie}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400");
+    if let Ok(v) = HeaderValue::from_str(&c) {
+        resp.headers_mut().insert(header::SET_COOKIE, v);
+    }
+    resp
 }
 
 fn request_cookie(headers: &axum::http::HeaderMap) -> Option<String> {
@@ -162,11 +212,19 @@ fn request_cookie(headers: &axum::http::HeaderMap) -> Option<String> {
         .map(str::to_string)
 }
 
-async fn session_csrf<B: Backend>(State(st): State<Arc<AppState<B>>>, headers: axum::http::HeaderMap) -> Response {
-    match request_cookie(&headers).and_then(|c| st.sec.session_csrf(&c)) {
-        Some(csrf) => Json(json!({ "csrf": csrf })).into_response(),
-        None => err(StatusCode::UNAUTHORIZED, "unauthorized", "no session"),
+/// The CSRF value of the current session. For the trusted local user without a session, this
+/// opens one exactly as a token login would, so the GUI needs no login screen on this machine.
+async fn session_csrf<B: Backend>(State(st): State<Arc<AppState<B>>>, req: Request) -> Response {
+    if let Some(csrf) = request_cookie(req.headers()).and_then(|c| st.sec.session_csrf(&c)) {
+        return Json(json!({ "csrf": csrf })).into_response();
     }
+    if req.extensions().get::<LocalUser>().is_some() {
+        if let Some((cookie, csrf)) = st.sec.open_session() {
+            tracing::info!("API: browser session opened for the local user (same UID, no token)");
+            return session_opened(&cookie, &csrf);
+        }
+    }
+    err(StatusCode::UNAUTHORIZED, "unauthorized", "no session")
 }
 
 async fn logout<B: Backend>(State(st): State<Arc<AppState<B>>>, headers: axum::http::HeaderMap) -> Response {
@@ -415,18 +473,20 @@ pub async fn bind(opts: &ServeOptions) -> io::Result<(TcpListener, u16)> {
     Ok((listener, port))
 }
 
-/// Serve until `shutdown` resolves.
+/// Serve until `shutdown` resolves. `trust_local_user` is `api.trust_local_user`.
 pub async fn serve<B: Backend>(
     listener: TcpListener,
     backend: Arc<B>,
     token: String,
+    trust_local_user: bool,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> io::Result<()> {
-    let port = listener.local_addr()?.port();
-    let sec = Arc::new(Security::new(token, port));
+    let local = listener.local_addr()?;
+    let port = local.port();
+    let sec = Arc::new(Security::new(token, port).listener(local).trust_local_user(trust_local_user));
     let app = router(backend, sec);
-    tracing::info!(%port, "API and GUI on http://127.0.0.1:{port}/");
-    axum::serve(listener, app).with_graceful_shutdown(shutdown).await
+    tracing::info!(%port, trust_local_user, "API and GUI on http://127.0.0.1:{port}/");
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).with_graceful_shutdown(shutdown).await
 }
 
 /// Total size of the embedded GUI, in bytes.

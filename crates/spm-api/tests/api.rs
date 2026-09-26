@@ -1,11 +1,14 @@
-//! The local API against a fake daemon: security (Host/Origin allowlist, cookie, CSRF, CSP),
-//! configuration validation (wallet, 3-pool limit, no fee keys), SSE and the embedded GUI.
+//! The local API against a fake daemon: security (Host/Origin allowlist, cookie, CSRF, CSP, the
+//! trusted local user), configuration validation (wallet, 3-pool limit, no fee keys), SSE and the
+//! embedded GUI.
 
 use std::collections::BTreeSet;
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use axum::body::Body;
+use axum::extract::ConnectInfo;
 use axum::http::{header, Request, Response, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
@@ -548,4 +551,182 @@ fn every_key_the_gui_uses_is_translated() {
         }
     }
     assert!(missing.is_empty(), "untranslated keys: {missing:#?}");
+}
+
+// ---- Trusted local user (api.trust_local_user) ----
+
+/// A loopback peer as `into_make_service_with_connect_info` would report it.
+fn peer() -> ConnectInfo<SocketAddr> {
+    ConnectInfo("127.0.0.1:54321".parse().unwrap())
+}
+
+fn own_uid() -> u32 {
+    spm_api::peer::effective_uid().expect("/proc/self/status")
+}
+
+/// A router whose peer lookup answers `uid` for every connection.
+fn local_app(fake: &Arc<Fake>, trust: bool, uid: Option<u32>) -> axum::Router {
+    let sec = Security::new(TOKEN.into(), 4078).trust_local_user(trust).peer_uid_resolver(Box::new(move |_, _| uid));
+    router(fake.clone(), Arc::new(sec))
+}
+
+fn session_cookie(r: &Response<Body>) -> Option<String> {
+    let set = r.headers().get(header::SET_COOKIE)?.to_str().ok()?;
+    assert!(set.contains("HttpOnly") && set.contains("SameSite=Strict") && set.contains("Path=/") && set.contains("Max-Age=86400"), "{set}");
+    Some(set.split(';').next()?.to_string())
+}
+
+#[tokio::test]
+async fn trusted_local_get_session_logs_in() {
+    let fake = Fake::new();
+    let app = local_app(&fake, true, Some(own_uid()));
+    let r = app.clone().oneshot(req("GET", "/api/v1/session").extension(peer()).body(Body::empty()).unwrap()).await.unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    let cookie = session_cookie(&r).expect("a session cookie");
+    let csrf = body_json(r).await["csrf"].as_str().unwrap().to_string();
+    assert_eq!(csrf.len(), 64);
+    // The session is a normal one: with cookie + CSRF, mutations work.
+    let r = app
+        .clone()
+        .oneshot(req("POST", "/api/v1/mining/start").extension(peer()).header(header::COOKIE, &cookie).header("X-SPM-CSRF", &csrf).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    // With a valid cookie, GET /session behaves as before: same CSRF, no new cookie.
+    let r = app.clone().oneshot(req("GET", "/api/v1/session").extension(peer()).header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await.unwrap();
+    assert!(r.headers().get(header::SET_COOKIE).is_none());
+    assert_eq!(body_json(r).await["csrf"], csrf.as_str());
+    // A stale cookie (daemon restarted) gets a fresh session.
+    let r = app.clone().oneshot(req("GET", "/api/v1/session").extension(peer()).header(header::COOKIE, "spm_session=stale").body(Body::empty()).unwrap()).await.unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    assert_ne!(session_cookie(&r).unwrap(), cookie);
+}
+
+#[tokio::test]
+async fn trusted_local_reads_without_a_cookie() {
+    let fake = Fake::new();
+    let app = local_app(&fake, true, Some(own_uid()));
+    for path in ["/api/v1/status", "/api/v1/pools", "/api/v1/fee", "/api/v1/gpu", "/api/v1/about", "/api/v1/logs"] {
+        let r = app.clone().oneshot(req("GET", path).extension(peer()).body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(r.status(), StatusCode::OK, "{path}");
+        assert!(r.headers().get(header::SET_COOKIE).is_none(), "{path}");
+    }
+    // Typed in the address bar / fetched by the GUI itself.
+    for site in ["none", "same-origin"] {
+        let r = app.clone().oneshot(req("GET", "/api/v1/status").extension(peer()).header("sec-fetch-site", site).body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(r.status(), StatusCode::OK, "{site}");
+    }
+}
+
+#[tokio::test]
+async fn trusted_local_mutations_still_need_cookie_and_csrf() {
+    let fake = Fake::new();
+    let app = local_app(&fake, true, Some(own_uid()));
+    for (m, path) in [("POST", "/api/v1/mining/start"), ("POST", "/api/v1/wallet/ack"), ("DELETE", "/api/v1/session"), ("PUT", "/api/v1/config")] {
+        let r = app.clone().oneshot(req(m, path).extension(peer()).body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(r.status(), StatusCode::UNAUTHORIZED, "{m} {path}");
+    }
+    // A session but no CSRF header: 403, as for everyone.
+    let r = app.clone().oneshot(req("GET", "/api/v1/session").extension(peer()).body(Body::empty()).unwrap()).await.unwrap();
+    let cookie = session_cookie(&r).unwrap();
+    let r = app.clone().oneshot(req("POST", "/api/v1/mining/start").extension(peer()).header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await.unwrap();
+    assert_eq!(r.status(), StatusCode::FORBIDDEN);
+    let (st, _) = put_config(&app, &cookie, "wrong", valid_config_json()).await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    assert!(fake.controls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn trusted_local_refuses_other_sites_and_proxies() {
+    let fake = Fake::new();
+    let app = local_app(&fake, true, Some(own_uid()));
+    for path in ["/api/v1/session", "/api/v1/status"] {
+        for site in ["cross-site", "same-site", "bogus"] {
+            let r = app.clone().oneshot(req("GET", path).extension(peer()).header("sec-fetch-site", site).body(Body::empty()).unwrap()).await.unwrap();
+            assert_eq!(r.status(), StatusCode::UNAUTHORIZED, "{path} {site}");
+            assert!(r.headers().get(header::SET_COOKIE).is_none());
+        }
+        for (h, v) in [("x-forwarded-for", "203.0.113.9"), ("forwarded", "for=203.0.113.9"), ("x-real-ip", "203.0.113.9")] {
+            let r = app.clone().oneshot(req("GET", path).extension(peer()).header(h, v).body(Body::empty()).unwrap()).await.unwrap();
+            assert_eq!(r.status(), StatusCode::UNAUTHORIZED, "{path} {h}");
+        }
+        // The Host/Origin allowlist still comes first.
+        let r = app.clone().oneshot(req("GET", path).extension(peer()).header(header::ORIGIN, "http://evil.example").body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(r.status(), StatusCode::FORBIDDEN, "{path}");
+        let r = app.clone().oneshot(Request::builder().uri(path).header(header::HOST, "evil.example:4078").extension(peer()).body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(r.status(), StatusCode::FORBIDDEN, "{path}");
+    }
+}
+
+#[tokio::test]
+async fn other_users_and_unknown_peers_are_401() {
+    let fake = Fake::new();
+    let other = own_uid().wrapping_add(1);
+    let unauthorized = |app: axum::Router, peer: Option<ConnectInfo<SocketAddr>>| async move {
+        for path in ["/api/v1/session", "/api/v1/status"] {
+            let mut b = req("GET", path);
+            if let Some(p) = peer {
+                b = b.extension(p);
+            }
+            let r = app.clone().oneshot(b.body(Body::empty()).unwrap()).await.unwrap();
+            assert_eq!(r.status(), StatusCode::UNAUTHORIZED, "{path}");
+            assert!(r.headers().get(header::SET_COOKIE).is_none(), "{path}");
+        }
+    };
+    // Another account on this machine.
+    unauthorized(local_app(&fake, true, Some(other)), Some(peer())).await;
+    // No socket found for the peer.
+    unauthorized(local_app(&fake, true, None), Some(peer())).await;
+    // No peer address at all (tower oneshot without ConnectInfo).
+    unauthorized(local_app(&fake, true, Some(own_uid())), None).await;
+    // A peer that is not on loopback, even if a lookup claimed our UID.
+    unauthorized(local_app(&fake, true, Some(own_uid())), Some(ConnectInfo("100.64.0.7:40000".parse().unwrap()))).await;
+    // The switch is off.
+    unauthorized(local_app(&fake, false, Some(own_uid())), Some(peer())).await;
+    // The token login still works for them.
+    let (cookie, _) = login(&local_app(&fake, false, Some(own_uid()))).await;
+    assert!(cookie.starts_with("spm_session="));
+}
+
+/// One raw HTTP/1.1 exchange over a real TCP connection; returns (status line, head, body).
+async fn raw_http(port: u16, extra: &str) -> (String, String, String) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut s = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    let request = format!("GET /api/v1/session HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{extra}Connection: close\r\n\r\n");
+    s.write_all(request.as_bytes()).await.unwrap();
+    let mut buf = Vec::new();
+    tokio::time::timeout(Duration::from_secs(10), s.read_to_end(&mut buf)).await.expect("response in time").unwrap();
+    let text = String::from_utf8_lossy(&buf).to_string();
+    let (head, body) = text.split_once("\r\n\r\n").unwrap_or((&text, ""));
+    (head.lines().next().unwrap_or("").to_string(), head.to_ascii_lowercase(), body.to_string())
+}
+
+#[tokio::test]
+async fn real_tcp_same_user_gets_a_session_from_proc() {
+    use spm_api::server::{bind, serve, ServeOptions};
+    for trust in [true, false] {
+        let (listener, port) = bind(&ServeOptions { bind: "127.0.0.1".parse().unwrap(), port: 0, lan: false }).await.unwrap();
+        let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+        let server = tokio::spawn(serve(listener, Fake::new(), TOKEN.into(), trust, async move {
+            let _ = stopped.await;
+        }));
+        // The real /proc/net/tcp lookup: this test process is the same UID as the "daemon".
+        for extra in ["", "X-Test: 1\r\n"] {
+            let (status, head, body) = raw_http(port, extra).await;
+            if trust {
+                assert!(status.contains(" 200 "), "{status}\n{head}");
+                assert!(head.contains("set-cookie: spm_session="), "{head}");
+                assert!(body.contains("\"csrf\""), "{body}");
+            } else {
+                assert!(status.contains(" 401 "), "{status}");
+                assert!(!head.contains("set-cookie"), "{head}");
+            }
+        }
+        // Another site in the same user's browser is refused even over a real connection.
+        let (status, head, _) = raw_http(port, "Sec-Fetch-Site: cross-site\r\n").await;
+        assert!(status.contains(" 401 "), "{status}");
+        assert!(!head.contains("set-cookie"), "{head}");
+        let _ = stop.send(());
+        server.await.unwrap().unwrap();
+    }
 }
