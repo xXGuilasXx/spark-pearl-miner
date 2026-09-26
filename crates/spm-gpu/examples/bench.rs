@@ -69,6 +69,33 @@ fn sample_gpu() -> Option<(f64, Option<f64>)> {
     Some((clock, power))
 }
 
+#[derive(Debug, Clone, Default)]
+struct Samples {
+    clock_mhz: Vec<f64>,
+    power_w: Vec<f64>,
+    others: Vec<String>,
+}
+
+/// Compute processes on the GPU other than this one and the resident vLLM engine.
+fn other_compute_processes() -> Vec<String> {
+    let Ok(out) = Command::new("nvidia-smi")
+        .args([
+            "--query-compute-apps=pid,process_name",
+            "--format=csv,noheader",
+        ])
+        .output()
+    else {
+        return Vec::new();
+    };
+    let me = std::process::id().to_string();
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|l| !l.contains("VLLM") && !l.trim().is_empty())
+        .filter(|l| l.split(',').next().map(str::trim) != Some(me.as_str()))
+        .map(|l| l.trim().to_string())
+        .collect()
+}
+
 fn stats(v: &[f64]) -> (f64, f64, f64) {
     if v.is_empty() {
         return (0.0, 0.0, 0.0);
@@ -122,43 +149,62 @@ fn main() -> anyhow::Result<()> {
     );
     let macs = info.credited_macs() as f64;
 
-    // Warm-up attempt, chunk by chunk, to record the GPU time of every chunk.
-    let mut seed = [0u8; 32];
-    let mut chunk_ms = Vec::new();
-    job.set_attempt(&seed, None)?;
-    loop {
-        let st = job.run_chunk()?;
-        chunk_ms.push(f64::from(job.info()?.last_chunk_ms));
-        if st == ChunkStatus::Done {
-            break;
-        }
-    }
-
-    // Clock and power sampler.
+    // Clock, power and "who else is on the GPU" sampler.
     let stop = Arc::new(AtomicBool::new(false));
-    let samples = Arc::new(Mutex::new((Vec::<f64>::new(), Vec::<f64>::new())));
+    let samples = Arc::new(Mutex::new(Samples::default()));
     let sampler = {
         let stop = Arc::clone(&stop);
         let samples = Arc::clone(&samples);
         thread::spawn(move || {
             while !stop.load(Ordering::Relaxed) {
-                if let Some((clock, power)) = sample_gpu() {
-                    if let Ok(mut s) = samples.lock() {
-                        s.0.push(clock);
-                        s.1.extend(power);
+                let gpu = sample_gpu();
+                let others = other_compute_processes();
+                if let Ok(mut s) = samples.lock() {
+                    if let Some((clock, power)) = gpu {
+                        s.clock_mhz.push(clock);
+                        s.power_w.extend(power);
                     }
+                    s.others.extend(others);
                 }
                 thread::sleep(Duration::from_millis(200));
             }
         })
     };
 
-    let abort = AtomicU32::new(0);
+    // Phase 1 (kernel only): whole attempts run chunk by chunk, each chunk timed with CUDA events,
+    // so the rate excludes the host, the A-side prep and whatever else runs between chunks.
+    let mut seed = [0u8; 32];
     let mut attempts = 0u64;
-    let (mut gemm_s, mut prep_s, mut prep_gpu_ms) = (0.0f64, 0.0f64, Vec::new());
+    let mut chunk_ms = Vec::new();
+    let mut kernel_attempt_ms = Vec::new();
     let start = Instant::now();
+    while attempts < 3 || start.elapsed().as_secs_f64() < args.seconds * 0.25 {
+        attempts += 1;
+        seed[..8].copy_from_slice(&attempts.to_le_bytes());
+        job.set_attempt(&seed, None)?;
+        let mut sum = 0.0;
+        loop {
+            let st = job.run_chunk()?;
+            let ms = f64::from(job.info()?.last_chunk_ms);
+            chunk_ms.push(ms);
+            sum += ms;
+            if st == ChunkStatus::Done {
+                break;
+            }
+        }
+        kernel_attempt_ms.push(sum);
+    }
+    let kernel_attempts = attempts;
+
+    // Phase 2 (sustained): back-to-back attempts, chunks pipelined two deep (run_attempt), timed
+    // on the wall clock -- what a miner gets on this machine right now, vLLM included.
+    let abort = AtomicU32::new(0);
+    let (mut gemm_s, mut prep_s, mut prep_gpu_ms) = (0.0f64, 0.0f64, Vec::new());
+    let mut sustained = 0u64;
+    let phase2 = Instant::now();
     while start.elapsed().as_secs_f64() < args.seconds {
-        seed[..8].copy_from_slice(&(attempts + 1).to_le_bytes());
+        attempts += 1;
+        seed[..8].copy_from_slice(&attempts.to_le_bytes());
         let t0 = Instant::now();
         job.set_attempt(&seed, None)?;
         let t1 = Instant::now();
@@ -168,30 +214,57 @@ fn main() -> anyhow::Result<()> {
         prep_s += (t1 - t0).as_secs_f64();
         gemm_s += (t2 - t1).as_secs_f64();
         prep_gpu_ms.push(f64::from(job.info()?.last_prep_ms));
-        attempts += 1;
+        sustained += 1;
     }
-    let wall = start.elapsed().as_secs_f64();
+    let wall2 = phase2.elapsed().as_secs_f64();
     stop.store(true, Ordering::Relaxed);
     sampler.join().ok();
-    let (clocks, watts) = samples.lock().map(|s| s.clone()).unwrap_or_default();
-    let (clk, clk_min, clk_max) = stats(&clocks);
-    let (w_mean, _, w_max) = stats(&watts);
+    let samples = samples.lock().map(|s| s.clone()).unwrap_or_default();
+    let (clk, clk_min, clk_max) = stats(&samples.clock_mhz);
+    let (w_mean, _, w_max) = stats(&samples.power_w);
     let (c_mean, c_min, c_max) = stats(&chunk_ms);
     let (p_mean, _, _) = stats(&prep_gpu_ms);
+    let (k_mean, k_best, _) = stats(&kernel_attempt_ms);
 
-    let tmacs_gemm = macs * attempts as f64 / gemm_s / 1e12;
-    let tmacs_total = macs * attempts as f64 / (gemm_s + prep_s) / 1e12;
+    let tmacs_kernel = macs / (k_mean / 1e3) / 1e12;
+    let tmacs_kernel_best = macs / (k_best / 1e3) / 1e12;
+    let tmacs_gemm = macs * sustained as f64 / gemm_s / 1e12;
+    let tmacs_total = macs * sustained as f64 / (gemm_s + prep_s) / 1e12;
     let peak_at_clock = PEAK_MAC_PER_CLK_SM * f64::from(dev.sm_count) * clk * 1e6 / 1e12;
-    println!("attempts: {attempts} in {wall:.2} s (GEMM {gemm_s:.2} s, A prep {prep_s:.2} s; A prep GPU {p_mean:.2} ms/attempt)");
+    let pct = |x: f64| 100.0 * x / PEAK_2200_TMACS;
+    let pct_clk = |x: f64| {
+        if peak_at_clock > 0.0 {
+            100.0 * x / peak_at_clock
+        } else {
+            0.0
+        }
+    };
     println!(
-        "chunk GPU time: mean {c_mean:.2} ms, min {c_min:.2} ms, max {c_max:.2} ms ({} chunks)",
+        "chunks: {} timed, GPU time mean {c_mean:.2} ms, min {c_min:.2} ms, max {c_max:.2} ms",
         chunk_ms.len()
     );
-    println!("SM clock (nvidia-smi): mean {clk:.0} MHz (min {clk_min:.0}, max {clk_max:.0}), power mean {w_mean:.1} W, max {w_max:.1} W");
     println!(
-        "credited: {tmacs_gemm:.2} T-MAC/s (fused kernel) | {tmacs_total:.2} T-MAC/s (incl. A prep) | {:.1} % of {PEAK_2200_TMACS} T-MAC/s | {:.1} % of the register-only peak at {clk:.0} MHz ({peak_at_clock:.1} T-MAC/s)",
-        100.0 * tmacs_gemm / PEAK_2200_TMACS,
-        if peak_at_clock > 0.0 { 100.0 * tmacs_gemm / peak_at_clock } else { 0.0 }
+        "SM clock (nvidia-smi): mean {clk:.0} MHz (min {clk_min:.0}, max {clk_max:.0}); power mean {w_mean:.1} W, max {w_max:.1} W"
     );
+    println!(
+        "kernel only ({kernel_attempts} attempts, sum of chunk GPU times): {tmacs_kernel:.2} T-MAC/s mean, {tmacs_kernel_best:.2} best = {:.1} % of {PEAK_2200_TMACS} T-MAC/s, {:.1} % of the register-only peak at {clk:.0} MHz ({peak_at_clock:.1} T-MAC/s)",
+        pct(tmacs_kernel),
+        pct_clk(tmacs_kernel)
+    );
+    println!(
+        "sustained ({sustained} attempts in {wall2:.2} s, wall clock): {tmacs_gemm:.2} T-MAC/s fused kernel, {tmacs_total:.2} T-MAC/s incl. A prep ({p_mean:.2} ms GPU per attempt) = {:.1} % of {PEAK_2200_TMACS} T-MAC/s",
+        pct(tmacs_gemm)
+    );
+    let mut others: Vec<String> = samples.others.into_iter().collect();
+    others.sort();
+    others.dedup();
+    if others.is_empty() {
+        println!("other CUDA processes seen during the run: none besides the resident vLLM");
+    } else {
+        println!(
+            "other CUDA processes seen during the run (numbers are contended): {}",
+            others.join(", ")
+        );
+    }
     Ok(())
 }

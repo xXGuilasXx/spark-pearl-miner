@@ -321,7 +321,41 @@ fn forced_hits_verify_as_plain_proofs() {
             };
             let proof = build_plain_proof(&c.p, &tile).expect("proof");
             verify_v3(&hdr, &proof, Some(EASY_NBITS)).expect("GPU hit must verify");
+            spm_pow::check_rank_penalty(&c.p.config, &h.digest, EASY_NBITS).expect("rank penalty");
             proofs += 1;
+            if proofs % 25 == 1 {
+                // Mutations of a valid GPU proof must all be rejected.
+                let mut bad = proof.clone();
+                bad.a.proof.leaf_data[0][5] ^= 1;
+                assert!(
+                    verify_v3(&hdr, &bad, Some(EASY_NBITS)).is_err(),
+                    "flipped A byte"
+                );
+                let mut bad = proof.clone();
+                bad.bt.proof.leaf_data[0][7] ^= 0x80;
+                assert!(
+                    verify_v3(&hdr, &bad, Some(EASY_NBITS)).is_err(),
+                    "flipped Bᵀ byte"
+                );
+                let mut bad = proof.clone();
+                bad.a.row_indices.iter_mut().for_each(|r| *r += 1);
+                assert!(
+                    verify_v3(&hdr, &bad, Some(EASY_NBITS)).is_err(),
+                    "shifted rows"
+                );
+                let mut bad = proof.clone();
+                bad.noise_rank = 64;
+                assert!(
+                    verify_v3(&hdr, &bad, Some(EASY_NBITS)).is_err(),
+                    "noise rank"
+                );
+                let mut other = hdr;
+                other.timestamp ^= 1;
+                assert!(
+                    verify_v3(&other, &proof, Some(EASY_NBITS)).is_err(),
+                    "other header"
+                );
+            }
         }
 
         // Bound = smallest digest: exactly one hit, that tile.
