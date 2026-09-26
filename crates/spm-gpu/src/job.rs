@@ -107,7 +107,8 @@ pub struct JobParams<'a> {
     pub bound: [u8; 32],
     /// Debug dump: every tile writes its 104-byte record.
     pub dump: bool,
-    /// CTA tiles per launch chunk; `None` = automatic (about 4 ms at the IMMA peak).
+    /// CTA tiles per launch chunk; `None` = automatic: about 4 ms per chunk, re-derived from the
+    /// measured rate after every chunk (the cancellation limit is 10 ms).
     pub chunk_ctas: Option<u32>,
     /// Hit-ring capacity; `None` = 4096.
     pub hit_capacity: Option<u32>,

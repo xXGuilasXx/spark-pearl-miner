@@ -49,7 +49,7 @@ typedef int32_t spm_status_t;
 
 #define SPM_CHUNK_MORE 1          // chunk done, more chunks remain in this attempt
 #define SPM_CHUNK_DONE 2          // last chunk done: hits (and dump) are complete
-#define SPM_CHUNK_ABORTED 3       // the abort flag was seen between chunks; the attempt is void
+#define SPM_CHUNK_ABORTED 3       // the abort flag was seen between chunks; running again resumes the attempt
 
 // Job flags.
 #define SPM_JOB_DUMP 1u           // debug dump: every tile writes its 104-byte record
@@ -72,7 +72,7 @@ typedef struct {
   const uint8_t* b_noise_seed;  // 32 bytes: blake3(job_key || bound_b), computed on the host (v0)
   const uint8_t* bound;         // 32 bytes LE U256: a tile hits when LE(digest) <= bound
   uint32_t flags;               // SPM_JOB_*
-  uint32_t chunk_ctas;          // CTA tiles per launch chunk; 0 = auto (about 5 ms per chunk)
+  uint32_t chunk_ctas;          // CTA tiles per launch chunk; 0 = auto (about 4 ms per chunk, adapted to the measured rate)
   uint32_t hit_capacity;        // hit-ring entries; 0 = 4096
 } spm_job_params_t;
 
@@ -87,8 +87,8 @@ typedef struct {
   uint32_t block_m, block_n;    // CTA tile of the fused kernel
   uint64_t tiles;               // hash tiles per attempt (m * n / 128)
   uint32_t cta_tiles;           // CTA tiles per attempt
-  uint32_t chunk_ctas;          // CTA tiles per chunk
-  uint32_t chunks;              // chunks per attempt
+  uint32_t chunk_ctas;          // CTA tiles of the next chunk (auto mode adapts it after every chunk)
+  uint32_t chunks;              // chunks per attempt at the current chunk size
   uint32_t ctas_per_sm;         // occupancy of the fused kernel
   uint32_t sm_count;
   uint32_t smem_bytes;          // dynamic shared memory per CTA

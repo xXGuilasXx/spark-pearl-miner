@@ -251,10 +251,12 @@ fn main() -> anyhow::Result<()> {
         pct(tmacs_kernel),
         pct_clk(tmacs_kernel)
     );
-    println!(
-        "sustained ({sustained} attempts in {wall2:.2} s, wall clock): {tmacs_gemm:.2} T-MAC/s fused kernel, {tmacs_total:.2} T-MAC/s incl. A prep ({p_mean:.2} ms GPU per attempt) = {:.1} % of {PEAK_2200_TMACS} T-MAC/s",
-        pct(tmacs_gemm)
-    );
+    if sustained > 0 {
+        println!(
+            "sustained ({sustained} attempts in {wall2:.2} s, wall clock): {tmacs_gemm:.2} T-MAC/s fused kernel, {tmacs_total:.2} T-MAC/s incl. A prep ({p_mean:.2} ms GPU per attempt) = {:.1} % of {PEAK_2200_TMACS} T-MAC/s",
+            pct(tmacs_gemm)
+        );
+    }
     let mut others: Vec<String> = samples.others.into_iter().collect();
     others.sort();
     others.dedup();

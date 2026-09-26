@@ -626,3 +626,56 @@ fn host_matrices_edges_chunks_and_abort() {
         diagnose(&p2, &mut job, &expected2, &got2)
     );
 }
+
+/// Launch chunking (automatic and adaptive, fixed whole waves, fixed odd sizes) never changes the
+/// result: on a 16384 x 16384 x 2048 job (8192 CTA tiles, several chunks) the hit sets agree.
+#[test]
+fn chunking_does_not_change_the_hits() {
+    if !enabled() {
+        return;
+    }
+    let (m, n, k) = (16384u32, 16384u32, 2048u32);
+    // About 1/64 of the 2^21 tiles hit (digest <= 2^250).
+    let mut bound = [0u8; 32];
+    bound[31] = 0x04;
+    let run = |chunk: Option<u32>, attempts: usize| -> Vec<Vec<(u32, u32, [u8; 32])>> {
+        let mut job = Job::new(&JobParams {
+            m,
+            n,
+            k,
+            config52: config52_for(k),
+            matrices: Matrices::Generated { seed: 0xc4 },
+            b_noise_seed: [0x42; 32],
+            bound,
+            dump: false,
+            chunk_ctas: chunk,
+            hit_capacity: Some(1 << 16),
+        })
+        .expect("job");
+        (0..attempts)
+            .map(|_| {
+                job.set_attempt(&[0x17; 32], None).expect("attempt");
+                job.run_to_completion().expect("run");
+                let hits = job.hits().expect("hits");
+                assert_eq!(hits.dropped(), 0);
+                let mut v: Vec<_> = hits
+                    .hits
+                    .iter()
+                    .map(|h| (h.t_rows, h.t_cols, h.digest))
+                    .collect();
+                v.sort_unstable();
+                v
+            })
+            .collect()
+    };
+    let auto = run(None, 3); // the chunk size adapts after the first chunks
+    assert!(
+        auto[0].len() > 20_000,
+        "expected ~32768 hits, got {}",
+        auto[0].len()
+    );
+    assert_eq!(auto[0], auto[1]);
+    assert_eq!(auto[0], auto[2]);
+    assert_eq!(auto[0], run(Some(48 * 5), 1)[0], "fixed whole waves");
+    assert_eq!(auto[0], run(Some(1000), 1)[0], "fixed odd size");
+}

@@ -24,10 +24,12 @@ using spm::Words8;
 
 constexpr uint32_t kDefaultHitCapacity = 4096;
 constexpr uint32_t kMaxHitCapacity = 1u << 20;
-// Auto chunk size: whole waves lasting kChunkTargetSeconds if the kernel ran at the measured
-// register-only IMMA peak (108.6 T-MAC/s at stock clocks / 48 SMs), so a real chunk stays under
-// the 10 ms cancellation limit down to ~40 % of that peak.
-constexpr double kChunkTargetSeconds = 0.004;
+// Auto chunk size: whole waves, at most kChunkTargetMs long if the kernel ran at the measured
+// register-only IMMA peak (108.6 T-MAC/s at stock clocks / 48 SMs). After every chunk the size is
+// re-derived from the measured rate so that chunks keep lasting about kChunkTargetMs when the GPU
+// is slower (lower clocks, another context time-slicing, DRAM contention from the CPU): the
+// cancellation limit is 10 ms per chunk and up to two chunks are in flight.
+constexpr double kChunkTargetMs = 4.0;
 constexpr double kPerSmMacRateCeiling = 2.26e12;
 constexpr uint32_t kMinK = 2048, kMaxK = 65536, kMaxDim = 1u << 24;
 constexpr size_t kAlign = 256;
@@ -79,7 +81,11 @@ struct spm_job {
   GemmGeometry geo{};
   uint32_t sm_count = 0;
   uint32_t cta_tiles = 0;
-  uint32_t chunk_ctas = 0;
+  uint32_t chunk_ctas = 0;  // size of the next chunk
+  uint32_t chunk_max = 0;   // auto mode: size at the IMMA peak rate (upper bound)
+  uint32_t wave = 0;        // resident CTAs of the whole GPU (sm_count * ctas_per_sm)
+  bool adaptive = false;    // auto chunk size (params->chunk_ctas == 0)
+  uint32_t slot_ctas[2] = {0, 0};  // CTA count of the chunk timed by each event pair
   uint32_t cursor = 0;
   bool attempt_ready = false;
 
@@ -132,8 +138,12 @@ struct spm_job {
   }
 
   // Enqueues the next chunk between events ev[2*slot] and ev[2*slot+1]; advances the cursor.
+  // A remainder under a quarter chunk is folded into this chunk instead of trailing on its own.
   cudaError_t enqueue_chunk(int slot) {
-    const uint32_t count = cta_tiles - cursor < chunk_ctas ? cta_tiles - cursor : chunk_ctas;
+    const uint32_t left = cta_tiles - cursor;
+    uint32_t count = left < chunk_ctas ? left : chunk_ctas;
+    if (adaptive && left - count < chunk_ctas / 4) count = left;
+    slot_ctas[slot] = count;
     cudaError_t e = cudaEventRecord(ev[2 * slot], stream);
     if (e != cudaSuccess) return e;
     e = spm::launch_gemm_v0(gemm_args(), cursor, count, dump, stream);
@@ -151,6 +161,15 @@ struct spm_job {
     e = cudaEventElapsedTime(&ms, ev[2 * slot], ev[2 * slot + 1]);
     if (e != cudaSuccess) return e;
     last_chunk_ms = ms;
+    if (adaptive && ms > 0.f && slot_ctas[slot] >= wave) {
+      // Next chunks: kChunkTargetMs at the rate just measured, in whole waves, within
+      // [one wave, chunk_max].
+      const double per_ms = static_cast<double>(slot_ctas[slot]) / ms;
+      uint64_t want = static_cast<uint64_t>(kChunkTargetMs * per_ms) / wave * wave;
+      if (want < wave) want = wave;
+      if (want > chunk_max) want = chunk_max;
+      chunk_ctas = static_cast<uint32_t>(want);
+    }
     return cudaSuccess;
   }
 
@@ -261,22 +280,20 @@ spm_status_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
   if (e != cudaSuccess) return bail(e);
   job->geo.ctas_per_sm = ctas_per_sm;
 
-  // Chunk size: at most kChunkTargetSeconds at the IMMA peak, then balanced so that every chunk
-  // of the attempt is (nearly) the same whole number of waves -- a short last chunk would leave
-  // most SMs idle for its partial wave.
+  // Chunk size (see kChunkTargetMs): whole waves; a fixed params->chunk_ctas disables adaptation.
   const uint32_t wave = job->sm_count * ctas_per_sm;
+  job->wave = wave;
   uint32_t chunk = params->chunk_ctas;
   if (chunk == 0) {
     const double macs_per_cta = static_cast<double>(geo.block_m) * geo.block_n * (k / 128u * 128u);
-    const double wave_seconds = macs_per_cta * ctas_per_sm / kPerSmMacRateCeiling;
-    uint32_t waves = static_cast<uint32_t>(kChunkTargetSeconds / wave_seconds);
+    const double wave_ms = 1e3 * macs_per_cta * ctas_per_sm / kPerSmMacRateCeiling;
+    uint32_t waves = static_cast<uint32_t>(kChunkTargetMs / wave_ms);
     if (waves == 0) waves = 1;
-    const uint64_t max_chunk = static_cast<uint64_t>(waves) * wave;
-    const uint64_t n_chunks = (cta_tiles + max_chunk - 1) / max_chunk;
-    const uint64_t even = (cta_tiles + n_chunks - 1) / n_chunks;
-    chunk = static_cast<uint32_t>((even + wave - 1) / wave * wave);
+    chunk = waves * wave;
+    job->adaptive = true;
   }
   job->chunk_ctas = chunk < job->cta_tiles ? chunk : job->cta_tiles;
+  job->chunk_max = job->chunk_ctas;
 
   e = cudaStreamCreateWithFlags(&job->stream, cudaStreamNonBlocking);
   if (e != cudaSuccess) return bail(e);
