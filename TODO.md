@@ -110,9 +110,9 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 
 ### M8
 
-- [ ] crates/spm-fee/src/lib.rs holds every fee constant (200 bps, DEV_WALLET, worker devfee, HeroMiners regions with LuckyPool and Kryptex fallbacks, 120 s slices); a test checks the exact address and its bech32m validity.
-- [ ] The 30-day simulation gives 2.00% ± 0.02%; every 24 h window stays at or below 2.0% under failure injection; nothing accrues while paused or yielding.
-- [ ] The fee turns off when wallet == DEV_WALLET; the banner shows the fee line; --version prints the constants hash; the CI guard confirms READMEs and FEE.md match lib.rs.
+- [x] crates/spm-fee/src/lib.rs holds every fee constant (200 bps, DEV_WALLET, worker devfee, HeroMiners regions with LuckyPool and Kryptex fallbacks, 120 s slices); a test checks the exact address and its bech32m validity. The schedule constants live there too. There is no override path (tests/policy.rs), and the constants hash is pinned by a test.
+- [x] The 30-day simulation gives 2.00% ± 0.02% (measured 1.998%); every 24 h window stays at or below 2.0% under failure injection (pauses, refused or silent dev logins, dropped dev sessions); nothing accrues while paused or yielding. Windows are measured over active mining time. The only documented exception is repaying a backlog above 240 s after a dev-pool outage: it is capped at 3600 s and paid in 120 s slices at least 30 min apart (see crates/spm-fee/README.md).
+- [~] The fee turns off when wallet == DEV_WALLET; the banner shows the fee line; --version prints the constants hash; the CI guard confirms READMEs and FEE.md match lib.rs. Done: auto-off (scheduler + tests), banner(), constants_hash(), the guard on both READMEs. Open: wiring --version once the CLI crate exists, and docs/en/FEE.md plus docs/pt-BR/TAXA.md.
 - [ ] spark-pearl-miner fee-test on HeroMiners: worker devfee visible under the dev address, zero stale at switches, the user session never dropped.
 
 ### M9
