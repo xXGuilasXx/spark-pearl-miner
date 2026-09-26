@@ -84,16 +84,16 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 
 - [x] User stopped spark-vllm.service and ran bench/mb1.sh with sudo clock locks; vLLM restored afterwards
 - [x] IMMA register-only peak measured at stock/2200/2000/1800 MHz: 108.6/96.0/85.0/75.7 T-MAC/s (919 MAC/clk/SM); QMMA FP8 rate equal to INT8 (107.0 T-MAC/s stock)
-- [ ] ldmatrix, cp.async vs TMA fill, L2 (12 MiB band) and DRAM bandwidth measured; vLLM restored; docs/BENCHMARKS.md updated.
+- [~] ldmatrix, cp.async vs TMA fill, L2 (12 MiB band) and DRAM bandwidth measured; vLLM restored; docs/BENCHMARKS.md updated. (Partial, vLLM resident: `cuda/probes/fill_bw.cu` gives cp.async.cg 16 B → smem ~2.1 TB/s (18 B/clk/SM) and DSMEM only ~118 GB/s (1 B/clk/SM) for both remote stores and bulk pushes; ldmatrix, TMA and DRAM still open.)
 
 ### M5
 
-- [ ] Noise kernels are bit-exact against zk-pow generate_uniform_random_matrix and generate_permutation_matrix for 1000 seeds; A' and B' rows equal compute_noise_for_indices.
-- [ ] gemm_v0 (128x256x64, 3-stage cp.async, 2x4 warps of 64x64, 8x16 register-local hash tile, L1 transcript, BLAKE3 epilogue, mapped hit ring) builds with 0 spills and at most 232 registers; SASS contains IMMA.16832.S8.S8 and LDSM.
-- [ ] G0: 100% of debug-dump transcripts and digests equal spm-cpuref for m,n in {256,512,1024}, k in {2048,4096}, 3 seeds each.
-- [ ] Forced-hit test: at least 100 GPU PlainProofs pass verify_plain_proof(Salted) and check_rank_penalty; mutated proofs fail.
-- [ ] compute-sanitizer memcheck, racecheck and synccheck are clean.
-- [ ] gpu-worker runs the KAT at start, heartbeats, cancels on epoch change in 10 ms or less, and recomputes one canary tile per attempt; spark-pearl-miner selftest and bench --minutes 10 (JSON: credited MAC/s, clocks, W, temperatures) recorded at 2200 MHz.
+- [x] Noise kernels are bit-exact against zk-pow generate_uniform_random_matrix and generate_permutation_matrix for 1000 seeds; A' and B' rows equal compute_noise_for_indices. (Strategy A branch: `tests/g0.rs` checks A_L and the A pairs for 1000 seeds and B_Rᵀ and the B pairs for 24; A' and B'ᵀ equal spm-cpuref's noised operands, which its reference tests prove equal to `compute_noise_for_indices`.)
+- [x] gemm_v0 (128x256x64, 3-stage cp.async, 2x4 warps of 64x64, 8x16 register-local hash tile, L1 transcript, BLAKE3 epilogue, mapped hit ring) builds with 0 spills and at most 232 registers; SASS contains IMMA.16832.S8.S8 and LDSM. (208 registers, 0 spills, 0 stack, 73,728 B smem; `tools/check-sass.py` passes: IMMA.16832.S8.S8 x128, LDSM x32, no HMMA. Deviations: the transcript is a rotating register queue instead of L1, and the hit ring lives in device memory and is read after the attempt.)
+- [x] G0: 100% of debug-dump transcripts and digests equal spm-cpuref for m,n in {256,512,1024}, k in {2048,4096}, 3 seeds each. (54 problems, 150,528 tiles, 0 mismatches; see crates/spm-gpu/README.md.)
+- [x] Forced-hit test: at least 100 GPU PlainProofs pass verify_plain_proof(Salted) and check_rank_penalty; mutated proofs fail. (166 GPU hits through `verify_v3` + `check_rank_penalty`; flipped bytes, shifted rows, wrong rank and another header are rejected.)
+- [x] compute-sanitizer memcheck, racecheck and synccheck are clean. (On the small-shape tests: edges/chunks/abort/patch, forced hits, operands.)
+- [ ] gpu-worker runs the KAT at start, heartbeats, cancels on epoch change in 10 ms or less, and recomputes one canary tile per attempt; spark-pearl-miner selftest and bench --minutes 10 (JSON: credited MAC/s, clocks, W, temperatures) recorded at 2200 MHz. (libspm_cuda side ready: `spm_job_run_attempt` reads an abort flag between adaptive ~4 ms chunks with two in flight; the worker process, KAT and canary are still to do.)
 
 ### M6
 

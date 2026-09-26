@@ -679,3 +679,43 @@ fn chunking_does_not_change_the_hits() {
     assert_eq!(auto[0], run(Some(48 * 5), 1)[0], "fixed whole waves");
     assert_eq!(auto[0], run(Some(1000), 1)[0], "fixed odd size");
 }
+
+/// A full hit ring keeps counting: with every tile a hit and room for 100, the count is exact,
+/// 100 entries are stored and each stored entry is a real tile with its real digest.
+#[test]
+fn hit_ring_overflow_is_counted() {
+    if !enabled() {
+        return;
+    }
+    let hdr = header(SATURATED_NBITS);
+    let p = Problem::generate(256, 256, 2048, hdr, 0x0f10).expect("problem");
+    let oracle = Oracle::new(&p).expect("oracle");
+    let tiles = oracle.transcripts().expect("tiles");
+    let c = *oracle.commitment();
+    let mut jp = params(
+        &p,
+        &c,
+        Matrices::Generated { seed: 0x0f10 },
+        [0xff; 32],
+        false,
+    );
+    jp.hit_capacity = Some(100);
+    let mut job = Job::new(&jp).expect("job");
+    job.set_attempt(&c.a_noise_seed, None).expect("attempt");
+    job.run_to_completion().expect("run");
+    let hits = job.hits().expect("hits");
+    assert_eq!(
+        hits.total as usize,
+        tiles.len(),
+        "every tile meets the all-ones bound"
+    );
+    assert_eq!(hits.hits.len(), 100);
+    assert_eq!(hits.dropped() as usize, tiles.len() - 100);
+    for h in &hits.hits {
+        let t = tiles
+            .iter()
+            .find(|t| t.t_rows == h.t_rows && t.t_cols == h.t_cols)
+            .expect("a real tile");
+        assert_eq!(t.digest, h.digest);
+    }
+}
