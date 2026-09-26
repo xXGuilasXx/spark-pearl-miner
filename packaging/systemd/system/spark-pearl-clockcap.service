@@ -12,7 +12,7 @@
 # ordering it after its own target would be a dependency cycle.
 
 [Unit]
-Description=spark-pearl-miner GPU clock cap (SM clock locked to 300-2200 MHz)
+Description=spark-pearl-miner GPU clock cap (SM clock locked to 300-2000 MHz)
 Documentation=https://github.com/xXGuilasXx/spark-pearl-miner/blob/main/docs/en/POWER-THERMAL.md
 After=nvidia-persistenced.service
 ConditionPathExists=/usr/bin/nvidia-smi
@@ -20,7 +20,7 @@ ConditionPathExists=/usr/bin/nvidia-smi
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/bin/nvidia-smi -lgc 300,2200
+ExecStart=/usr/bin/nvidia-smi -lgc 300,2000
 ExecStop=/usr/bin/nvidia-smi -rgc
 
 [Install]

@@ -29,13 +29,13 @@ pub struct ProfileLimits {
 }
 
 /// Clock cap recommended when nothing else is known (the value the packaged unit installs).
-pub const DEFAULT_CLOCK_CAP_MHZ: u32 = 2200;
+pub const DEFAULT_CLOCK_CAP_MHZ: u32 = 2000;
 
-const ECO: ProfileLimits = ProfileLimits { target_w: 60.0, hard_stop_w: 70.0, clock_cap_mhz: 2000 };
+const ECO: ProfileLimits = ProfileLimits { target_w: 60.0, hard_stop_w: 70.0, clock_cap_mhz: 1800 };
 const BALANCED: ProfileLimits =
     ProfileLimits { target_w: 75.0, hard_stop_w: 85.0, clock_cap_mhz: DEFAULT_CLOCK_CAP_MHZ };
 const MAX: ProfileLimits =
-    ProfileLimits { target_w: 88.0, hard_stop_w: 92.0, clock_cap_mhz: DEFAULT_CLOCK_CAP_MHZ };
+    ProfileLimits { target_w: 88.0, hard_stop_w: 92.0, clock_cap_mhz: 2200 };
 
 impl Profile {
     /// Every profile, most conservative first.
@@ -60,7 +60,9 @@ impl Profile {
         self.limits().hard_stop_w
     }
 
-    /// SM clock cap recommended for this profile (2200 MHz unless the profile says otherwise).
+    /// SM clock cap recommended for this profile. Measured on the author's GB10 (G1 soak, 2026-09-26): at a
+    /// 2200 MHz cap the real kernel draws 83–87 W and the SoC reaches 97 °C, above the Balanced target, so
+    /// Balanced caps at 2000 MHz and only Max keeps 2200.
     pub const fn recommended_clock_cap_mhz(self) -> u32 {
         self.limits().clock_cap_mhz
     }
@@ -153,7 +155,8 @@ mod tests {
         assert_eq!(Profile::Balanced.hard_stop_w(), 85.0);
         assert_eq!(Profile::Max.target_w(), 88.0);
         assert_eq!(Profile::Max.hard_stop_w(), 92.0);
-        assert_eq!(Profile::Balanced.recommended_clock_cap_mhz(), 2200);
+        assert_eq!(Profile::Balanced.recommended_clock_cap_mhz(), 2000);
+        assert_eq!(Profile::Eco.recommended_clock_cap_mhz(), 1800);
         assert_eq!(Profile::Max.recommended_clock_cap_mhz(), 2200);
     }
 
