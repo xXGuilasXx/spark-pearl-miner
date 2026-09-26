@@ -1,0 +1,17 @@
+# MB1 2026-09-26T18:54:14Z driver 580.178.04 binary sha256 28bfcf4d8533ec14
+## clock=stock
+device: NVIDIA GB10  SMs 48  cc 12.1
+IMMA8     108.6 T-MAC/s    217.2 TOPS  sm_clk   2462 MHz     919 MAC/clk/SM  maxW 51  (4.04 s)
+QMMA8     107.0 T-MAC/s    214.0 TOPS  sm_clk   2457 MHz     907 MAC/clk/SM  maxW 59  (4.06 s)
+## clock=2200
+device: NVIDIA GB10  SMs 48  cc 12.1
+IMMA8      96.0 T-MAC/s    192.1 TOPS  sm_clk   2190 MHz     914 MAC/clk/SM  maxW 34  (4.01 s)
+QMMA8      95.9 T-MAC/s    191.9 TOPS  sm_clk   2190 MHz     913 MAC/clk/SM  maxW 39  (4.00 s)
+## clock=2000
+device: NVIDIA GB10  SMs 48  cc 12.1
+IMMA8      85.0 T-MAC/s    169.9 TOPS  sm_clk   1982 MHz     893 MAC/clk/SM  maxW 26  (4.04 s)
+QMMA8      84.9 T-MAC/s    169.8 TOPS  sm_clk   1982 MHz     893 MAC/clk/SM  maxW 30  (4.02 s)
+## clock=1800
+device: NVIDIA GB10  SMs 48  cc 12.1
+IMMA8      75.7 T-MAC/s    151.5 TOPS  sm_clk   1774 MHz     890 MAC/clk/SM  maxW 21  (4.00 s)
+QMMA8      75.8 T-MAC/s    151.5 TOPS  sm_clk   1774 MHz     890 MAC/clk/SM  maxW 24  (4.00 s)

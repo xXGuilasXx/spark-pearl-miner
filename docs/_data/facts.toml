@@ -21,8 +21,8 @@ volume_24h_usd = 2.9e6
 safetrade_share_pct = 87
 [gb10]
 sms = 48
-int8_peak_measured_tops = 215
-ceiling_th_s = 107
+int8_peak_measured_tops = 217   # MB1 on this unit, stock 2462 MHz (192 TOPS at the 2200 MHz cap)
+ceiling_th_s = 108   # 96 at 2200 MHz
 planning_th_s_low = 65
 planning_th_s_high = 85
 power_w_low = 100
@@ -34,3 +34,11 @@ bps = 200
 [brazil]
 kwh_brl_low = 0.80
 kwh_brl_high = 1.10
+
+[mb1]
+date = "2026-09-26"
+imma_tmac_stock = 108.6
+qmma_tmac_stock = 107.0
+imma_tmac_2200 = 96.0
+mac_per_clk_per_sm = 919
+max_power_w_stock = 51
