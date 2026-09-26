@@ -88,6 +88,9 @@ constexpr uint32_t STAGES = 4;
 // 16384^2 x 4096: 4 -> +1.6 points of peak, 8 -> +0.9; prefetching from every CTA (both operands)
 // costs 5-12 points, because the column's other 15 CTAs already hit L2.
 constexpr uint32_t B_PREFETCH_KTILES = 4;
+/// Shared-memory layout the TMA descriptors of both operands use (boxes of BK = 64 bytes per row);
+/// the ldmatrix addressing below assumes it.
+constexpr CUtensorMapSwizzle OPERAND_SWIZZLE = CU_TENSOR_MAP_SWIZZLE_64B;
 constexpr uint32_t A_STAGE_BYTES = BM * BK;
 constexpr uint32_t B_STAGE_BYTES = BN * BK;
 constexpr uint32_t STAGE_BYTES = A_STAGE_BYTES + B_STAGE_BYTES;
@@ -131,7 +134,8 @@ struct Params {
 
 /// Raster order: bands of `band` CTA rows; inside a band the column index is the outer loop, so
 /// the CTAs running at the same time share both their B'ᵀ column blocks and the band's A' rows.
-__device__ __forceinline__ void tile_coords(const Params& p, uint32_t t, uint32_t& tm, uint32_t& tn) {
+__host__ __device__ __forceinline__ void tile_coords(const Params& p, uint32_t t, uint32_t& tm,
+                                                     uint32_t& tn) {
   const uint32_t per_band = p.band * p.tiles_n;
   const uint32_t b = t / per_band;
   const uint32_t r = t - b * per_band;
@@ -139,6 +143,60 @@ __device__ __forceinline__ void tile_coords(const Params& p, uint32_t t, uint32_
   const uint32_t rows = min(p.band, p.tiles_m - first);
   tn = r / rows;
   tm = first + (r - tn * rows);
+}
+
+// ---- lane geometry of the MMA warps ---------------------------------------------------------
+// Host + device, so cuda/tests/layout_check.cu proves the fragment mapping on exactly these
+// expressions (ldmatrix addressing through the TMA swizzle, the MMA fragment layouts of MmaS8 /
+// MmaE4M3, the hash tile each lane reports and its dump index).
+
+/// Fragments of a 64 x 64 warp tile: 4 m16 blocks x 8 n8 blocks of m16n8k32 accumulators.
+constexpr uint32_t WARP_TILE = 64;
+constexpr uint32_t FRAGS_M = 4;
+constexpr uint32_t FRAGS_N = 8;
+
+/// Warp tile of MMA warp `warp` inside the 128 x 256 CTA tile: row block 0..1, column block 0..3.
+__host__ __device__ __forceinline__ constexpr uint32_t warp_m(uint32_t warp) { return warp >> 2; }
+__host__ __device__ __forceinline__ constexpr uint32_t warp_n(uint32_t warp) { return warp & 3u; }
+
+/// ldmatrix.x4 row addresses of one lane, as byte offsets inside a stage, for the two k32 steps
+/// of the stage: a[ks] for the A' fragments (m16 block i adds i * 16 * BK; matrices {rows 0-7,
+/// 8-15} x {k 0-15, 16-31}) and b[ks] for the B'ᵀ fragments (n16 pair jp adds jp * 16 * BK;
+/// matrices {n 0-7 k 0-15, n 0-7 k 16-31, n 8-15 k 0-15, n 8-15 k 16-31}).
+struct LdsmOffsets {
+  uint32_t a[2];
+  uint32_t b[2];
+};
+
+/// Offsets of lane `lane` in the warp tile (wm, wn). SWIZZLE_64B: 16-byte chunk c of stage row r
+/// sits at chunk c ^ ((r >> 1) & 3); bits 1..2 of every row a lane addresses come from (lane & 7).
+__host__ __device__ __forceinline__ LdsmOffsets ldsm_offsets(uint32_t wm, uint32_t wn,
+                                                             uint32_t lane) {
+  const uint32_t swz = (lane & 7u) >> 1;
+  const uint32_t a_row = wm * 64u + (lane & 7u) + ((lane >> 3) & 1u) * 8u;
+  const uint32_t b_row = wn * 64u + (lane & 7u) + (lane >> 4) * 8u;
+  LdsmOffsets o;
+  o.a[0] = a_row * BK + ((((lane >> 4) + 0u) ^ swz) << 4);
+  o.a[1] = a_row * BK + ((((lane >> 4) + 2u) ^ swz) << 4);
+  o.b[0] = A_STAGE_BYTES + b_row * BK + (((((lane >> 3) & 1u) + 0u) ^ swz) << 4);
+  o.b[1] = A_STAGE_BYTES + b_row * BK + (((((lane >> 3) & 1u) + 2u) ^ swz) << 4);
+  return o;
+}
+
+/// The hash tile whose 128 accumulators lane `lane` holds, relative to its warp tile: rows
+/// lane_row + {0, 8, ..., 56} x cols lane_col + {0, 1, 8, 9, ..., 56, 57}.
+__host__ __device__ __forceinline__ constexpr uint32_t lane_row(uint32_t lane) { return lane >> 2; }
+__host__ __device__ __forceinline__ constexpr uint32_t lane_col(uint32_t lane) {
+  return 2u * (lane & 3u);
+}
+
+/// Reference-order index (t_rows ascending, then t_cols) of the hash tile of `lane` in the warp tile
+/// at (row0, col0); `row_stride` = hash tiles per tile row = n / 16.
+__host__ __device__ __forceinline__ constexpr uint64_t dump_index(uint32_t row0, uint32_t col0,
+                                                                  uint32_t lane,
+                                                                  uint32_t row_stride) {
+  return (uint64_t)((row0 >> 6) * 8u + lane_row(lane)) * row_stride + (col0 >> 6) * 4u +
+         (lane & 3u);
 }
 
 // ---- producer ------------------------------------------------------------------------------
@@ -192,13 +250,20 @@ __device__ __forceinline__ void produce(const CUtensorMap* tmap_a, const CUtenso
 
 // ---- MMA warps -----------------------------------------------------------------------------
 
+// `#pragma unroll` for code that is also compiled for the host (host compilers warn about it).
+#if defined(__CUDA_ARCH__)
+#define SPM_DEVICE_UNROLL _Pragma("unroll")
+#else
+#define SPM_DEVICE_UNROLL
+#endif
+
 /// t <- t rotated right by kBy positions when `apply` (static indices only, stays in registers).
 template <uint32_t kBy>
-__device__ __forceinline__ void rotate_right_if(uint32_t (&t)[16], bool apply) {
+__host__ __device__ __forceinline__ void rotate_right_if(uint32_t (&t)[16], bool apply) {
   uint32_t u[16];
-#pragma unroll
+  SPM_DEVICE_UNROLL
   for (uint32_t j = 0; j < 16; ++j) u[j] = t[(j + 16u - kBy) & 15u];
-#pragma unroll
+  SPM_DEVICE_UNROLL
   for (uint32_t j = 0; j < 16; ++j) t[j] = apply ? u[j] : t[j];
 }
 
@@ -207,19 +272,12 @@ __device__ __forceinline__ void consume(const Params& p, uint32_t smem, uint32_t
                                         uint32_t empty0, const volatile int32_t* cmd,
                                         uint32_t warp, uint32_t lane) {
   using Acc = typename Mma::Acc;
-  const uint32_t wm = warp >> 2;  // 0..1
-  const uint32_t wn = warp & 3u;  // 0..3
-  // SWIZZLE_64B: 16-byte chunk c of smem row r sits at chunk c ^ ((r >> 1) & 3). Bits 1..2 of every
-  // row this lane addresses come from (lane & 7) only.
-  const uint32_t swz = (lane & 7u) >> 1;
-  const uint32_t a_row = wm * 64u + (lane & 7u) + ((lane >> 3) & 1u) * 8u;
-  const uint32_t b_row = wn * 64u + (lane & 7u) + (lane >> 4) * 8u;
-  // ldmatrix.x4 lane addresses for the two k32 steps of a stage (A: matrices {rows 0-7, 8-15} x
-  // {k 0-15, 16-31}; B: {n 0-7 k 0-15, n 0-7 k 16-31, n 8-15 k 0-15, n 8-15 k 16-31}).
-  const uint32_t a_off0 = a_row * BK + ((((lane >> 4) + 0u) ^ swz) << 4);
-  const uint32_t a_off1 = a_row * BK + ((((lane >> 4) + 2u) ^ swz) << 4);
-  const uint32_t b_off0 = A_STAGE_BYTES + b_row * BK + (((((lane >> 3) & 1u) + 0u) ^ swz) << 4);
-  const uint32_t b_off1 = A_STAGE_BYTES + b_row * BK + (((((lane >> 3) & 1u) + 2u) ^ swz) << 4);
+  const uint32_t wm = warp_m(warp);  // 0..1
+  const uint32_t wn = warp_n(warp);  // 0..3
+  // ldmatrix.x4 lane addresses for the two k32 steps of a stage.
+  const LdsmOffsets off = ldsm_offsets(wm, wn, lane);
+  const uint32_t a_off0 = off.a[0], a_off1 = off.a[1];
+  const uint32_t b_off0 = off.b[0], b_off1 = off.b[1];
 
   uint32_t stage = 0, phase = 0;
   for (;;) {
@@ -228,11 +286,11 @@ __device__ __forceinline__ void consume(const Params& p, uint32_t smem, uint32_t
     if (tile == CMD_STOP) return;
     uint32_t tm, tn;
     tile_coords(p, static_cast<uint32_t>(tile), tm, tn);
-    const uint32_t row0 = tm * BM + wm * 64u;
-    const uint32_t col0 = tn * BN + wn * 64u;
+    const uint32_t row0 = tm * BM + wm * WARP_TILE;
+    const uint32_t col0 = tn * BN + wn * WARP_TILE;
     const bool active = row0 < p.m && col0 < p.n;
 
-    Acc acc[4][8][4];
+    Acc acc[FRAGS_M][FRAGS_N][4];
 #pragma unroll
     for (int i = 0; i < 4; ++i)
 #pragma unroll
@@ -312,11 +370,10 @@ __device__ __forceinline__ void consume(const Params& p, uint32_t smem, uint32_t
       bound[i] = p.bound[i];
     }
     b3::keyed_hash_one_block(key, t, digest);
-    const uint32_t t_rows = row0 + (lane >> 2);
-    const uint32_t t_cols = col0 + 2u * (lane & 3u);
+    const uint32_t t_rows = row0 + lane_row(lane);
+    const uint32_t t_cols = col0 + lane_col(lane);
     if (p.dump != nullptr) {
-      const uint64_t idx = (uint64_t)((row0 >> 6) * 8u + (lane >> 2)) * p.dump_row_stride +
-                           (col0 >> 6) * 4u + (lane & 3u);
+      const uint64_t idx = dump_index(row0, col0, lane, p.dump_row_stride);
       uint2* rec = reinterpret_cast<uint2*>(p.dump + idx * DUMP_WORDS);
       rec[0] = make_uint2(t_rows, t_cols);
 #pragma unroll

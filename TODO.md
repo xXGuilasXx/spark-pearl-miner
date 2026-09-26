@@ -132,11 +132,12 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 
 ### M10
 
-- [~] gemm_v1 (persistent 48 CTAs, TMA for B with an mbarrier ring, L2 band raster, per-tile epoch check, double-buffered A') passes the full M5 bit-exact suite. (Strategy C has everything but the double-buffered A' and passes the suite.)
+- [x] gemm_v1 (persistent 48 CTAs, TMA for B with an mbarrier ring, L2 band raster, per-tile epoch check, double-buffered A') passes the full M5 bit-exact suite. (Strategy C merged; the double-buffered A' is opt-in — bit-exact, no measurable end-to-end gain.)
 - [~] Sweep of BK=128x2, BK=64x4 and 128x128 at 2 CTAs/SM recorded; winner chosen; cancel latency under 1 ms. (Strategy C: 3 vs 4 stages, band 12/16/24/32, L2 prefetch and eviction hints, pitch padding recorded in crates/spm-gpu/README.md; cancel latency 37–72 µs.)
 - [~] Kernel-only throughput reaches at least 85% of the measured IMMA peak at 2200 MHz, or the reason is documented; credited TH/s and GPU W published (goal: at least 76 TH/s at 85 W or less). (Strategy C, clock not locked, vLLM resident: 84.8 T-MAC/s kernel-only, 80.1 end-to-end at 2273 MHz and 84 W board = 88.3 % of 96.0, 84.6 % of the MB1 peak at that clock; still to be repeated at a locked 2200 MHz.)
 
 ### M11
+- [ ] G1 soak: `bench/g1-soak.sh --minutes 60 --manage-vllm` (clock 2200 MHz, production shape), then 24 h; zero power-off, max chunk ≤ 8 ms, results in docs/benchmarks/g1-*.
 - [ ] After the 24 h soak passes at 2200 MHz, evaluate a 2300 and a 2400 MHz step with soak-log evidence (worth +5–10 % PRL; see docs/en/DUAL-MINING.md). CPU dual mining stays disabled by design (X925 load reaches 84–87 °C in a minute).
 
 - [x] The governor holds within ±3 W of target for 30 min in each profile, and trips fire on synthetic thresholds. (`crates/spm-governor`: PI duty control against the first-order plant model in `spm_governor::sim`, 30 simulated minutes per profile, worst reading 1.2 W off with noise; also with a 4x slower or 2x noisier power reading, a heavier job and a hotter room. Trips: 3 samples over the hard stop, GPU > 83 °C, acpitz > 95 °C, profile-switch grace. The same on hardware is part of the soak item below.)
