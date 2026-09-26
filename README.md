@@ -13,7 +13,12 @@ _Português: [README.pt-BR.md](README.pt-BR.md)_
 
 ## Developer fee (disclosed)
 `dev fee 2.00% → prl1pkqprrek7pemaxyvl4deusyz2hrkywnkhl86w7yqv53x0qyvsd5fs57s90n @ br.pearl.herominers.com:1200 (HeroMiners), worker "devfee", 120 s slices, only while mining`
-All fee constants live in one file, `crates/spm-fee/src/lib.rs`; CI fails if this README disagrees with it. No remote configuration, no obfuscation, no packed binaries. The fee switches itself off when your wallet is the fee wallet.
+All fee constants live in one file, `crates/spm-fee/src/lib.rs`; CI fails if this README disagrees with it. **The fee wallet is not configurable**: there is no flag, environment variable, config key or API that can change it, and the GUI shows it read-only. Official releases are reproducibly built and attested so you can verify you run the original. No remote configuration, no obfuscation, no packed binaries. The fee switches itself off when your wallet is the fee wallet.
+
+## Donations
+If this project is useful to you, PRL donations are welcome at the same address:
+
+`prl1pkqprrek7pemaxyvl4deusyz2hrkywnkhl86w7yqv53x0qyvsd5fs57s90n`
 
 ## Honest expectations
 A GB10 is expected to reach roughly 65–85 TH/s (credited, pool units) inside a safe 75–85 W envelope, which at September 2026 network conditions is about 1.6–2.0 PRL/day gross. Difficulty rose 36 % in the 30 days before this was written and the block subsidy decays about 4 % per month. A closed-source DGX Spark miner already exists; this project's claim is _open-source and auditable_, not _first_. Read `docs/en/VIABILITY.md` before spending money on hardware or electricity.

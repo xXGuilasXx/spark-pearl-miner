@@ -3,7 +3,7 @@
 - **Subagentes sempre em Opus 5.5** (`claude-opus-5-5`, alias `opus`): Agent tool, Workflow e agentes customizados.
 - **Idiomas**: documentação em inglês (principal) e português do Brasil (`*.pt-BR.md`, `docs/pt-BR/`). Todo número compartilhado entre EN/PT vem de `docs/_data/facts.toml`.
 - **Licença**: Apache-2.0. Manter `NOTICE` (ISC Pearl Research Labs + Decred, BSD-3 CUTLASS, MIT de snippets). Regra clean-room: **nunca abrir ou copiar `akoya-miner`** (sem licença) nem binários fechados.
-- **Dev fee**: todas as constantes (2,00 %, carteira, pool de dev, agenda) vivem **só** em `crates/spm-fee/src/lib.rs`; README.md, README.pt-BR.md e docs/FEE.md devem mostrar a mesma linha (CI falha se divergirem). Sem config remota, sem ofuscação, sem packing.
+- **Dev fee**: todas as constantes (2,00 %, carteira, pool de dev, agenda) vivem **só** em `crates/spm-fee/src/lib.rs`; README.md, README.pt-BR.md e docs/FEE.md devem mostrar a mesma linha (CI falha se divergirem). Sem config remota, sem ofuscação, sem packing. **A carteira da taxa é imutável em runtime**: nunca criar flag, variável de ambiente, chave de config, API ou setter que a altere; GUI/API só leitura; releases atestados.
 - **CI nunca minera nem contata pool** (Termos do GitHub). Builds em `ubuntu-24.04-arm`; releases com `SHA256SUMS` + attestation.
 - **GPU nesta máquina (DGX Spark do autor)**: avisar o usuário antes de parar o vLLM (`spark-modo`), travar clock em 2200 MHz nos testes; o worker roda como runtime `miner` do `spark-modo` (lease exclusivo); nunca deixar processo CUDA residente fora desse runtime.
 - **Consenso**: `zk-pow`/`pearl-blake3` fixados em `3fe2267`; verificar toda share localmente antes de submeter; `cert_version` ≥ 4 ⇒ pausar com "update required".

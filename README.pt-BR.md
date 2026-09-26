@@ -13,7 +13,12 @@ _English: [README.md](README.md)_
 
 ## Taxa do desenvolvedor (divulgada)
 `dev fee 2.00% → prl1pkqprrek7pemaxyvl4deusyz2hrkywnkhl86w7yqv53x0qyvsd5fs57s90n @ br.pearl.herominers.com:1200 (HeroMiners), worker "devfee", fatias de 120 s, só enquanto minera`
-Todas as constantes da taxa vivem em um único arquivo, `crates/spm-fee/src/lib.rs`; o CI falha se este README divergir dele. Sem configuração remota, sem ofuscação, sem binários empacotados. A taxa se desliga sozinha quando a sua carteira é a carteira da taxa.
+Todas as constantes da taxa vivem em um único arquivo, `crates/spm-fee/src/lib.rs`; o CI falha se este README divergir dele. **A carteira da taxa não é configurável**: não há flag, variável de ambiente, chave de config nem API que a altere, e a GUI a mostra somente para leitura. Os releases oficiais são compilados de forma reprodutível e atestados para você conferir que roda o original. Sem configuração remota, sem ofuscação, sem binários empacotados. A taxa se desliga sozinha quando a sua carteira é a carteira da taxa.
+
+## Doações
+Se este projeto for útil para você, doações em PRL são bem-vindas no mesmo endereço:
+
+`prl1pkqprrek7pemaxyvl4deusyz2hrkywnkhl86w7yqv53x0qyvsd5fs57s90n`
 
 ## Expectativas honestas
 Um GB10 deve atingir cerca de 65–85 TH/s (creditados, unidade das pools) dentro de um envelope seguro de 75–85 W, o que, nas condições de rede de setembro de 2026, dá cerca de 1,6–2,0 PRL/dia brutos. A dificuldade subiu 36 % nos 30 dias anteriores a este texto e a recompensa por bloco cai ~4 % ao mês. Já existe um minerador fechado para DGX Spark; a proposta deste projeto é ser _aberto e auditável_, não _o primeiro_. Leia `docs/pt-BR/VIABILIDADE.md` antes de gastar com hardware ou energia.

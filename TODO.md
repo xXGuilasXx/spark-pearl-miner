@@ -116,6 +116,7 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 - [ ] spark-pearl-miner fee-test on HeroMiners: worker devfee visible under the dev address, zero stale at switches, the user session never dropped.
 
 ### M9
+- [ ] Fee wallet and fee constants are read-only everywhere in the GUI and API (no edit control, PUT /api/v1/config rejects any fee field); a test asserts the config schema has no fee keys.
 
 - [ ] API on 127.0.0.1:4078 uses token-file to cookie, CSRF header, Host/Origin allowlist and strict CSP; tests show no cookie gives 401, a foreign Host 403 and a missing CSRF header 403.
 - [ ] GUI EN/PT-BR: wallet bech32m validation rejects an invalid address; up to 3 pools (host, port, TLS auto/on/off) and a 4th is rejected; reorder, presets, Test connection, and Save & Apply with hot reload.
@@ -144,6 +145,7 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 - [ ] QMMA f32 throughput relative to IMMA measured; go/no-go memo in docs/KERNEL.md; MmaPolicy template merged.
 
 ### M13
+- [ ] Release page explains how to verify the binary (SHA256SUMS + `gh attestation verify`) so users can confirm the fee wallet compiled in is the official one.
 
 - [ ] README, README.pt-BR and docs/{en,pt-BR} complete, with facts.toml; parity, link and fee-constant checks green.
 - [ ] ci.yml, release.yml and upstream-watch.yml green on ubuntu-24.04-arm; no job mines or contacts a pool.
