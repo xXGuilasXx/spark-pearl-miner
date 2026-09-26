@@ -278,7 +278,7 @@
   "power.max.phrase": "I ACCEPT THE RISK",
   "power.max.type": "Type \"{phrase}\" to use Max",
   "power.max.warn": "Max can trigger the DGX Spark's hard power-off under sustained load. Unsaved work on this machine can be lost.",
-  "power.governor_note": "The power governor that enforces these profiles arrives in a later release (M11); the choice is saved now.",
+  "power.governor_note": "The daemon's power governor enforces the profile: it steers the GPU to the target and pauses mining above the hard stop. A change applies at once.",
   "power.clockcap": "GPU clock cap (optional)",
   "power.clockcap.text": "A boot-time cap of 2200 MHz makes power spikes much less likely. It needs sudo once; this command only prints the steps:",
 
@@ -293,7 +293,7 @@
   "coex.yield-release.desc": "Pause and free the GPU memory while another program uses the GPU.",
   "coex.exclusive": "Exclusive",
   "coex.exclusive.desc": "The GPU is dedicated to mining.",
-  "coex.note": "Yield and yield-release detection arrive with the power governor (M11); until then they behave like Exclusive.",
+  "coex.note": "Yield and yield-release watch the vLLM metrics (http://127.0.0.1:8001/metrics by default) and step aside while it has requests; the address and timings are in config.toml ([coexistence]).",
 
   "sim.enable": "CPU simulation instead of the GPU worker (testing only)",
   "sim.interval": "Pause between simulated attempts (ms)",

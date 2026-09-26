@@ -16,7 +16,7 @@ arquivo pelo `PUT /api/v1/config`; você também pode editá-lo à mão com o da
   renomeia por cima do `config.toml` (modo 0600); o arquivo anterior fica como `config.toml.bak`.
 - **Recarga a quente**: o daemon confere o arquivo a cada 2 s. Mudanças de pool, carteira e worker
   reconectam só as pools afetadas; mudar os limites do failover reinicia as conexões com as pools;
-  mudanças em `[api]` precisam reiniciar o daemon.
+  `[power]` e `[coexistence]` valem na hora; mudanças em `[api]` precisam reiniciar o daemon.
 - **Auditado**: cada mudança vira uma linha JSON em `~/.local/state/spark-pearl-miner/audit.log`
   com a hora, a origem (`api`, `file`, `cli`), as chaves alteradas e se a carteira de pagamento
   mudou. Trocar a carteira também mostra um aviso na GUI até você confirmar.
@@ -108,6 +108,10 @@ max_acknowledged = false
 
 [coexistence]
 mode = "exclusive"
+metrics_url = "http://127.0.0.1:8001/metrics"
+poll_ms = 200
+idle_s = 5
+busy_sm_pct = 10
 
 [worker]
 launch = "spawn"
@@ -184,12 +188,37 @@ Padrões do `docs/pt-BR/ARQUITETURA.md` ("Failover"). Cada valor tem faixa confe
 | `drain_s` | 5 | a pool antiga ainda recebe as shares em andamento por esse tempo depois de uma troca planejada |
 | `reconnect_same_after_s` | 60 | uma pool que minerava há mais que isso ganha uma reconexão antes do failover |
 
-## `[power]`, `[coexistence]`, `[worker]`
+## `[power]`
+
+Aplicado pelo controlador de energia do daemon (detalhes: [ENERGIA-TERMICA](ENERGIA-TERMICA.md)). O
+daemon lê a GPU a 10 Hz pelo NVML (só leitura, nunca um contexto CUDA), ou pelo
+`nvidia-smi --query-gpu` a 2 Hz quando o NVML não carrega, e ajusta o ciclo de trabalho do worker
+para o alvo do perfil. Sem telemetria nenhuma, ele não roda um worker de GPU de verdade.
 
 | Chave | Padrão | Valores |
 |---|---|---|
-| `power.profile` | `"balanced"` | `eco`, `balanced` (alvo de 75 W, para em 85 W), `max` (precisa de `max_acknowledged = true`, que a GUI só marca depois da confirmação digitada). Aplicado pelo controlador de energia (marco M11). |
-| `coexistence.mode` | `"exclusive"` | `spark-modo` (o worker só como o runtime `miner` do spark-modo), `yield`, `yield-release` (os dois se comportam como `exclusive` até o M11), `exclusive` |
+| `power.profile` | `"balanced"` | `eco` (alvo de 60 W, para em 70 W), `balanced` (alvo de 75 W, para em 85 W), `max` (alvo de 88 W, para em 92 W). A mudança vale na hora; ao descer de perfil, o limite de parada anterior continua por 2 s enquanto a potência cai. Depois de uma parada suja da execução anterior (`running.marker` deixado para trás), a execução usa um perfil abaixo e gera um alerta. |
+| `power.max_acknowledged` | `false` | sem ele o `max` é recusado: o arquivo ou o `PUT` falham na validação (`max_not_acknowledged`) e o daemon confere de novo. A GUI só marca depois da confirmação digitada. |
+
+## `[coexistence]`
+
+Como o minerador divide a GPU com um servidor de LLM (detalhes: [COEXISTENCIA](COEXISTENCIA.md)).
+A guarda de memória vale em todos os modos: o worker não sobe se `MemAvailable` menos o orçamento
+de 2 GiB dele não deixar 20 GiB (e com a pressão de memória acima de 10 %), e é liberado abaixo de
+16 GiB disponíveis ou acima de 10 % de pressão.
+
+| Chave | Padrão | Valores |
+|---|---|---|
+| `coexistence.mode` | `"exclusive"` | `exclusive` (sem controle), `yield` (pausa o worker, mantendo o contexto, enquanto o vLLM tem requisições rodando ou esperando; retoma depois de `idle_s` ocioso), `yield-release` (igual, mas o processo do worker sai enquanto o vLLM está ocupado e um novo sobe quando fica ocioso), `spark-modo` (o runtime `miner` do spark-modo sobe e para o worker: o daemon nunca o sobe, seja qual for o `worker.launch`, e informa "controlado pelo spark-modo") |
+| `coexistence.metrics_url` | `"http://127.0.0.1:8001/metrics"` | endpoint Prometheus do vLLM, só `http://` simples (`yield`, `yield-release`) |
+| `coexistence.poll_ms` | 200 | intervalo de leitura das métricas (100–250) |
+| `coexistence.idle_s` | 5 | tempo ocioso contínuo antes de minerar ou retomar (1–600) |
+| `coexistence.busy_sm_pct` | 10 | quando as métricas não respondem: outro processo de computação com essa utilização de SM ou mais conta como ocupado (1–100); sem sinal nenhum a GPU conta como ocupada |
+
+## `[worker]`
+
+| Chave | Padrão | Valores |
+|---|---|---|
 | `worker.launch` | `"spawn"` | `spawn` (o daemon sobe o worker) ou `external` (o spark-modo sobe; o daemon espera no `worker.sock`) |
 | `worker.simulate` | `false` | roda o worker de **simulação na CPU** no lugar do CUDA. Ele usa o minerador de referência oficial com m = n = 256, k = 2048 e só acha shares com dificuldade trivial (a pool de teste). Nenhuma dívida de taxa se acumula durante a simulação. |
 | `worker.sim_interval_ms` | 1000 | pausa entre tentativas simuladas (50–60000) |
@@ -211,5 +240,7 @@ Padrões do `docs/pt-BR/ARQUITETURA.md` ("Failover"). Cada valor tem faixa confe
 | `~/.config/spark-pearl-miner/api-token` | token da API, 0600 |
 | `~/.local/state/spark-pearl-miner/state.json` | o que o daemon aprendeu: estado do agendador de dívida da taxa (nenhuma constante da taxa é gravada), campo de prova que funciona por pool, resultados do TLS automático, se a mineração estava ligada, marca de desligamento limpo |
 | `~/.local/state/spark-pearl-miner/audit.log` | mudanças de configuração |
+| `~/.local/state/spark-pearl-miner/running.marker` | gravado (com fsync) quando o daemon sobe e apagado numa parada limpa; se estiver lá na partida, a execução anterior caiu ou perdeu energia |
 | `$XDG_RUNTIME_DIR/spark-pearl-miner/control.sock` | socket de controle da CLI (0600) |
 | `$XDG_RUNTIME_DIR/spark-pearl-miner/worker.sock` | socket do worker de GPU (0600) |
+| `$XDG_RUNTIME_DIR/spark-pearl-miner/worker.ack` | a última confirmação de pausa/retomada do worker (`paused <seq>` / `running <seq>`) |

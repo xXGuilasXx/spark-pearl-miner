@@ -339,11 +339,24 @@ impl Default for FailoverSettings {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PowerProfile {
+    /// 60 W target, 70 W stop.
     Eco,
     /// 75 W target, 85 W stop.
     #[default]
     Balanced,
+    /// 88 W target, 92 W stop: inside the band where a DGX Spark can power off.
     Max,
+}
+
+impl PowerProfile {
+    /// Config/API spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PowerProfile::Eco => "eco",
+            PowerProfile::Balanced => "balanced",
+            PowerProfile::Max => "max",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -351,6 +364,7 @@ pub enum PowerProfile {
 pub struct PowerConfig {
     pub profile: PowerProfile,
     /// Max runs the GPU at its limits; the GUI asks the user to type an acknowledgement first.
+    /// Without it `max` is refused, by the validation and again by the daemon.
     pub max_acknowledged: bool,
 }
 
@@ -358,21 +372,55 @@ pub struct PowerConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CoexistenceMode {
-    /// DGX Spark with spark-modo: the worker runs only as the `miner` runtime (launch = external).
+    /// DGX Spark with spark-modo: the worker runs only as the `miner` runtime; the daemon never
+    /// spawns it and only reports.
     SparkModo,
-    /// Pause while another process uses the GPU (M11).
+    /// Pause the worker (CUDA context kept) while the LLM server is busy.
     Yield,
-    /// Pause and release the CUDA context while another process uses the GPU (M11).
+    /// Release the worker (the process exits, its context is freed) while the LLM server is busy.
     YieldRelease,
     /// The GPU is the miner's.
     #[default]
     Exclusive,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+impl CoexistenceMode {
+    /// Config/API spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CoexistenceMode::SparkModo => "spark-modo",
+            CoexistenceMode::Yield => "yield",
+            CoexistenceMode::YieldRelease => "yield-release",
+            CoexistenceMode::Exclusive => "exclusive",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct CoexistenceConfig {
     pub mode: CoexistenceMode,
+    /// vLLM Prometheus endpoint polled in `yield` and `yield-release` (plain `http://` only).
+    pub metrics_url: String,
+    /// Metrics poll period, 100–250 ms.
+    pub poll_ms: u64,
+    /// Continuous idle time of the LLM server before mining starts or resumes, 1–600 s.
+    pub idle_s: u64,
+    /// Fallback when the metrics are unavailable: another compute process at or above this SM
+    /// utilization counts as busy, 1–100 %.
+    pub busy_sm_pct: u32,
+}
+
+impl Default for CoexistenceConfig {
+    fn default() -> Self {
+        CoexistenceConfig {
+            mode: CoexistenceMode::default(),
+            metrics_url: spm_coexist::DEFAULT_METRICS_URL.to_string(),
+            poll_ms: spm_coexist::DEFAULT_POLL.as_millis() as u64,
+            idle_s: spm_coexist::DEFAULT_IDLE.as_secs(),
+            busy_sm_pct: spm_coexist::DEFAULT_BUSY_SM_PCT,
+        }
+    }
 }
 
 /// Who starts the GPU worker.
@@ -672,6 +720,17 @@ impl Config {
                 "the Max profile needs the typed acknowledgement",
             ));
         }
+        let c = &self.coexistence;
+        if spm_coexist::http::HttpUrl::parse(&c.metrics_url).is_err() {
+            e.push(FieldError::new(
+                "coexistence.metrics_url",
+                "metrics_url_invalid",
+                "a plain http:// URL, e.g. http://127.0.0.1:8001/metrics",
+            ));
+        }
+        range(&mut e, "coexistence.poll_ms", c.poll_ms, 100, 250);
+        range(&mut e, "coexistence.idle_s", c.idle_s, 1, 600);
+        range(&mut e, "coexistence.busy_sm_pct", c.busy_sm_pct, 1, 100);
         range(&mut e, "worker.sim_interval_ms", self.worker.sim_interval_ms, 50, 60_000);
         match self.api.bind.parse::<IpAddr>() {
             Ok(ip) if ip.is_loopback() => {}
@@ -754,6 +813,28 @@ mod tests {
                 assert!(doc.contains(line), "the configuration docs do not show `{line}`; default file:\n{toml}");
             }
         }
+    }
+
+    #[test]
+    fn power_and_coexistence_defaults_and_ranges() {
+        let c = Config::default();
+        assert_eq!((c.power.profile, c.power.max_acknowledged), (PowerProfile::Balanced, false));
+        assert_eq!(c.coexistence.mode, CoexistenceMode::Exclusive);
+        assert_eq!(c.coexistence.metrics_url, "http://127.0.0.1:8001/metrics");
+        assert_eq!((c.coexistence.poll_ms, c.coexistence.idle_s, c.coexistence.busy_sm_pct), (200, 5, 10));
+        let mut bad = valid();
+        bad.coexistence.metrics_url = "https://127.0.0.1:8001/metrics".into();
+        bad.coexistence.poll_ms = 50;
+        bad.coexistence.idle_s = 0;
+        bad.coexistence.busy_sm_pct = 101;
+        bad.power.profile = PowerProfile::Max;
+        let fields: Vec<String> = bad.validate(Strictness::File).unwrap_err().fields().into_iter().map(|f| f.path).collect();
+        for p in ["coexistence.metrics_url", "coexistence.poll_ms", "coexistence.idle_s", "coexistence.busy_sm_pct", "power.max_acknowledged"] {
+            assert!(fields.iter().any(|f| f == p), "{p} not refused: {fields:?}");
+        }
+        // Old files with only `mode` still load.
+        let c = Config::from_toml("schema_version = 1\n[coexistence]\nmode = \"yield\"\n").unwrap();
+        assert_eq!((c.coexistence.mode, c.coexistence.idle_s), (CoexistenceMode::Yield, 5));
     }
 
     #[test]

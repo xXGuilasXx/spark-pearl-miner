@@ -11,6 +11,7 @@ build = "build.rs"
 [dependencies]
 spm-fee.workspace = true
 spm-proto.workspace = true
+spm-coexist.workspace = true
 axum.workspace = true
 futures-util.workspace = true
 include_dir.workspace = true

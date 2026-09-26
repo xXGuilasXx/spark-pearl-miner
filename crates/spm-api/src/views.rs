@@ -42,8 +42,134 @@ pub struct StatusView {
     pub wallet_changed: Option<WalletChange>,
     pub setup_required: bool,
     pub spark_modo_present: bool,
+    /// The power governor: profile, target, hard stop, duty, clock cap, trips and faults.
+    #[serde(default)]
+    pub power: PowerView,
+    /// Coexistence with an LLM server: mode, gate, memory guard and the pause/resume handshake.
+    #[serde(default)]
+    pub coexist: CoexistView,
     /// Unix time (ms) of this snapshot.
     pub at_ms: u64,
+}
+
+/// The power governor (`status.power` and `gpu.power`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct PowerView {
+    /// `off` (governor disabled) | `no_telemetry` (neither NVML nor nvidia-smi answers: a real
+    /// worker is held) | `idle` (our worker is not computing) | `running` | `tripped` | `fault`
+    pub state: String,
+    /// Telemetry source: `nvml` | `nvidia-smi` | `none` | `off`.
+    pub source: String,
+    /// Profile in force (after an unclean-start step-down).
+    pub profile: String,
+    /// Profile in config.toml.
+    pub configured_profile: String,
+    /// The profile in force was stepped down because the previous run did not stop cleanly.
+    pub stepped_down: bool,
+    pub target_w: f64,
+    pub hard_stop_w: f64,
+    /// Target after the temperature derating, for the last sample.
+    pub effective_target_w: Option<f64>,
+    /// Duty cycle last sent to the worker, percent.
+    pub duty_pct: u8,
+    pub clock_cap: ClockCapView,
+    /// The trip holding the worker, if any.
+    pub trip: Option<TripView>,
+    /// Trips since the daemon started (faults included).
+    pub trips_total: u64,
+    pub last_trip: Option<TripView>,
+    /// A latched fault signature: mining is stopped until the user presses Start.
+    pub fault: Option<FaultView>,
+    pub telemetry: Option<TelemetryView>,
+    /// Alert raised at start when the previous run did not stop cleanly.
+    pub unclean_start: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct TripView {
+    /// `over_power` | `gpu_over_temp` | `acpitz_over_temp` | `fault`
+    pub code: String,
+    pub detail: String,
+    pub at_ms: u64,
+    /// Seconds until the earliest resume (the temperatures must also have cooled); `None` for a
+    /// fault, which holds until cleared.
+    pub resume_in_s: Option<u64>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct FaultView {
+    /// `usb_pd` | `safety_mode` | `thermal_cap_100w`
+    pub signature: String,
+    pub alert: String,
+    pub at_ms: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ClockCapView {
+    /// Recommended cap of the profile in force.
+    pub cap_mhz: u32,
+    /// `unknown` | `capped` | `uncapped` (from the SM clock readings; NVML has no getter).
+    pub status: String,
+    pub max_seen_mhz: u32,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct TelemetryView {
+    pub power_w: f64,
+    pub temp_gpu_c: f64,
+    pub temp_acpitz_c: Option<f64>,
+    pub sm_clock_mhz: u32,
+    /// `clocks_event_reasons.active` bits, when reported.
+    pub event_reasons: Option<u64>,
+    pub at_ms: u64,
+}
+
+/// Coexistence with an LLM server (`status.coexist`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct CoexistView {
+    /// `exclusive` | `yield` | `yield-release` | `spark-modo`
+    pub mode: String,
+    /// What the gate lets the worker do: `mine` | `pause` | `release` | `external`
+    pub gate: String,
+    /// Who starts and stops the worker when it is not the daemon (`spark-modo`).
+    pub controlled_by: Option<String>,
+    /// Source of the last busy/idle signal: `vllm` | `nvml` | `nvidia-smi` | `unavailable` | `none`
+    pub signal: String,
+    pub llm_running: Option<f64>,
+    pub llm_waiting: Option<f64>,
+    /// SM utilization of the other compute processes (fallback signal), percent.
+    pub foreign_sm_pct: Option<u32>,
+    pub metrics_error: Option<String>,
+    /// Continuous idle so far, seconds (yield modes).
+    pub idle_for_s: Option<f64>,
+    pub idle_needed_s: u64,
+    /// Gate transitions since the daemon started.
+    pub transitions: u64,
+    /// Unix time (ms) of the last gate transition.
+    pub since_ms: u64,
+    pub memory: MemoryView,
+    pub handshake: HandshakeView,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct MemoryView {
+    /// `ok` | `refused` (start refused: not enough headroom) | `exit_low_memory` |
+    /// `exit_pressure` | `unreadable` | `off`
+    pub state: String,
+    pub available_gib: Option<f64>,
+    pub psi_some_avg10: Option<f64>,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct HandshakeView {
+    /// Last ACK read from `worker.ack` (`paused 3`, `running 4`).
+    pub last_ack: Option<String>,
+    pub acks: u64,
+    pub pause_latency_ms: Option<u64>,
+    pub resume_latency_ms: Option<u64>,
+    /// Pauses that were not acknowledged in time and became a release (or a kill).
+    pub escalations: u32,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -188,6 +314,9 @@ pub struct GpuView {
     pub sm_clock_mhz: Option<u32>,
     pub power_w: Option<f32>,
     pub smi: Option<SmiView>,
+    /// The power governor (same as `status.power`).
+    #[serde(default)]
+    pub power: PowerView,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -257,6 +386,22 @@ pub enum ApiEvent {
         source: String,
         wallet_changed: bool,
     },
+    /// The power governor changed state.
+    Power {
+        at_ms: u64,
+        /// `trip` | `resume` | `fault` | `fault_cleared` | `profile` | `telemetry`
+        kind: String,
+        detail: String,
+    },
+    /// A coexistence transition.
+    Coexist {
+        at_ms: u64,
+        /// `gate` | `memory`
+        scope: String,
+        from: String,
+        to: String,
+        reason: String,
+    },
 }
 
 impl ApiEvent {
@@ -270,6 +415,8 @@ impl ApiEvent {
             ApiEvent::Log(_) => "log",
             ApiEvent::Timeline(_) => "timeline",
             ApiEvent::Config { .. } => "config",
+            ApiEvent::Power { .. } => "power",
+            ApiEvent::Coexist { .. } => "coexist",
         }
     }
 }

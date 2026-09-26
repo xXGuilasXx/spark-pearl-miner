@@ -146,3 +146,28 @@ fn last_command_wins_when_signals_coalesce() {
     assert_eq!(c.on_ack(ack, ms(3)), Some(CtlOutput::Resumed { latency: ms(2) }));
     assert!(w.may_issue_gpu_work());
 }
+
+#[test]
+fn ack_file_round_trip() {
+    use spm_coexist::handshake::{read_ack_file, write_ack_file, ACK_FILE};
+    let dir = std::env::temp_dir().join(format!("spm-coexist-ack-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join(ACK_FILE);
+    assert_eq!(read_ack_file(&path).unwrap(), None);
+    let mut w = WorkerHandshake::new();
+    w.on_signal(Signal::Usr1);
+    let ack = w.on_quiescent().unwrap();
+    write_ack_file(&path, &ack).unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "paused 1\n");
+    assert_eq!(read_ack_file(&path).unwrap(), Some(ack));
+    let mut c = ControllerHandshake::new();
+    c.request_pause(ms(0));
+    let read = read_ack_file(&path).unwrap().unwrap();
+    assert_eq!(c.on_ack(read, ms(4)), Some(CtlOutput::Paused { latency: ms(4) }));
+    std::fs::write(&path, "garbage\n").unwrap();
+    assert_eq!(read_ack_file(&path).unwrap(), None);
+    // Only the ACK itself is left behind: no temporary files.
+    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

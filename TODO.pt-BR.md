@@ -23,7 +23,7 @@
 | M9 | API + GUI web EN/PT-BR (assistente, dashboard, 3 slots de pool com failover ao vivo, energia, fee, logs, sobre; segurança token→cookie+CSRF), unit `systemd --user`, `.desktop`, `contrib/spark-modo` (runtime `miner`) | 4 | M7 | daemon, API, GUI, unit/.desktop e contrib prontos ✅ (demo de failover local em teste); aplicar o spark-modo com sudo, teste por `ssh -L`, prints e o contexto CUDA (M5) pendentes |
 
 | M10 | Kernel v1 (persistente 48 CTAs, TMA p/ B, raster L2, A' duplo-buffer; ≥ 85 % do pico IMMA; meta ≥ 76 TH/s a ≤ 85 W) | 5 | M5, M6 | |
-| M11 | Governor de energia (Eco/Balanced/Max), unit de clock-cap, coexistência (yield/yield-release), guarda de memória, soaks 60 min + 24 h | 2 | M6 | **G1** — 🟡 código pronto (85 testes); soaks e wiring no daemon pendentes |
+| M11 | Governor de energia (Eco/Balanced/Max), unit de clock-cap, coexistência (yield/yield-release), guarda de memória, soaks 60 min + 24 h | 2 | M6 | **G1** — 🟡 código pronto e ligado ao daemon (M9b: governor, marcador, coexistência, guarda de memória, protocolo de pausa); soaks, demo de SIGKILL ao vivo e testes sob carga do vLLM pendentes |
 | M12 | Spike FP8/V4 (`zk-pow` do branch `fp8-scheme`, microkernel QMMA, ≥ 1e6 átomos bit-exatos vs B200, memorando go/no-go) | 1,5 | M1, M5a | **G3** |
 | M13 | Docs EN+PT-BR, CI/release/upstream-watch, tarball + SHA256SUMS + attestation, assinatura da carteira pelo dono, **v0.1.0 público** | 3 | M8, M9, M11 | **G4** |
 | M14 | Piloto de 72 h + relatório (EN/PT-BR) + v0.1.1 | 3 | M13 | |

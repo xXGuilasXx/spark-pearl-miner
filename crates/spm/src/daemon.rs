@@ -7,12 +7,17 @@
 //!   bound to their session, credited-MAC counters, and the developer-fee scheduler with its own
 //!   session on the first reachable `DEV_POOLS` entry (worker `devfee`).
 //! * WorkerSupervisor ([`crate::supervisor`]) for the GPU worker.
+//! * Power governor ([`crate::power`]): 10 Hz telemetry (NVML, else nvidia-smi at 2 Hz) plus
+//!   `acpitz` into `spm_governor`; duty frames, trip pauses, fault stops, `running.marker`.
+//! * Coexistence ([`crate::coexist`]): the `coexistence.mode` gate (vLLM metrics, per-process
+//!   fallback), the memory guard and the pause/resume handshake state.
 //! * ConfigService (hot reload, audit) and the persisted state.
 //!
 //! The daemon never creates a CUDA context.
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -22,6 +27,10 @@ use spm_api::{
     AboutView, AlertView, ApiEvent, ApplyOutcome, Backend, ChangeSource, ControlOp, ErrorView, FeeView, GpuView, LogEntry,
     PoolsView, ShareCounts, SlotView, SmiView, StatusView, TimelineEntry, WalletChange,
 };
+use spm_coexist::pmon::{foreign_compute_sm_pct, ProcUtil};
+use spm_coexist::{CoexistMode, VllmLoad};
+use spm_governor::marker::{self, MarkerInfo};
+use spm_governor::{Profile, Sample};
 use spm_fee::{FeeAction, FeeScheduler, DEV_POOLS, DEV_WALLET, DEV_WORKER};
 use spm_pool::{Action, Event, ManagerState, PauseReason, SlotId, SlotState};
 use spm_proto::client::{DisconnectReason, PoolSession, SessionConfig, SessionEvent, SubmitError};
@@ -33,9 +42,11 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 use crate::arbiter::{decide, ArbiterInput, Credit, JobBook, Target};
+use crate::coexist::{spawn_poller, CoexistCtl, GateHold, MemorySource, Transition};
 use crate::configsvc::{ConfigService, Reload};
 use crate::logring::LogRing;
 use crate::paths::{unix_ms, unix_s, Paths};
+use crate::power::{select_profile, spawn_sampler, Feed, GpuReading, PowerAction, PowerCtl, TelemetryChoice, TelemetryMsg};
 use crate::state::{StateStore, TlsAutoResult};
 use crate::supervisor::{SupCmd, Supervisor, WorkerEvent, WorkerStatus};
 use crate::worker_sim::SIM_SHAPE;
@@ -45,6 +56,11 @@ const TIMELINE: usize = 300;
 const ALERTS: usize = 50;
 /// Local verify failures in a row that stop mining (a compute fault, not a pool problem).
 const MAX_VERIFY_FAILURES: u32 = 2;
+/// Per-process utilization readings (coexistence fallback) are combined over this window and
+/// count as stale beyond it.
+const PROCS_WINDOW: Duration = Duration::from_secs(3);
+/// The memory guard re-reads `/proc` at most this often.
+const MEM_CHECK_MIN: Duration = Duration::from_millis(200);
 
 /// How the daemon is started.
 #[derive(Clone)]
@@ -58,8 +74,12 @@ pub struct DaemonOptions {
     pub api_port_override: Option<u16>,
     /// Serve the control socket for the CLI.
     pub control_socket: bool,
-    /// Poll `nvidia-smi --query-gpu` (NVML; never a CUDA context).
+    /// Poll `nvidia-smi --query-gpu` every 10 s for the GUI's GPU card (never a CUDA context).
     pub telemetry: bool,
+    /// Power-governor telemetry: NVML/nvidia-smi (`Auto`), none, or a test source.
+    pub governor: TelemetryChoice,
+    /// Memory guard input (`/proc/meminfo`, `/proc/pressure/memory`); `None` turns it off.
+    pub memory: Option<MemorySource>,
     pub logs: Arc<LogRing>,
     pub events: broadcast::Sender<ApiEvent>,
 }
@@ -75,6 +95,8 @@ impl DaemonOptions {
             api_port_override: None,
             control_socket: true,
             telemetry: true,
+            governor: TelemetryChoice::Auto,
+            memory: Some(MemorySource::proc()),
             logs,
             events,
         }
@@ -115,6 +137,10 @@ pub enum Msg {
     Verified { wu_id: u64, proof: Vec<u8>, result: Result<(), String> },
     Api(ApiReq),
     Smi(Option<SmiView>),
+    /// From the power-governor sampling thread.
+    Telemetry(TelemetryMsg),
+    /// One vLLM metrics poll (`gen` identifies the poller).
+    Llm { gen: u64, result: Result<VllmLoad, String> },
     Shutdown,
 }
 
@@ -251,6 +277,16 @@ pub fn dev_session_config(host: &str, port: u16, learned: Option<ProofField>) ->
     cfg.jsonrpc = lucky.then_some(true);
     cfg.proof_field = learned.unwrap_or(ProofField::PlainProof);
     cfg
+}
+
+/// Who starts the worker: in `spark-modo` coexistence the `miner` runtime does, whatever
+/// `worker.launch` says, so the daemon never spawns it.
+pub fn effective_launch(cfg: &Config) -> LaunchMode {
+    if cfg.coexistence.mode == spm_api::config::CoexistenceMode::SparkModo {
+        LaunchMode::External
+    } else {
+        cfg.worker.launch
+    }
 }
 
 fn failover_config(f: &FailoverSettings) -> spm_pool::FailoverConfig {
@@ -537,6 +573,22 @@ struct Daemon {
     smi: Option<SmiView>,
     about: AboutView,
     spark_modo: bool,
+    power: PowerCtl,
+    /// `running.marker` (unclean-shutdown detection).
+    marker: PathBuf,
+    coexist: CoexistCtl,
+    poller: Option<JoinHandle<()>>,
+    poller_gen: u64,
+    /// Asks the telemetry thread for per-process utilization (metrics unavailable).
+    want_procs: Arc<AtomicBool>,
+    /// Recent per-process utilization readings (coexistence fallback), newest last.
+    procs: VecDeque<(Instant, Vec<ProcUtil>)>,
+    /// Telemetry source in use (`nvml`, `nvidia-smi`), empty when none.
+    telemetry_source: String,
+    mem_checked_at: Option<Instant>,
+    /// `keep_context` last sent with a paused `Desire`.
+    sent_keep: bool,
+    last_blind: bool,
     tx: mpsc::UnboundedSender<Msg>,
     snap: watch::Sender<Arc<Snapshot>>,
     dirty: bool,
@@ -556,6 +608,20 @@ pub async fn start(opts: DaemonOptions) -> anyhow::Result<DaemonHandle> {
     }
     let cfgsvc = ConfigService::load_or_init(&paths).map_err(|e| anyhow::anyhow!(e))?;
     let cfg = cfgsvc.current().clone();
+    // Max without the acknowledgement never gets here (validation), but the governor checks too.
+    let (configured, profile_refused) = match select_profile(&cfg.power) {
+        Ok(p) => (p, None),
+        Err(e) => (Profile::Balanced, Some(format!("power profile refused, using balanced: {e}"))),
+    };
+    let marker_path = paths.state_dir.join(marker::MARKER_FILE);
+    let plan = match marker::begin_run(&marker_path, configured, unix_s(), std::process::id()) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(error = %e, path = %marker_path.display(), "could not write running.marker");
+            marker::plan_start(configured, None)
+        }
+    };
+    let stepdown = plan.unclean.as_ref().map(|_| plan.profile);
     let mut store = StateStore::load(paths.state_file());
     if store.state.running {
         tracing::warn!("the previous daemon run did not shut down cleanly");
@@ -590,7 +656,7 @@ pub async fn start(opts: DaemonOptions) -> anyhow::Result<DaemonHandle> {
     let (sup, wrx, worker_status) = Supervisor::start(
         paths.worker_sock(),
         opts.worker_exe.clone(),
-        cfg.worker.launch,
+        effective_launch(&cfg),
         cfg.worker.simulate,
         cfg.worker.sim_interval_ms,
     )
@@ -658,10 +724,41 @@ pub async fn start(opts: DaemonOptions) -> anyhow::Result<DaemonHandle> {
         smi: None,
         about,
         spark_modo: std::path::Path::new("/usr/local/sbin/spark-modo").exists(),
+        power: PowerCtl::new(configured, stepdown, plan.alert.clone(), !matches!(opts.governor, TelemetryChoice::Off)),
+        marker: marker_path,
+        coexist: CoexistCtl::new(&cfg.coexistence, opts.memory.is_some(), unix_ms()),
+        poller: None,
+        poller_gen: 0,
+        want_procs: Arc::new(AtomicBool::new(false)),
+        procs: VecDeque::new(),
+        telemetry_source: String::new(),
+        mem_checked_at: None,
+        sent_keep: false,
+        last_blind: false,
         tx: tx.clone(),
         snap: snap_tx,
         dirty: true,
     };
+    if let Some(msg) = profile_refused {
+        d.alert("error", msg);
+    }
+    if let Some(msg) = plan.alert.clone() {
+        d.alert("warn", msg);
+    }
+    if d.power.feed() != Feed::Off {
+        // Every worker starts at the governor's duty (10 %) and ramps from there.
+        let pct = d.power.duty_pct();
+        let _ = d.sup.send(SupCmd::SetDuty { pct });
+        d.power.note_duty_sent(pct);
+        let t = tx.clone();
+        spawn_sampler(opts.governor.clone(), now.into_std(), d.want_procs.clone(), move |m| t.send(Msg::Telemetry(m)).is_ok());
+    }
+    tracing::info!(
+        target: "spm::power",
+        profile = d.power.profile().as_str(),
+        coexistence = d.coexist.mode().as_str(),
+        "power profile and coexistence mode"
+    );
     // Nothing connects until mining is started.
     d.step(Event::PauseRequest { reason: PauseReason::UserStop });
     if d.cfgsvc.current().setup_complete() && d.store.state.mining_wanted {
@@ -755,9 +852,16 @@ impl Daemon {
             self.slots[i].drop_connection();
         }
         self.dev_close();
+        if let Some(p) = self.poller.take() {
+            p.abort();
+        }
         self.store.state.fee = Some(self.fee.persisted());
         self.store.state.running = false;
         let _ = self.store.save();
+        // A clean stop: the next run uses the configured profile again.
+        if let Err(e) = marker::clear_marker(&self.marker) {
+            tracing::warn!(error = %e, "could not remove running.marker");
+        }
         let _ = self.sup.send(SupCmd::Shutdown);
         tokio::time::sleep(Duration::from_millis(200)).await;
         let _ = std::fs::remove_file(self.opts.paths.control_sock());
@@ -938,12 +1042,19 @@ impl Daemon {
     // ----- arbiter -----
 
     fn reconcile_worker(&mut self) {
+        if !self.worker_status.borrow().present {
+            // No worker yet: the memory guard decides whether one may start (with no worker
+            // there is nothing to release).
+            let _ = self.check_memory(false);
+        }
+        let hold = self.hold_reason();
+        let keep = self.keep_context(hold);
         let user_active = self.fsm.active();
         let user_job = user_active
             .and_then(|s| self.slots[s.index()].job.as_ref())
             .is_some_and(|j| !j.requires_update());
         let input = ArbiterInput {
-            paused: !self.user_running || self.user_paused || self.hw_fault,
+            paused: !self.user_running || self.user_paused || self.hw_fault || hold.is_some(),
             dev_slice: self.fee.in_slice(),
             dev_job: self.dev.authorized && self.dev.job.as_ref().is_some_and(|j| !j.requires_update()),
             user_active,
@@ -958,20 +1069,28 @@ impl Daemon {
         };
         let shape = self.shape();
         let Some(job) = job.filter(|_| target != Target::Idle) else {
-            if self.desired_run || self.target != Target::Idle {
-                let _ = self.sup.send(SupCmd::Desire { job: self.current_wu.clone(), run: false });
+            if self.desired_run || self.target != Target::Idle || keep != self.sent_keep {
+                let _ = self.sup.send(SupCmd::Desire { job: self.current_wu.clone(), run: false, keep_context: keep });
+                self.sent_keep = keep;
             }
             self.set_target(Target::Idle);
             self.desired_run = false;
             return;
         };
+        self.sent_keep = false;
+        if !self.desired_run {
+            // Back from a long hold: restart from the minimum duty (before the Resume goes out).
+            if let Some(pct) = self.power.on_worker_start() {
+                let _ = self.sup.send(SupCmd::SetDuty { pct });
+            }
+        }
         let key = Some((target, uid, job.job_id.clone(), shape));
         if key != self.current_key {
             match self.book.bind(target, uid, &job, shape) {
                 Ok(wu) => {
                     self.current_wu = Some(Box::new(wu));
                     self.current_key = key;
-                    let _ = self.sup.send(SupCmd::Desire { job: self.current_wu.clone(), run: true });
+                    let _ = self.sup.send(SupCmd::Desire { job: self.current_wu.clone(), run: true, keep_context: false });
                 }
                 Err(e) => {
                     self.current_key = key;
@@ -986,7 +1105,7 @@ impl Daemon {
             self.desired_run = false;
             return;
         } else if !self.desired_run {
-            let _ = self.sup.send(SupCmd::Desire { job: self.current_wu.clone(), run: true });
+            let _ = self.sup.send(SupCmd::Desire { job: self.current_wu.clone(), run: true, keep_context: false });
         }
         self.desired_run = true;
         if matches!(target, Target::User(_)) && !matches!(self.target, Target::User(_)) {
@@ -1013,9 +1132,254 @@ impl Daemon {
             }
             _ => self.alert("error", format!("job refused: {e}")),
         }
-        let _ = self.sup.send(SupCmd::Desire { job: None, run: false });
+        let _ = self.sup.send(SupCmd::Desire { job: None, run: false, keep_context: false });
+        self.sent_keep = false;
         self.set_target(Target::Idle);
         self.desired_run = false;
+    }
+
+    // ----- power governor and coexistence -----
+
+    /// The daemon would run the worker now, apart from the power/coexistence holds.
+    fn wants_run(&self) -> bool {
+        self.user_running && !self.user_paused && !self.hw_fault && self.power.fault().is_none()
+    }
+
+    /// Why the power governor or the coexistence rules hold the worker (a pause-reason code).
+    fn hold_reason(&self) -> Option<&'static str> {
+        if self.power.fault().is_some() {
+            return Some("power_fault");
+        }
+        if self.power.holding() {
+            return Some("power_trip");
+        }
+        if !self.cfg().worker.simulate && self.power.blind(Instant::now().into_std()).is_some() {
+            return Some("no_telemetry");
+        }
+        if self.coexist.mem_state().holds() {
+            return Some("memory");
+        }
+        match self.coexist.gate_hold() {
+            GateHold::Pause | GateHold::Release => Some("yield"),
+            GateHold::None => None,
+        }
+    }
+
+    /// A hold that keeps the worker and its context (no idle release): a power trip, missing
+    /// telemetry, or a `yield` pause. User pauses, releases and memory holds do not.
+    fn keep_context(&self, hold: Option<&'static str>) -> bool {
+        self.user_running
+            && !self.user_paused
+            && matches!(hold, Some("power_trip" | "no_telemetry" | "yield"))
+            && self.coexist.gate_hold() != GateHold::Release
+    }
+
+    fn on_telemetry(&mut self, m: TelemetryMsg) {
+        match m {
+            TelemetryMsg::Opened { source } => {
+                tracing::info!(target: "spm::power", %source, "power governor telemetry");
+                let _ = self.opts.events.send(ApiEvent::Power { at_ms: unix_ms(), kind: "telemetry".into(), detail: format!("source {source}") });
+                self.telemetry_source = source.clone();
+                self.power.on_opened(source);
+                self.reconcile_worker();
+            }
+            TelemetryMsg::Unavailable { reason } => {
+                if self.power.feed() != Feed::Unavailable {
+                    let held = if self.cfg().worker.simulate { "" } else { " A GPU worker is held until it is back." };
+                    self.alert("warn", format!("GPU telemetry unavailable, the power governor cannot run: {reason}.{held}"));
+                    let _ = self.opts.events.send(ApiEvent::Power { at_ms: unix_ms(), kind: "telemetry".into(), detail: reason });
+                }
+                self.power.on_unavailable();
+                self.telemetry_source.clear();
+                self.reconcile_worker();
+            }
+            TelemetryMsg::Failed { source, error } => {
+                tracing::debug!(target: "spm::power", %source, %error, "telemetry read failed");
+            }
+            TelemetryMsg::Reading { ts, reading, procs } => self.on_reading(ts, reading, procs),
+        }
+    }
+
+    fn on_reading(&mut self, ts: Duration, r: GpuReading, procs: Option<Vec<ProcUtil>>) {
+        let now = Instant::now();
+        if let Some(p) = procs {
+            self.procs.push_back((now, p));
+        }
+        while self.procs.front().is_some_and(|(t, _)| now.duration_since(*t) > PROCS_WINDOW) {
+            self.procs.pop_front();
+        }
+        let blind_before = self.power.blind(now.into_std()).is_some();
+        let s = Sample {
+            ts,
+            power_w: r.power_w,
+            temp_gpu_c: r.temp_gpu_c,
+            temp_acpitz_c: r.acpitz_c,
+            sm_mhz: r.sm_mhz,
+            worker_active: self.worker_status.borrow().hashing,
+        };
+        for a in self.power.on_sample(&s, r.event_reasons, unix_ms()) {
+            self.on_power_action(a);
+        }
+        if blind_before && !self.cfg().worker.simulate {
+            self.reconcile_worker();
+        }
+    }
+
+    fn on_power_action(&mut self, a: PowerAction) {
+        match a {
+            PowerAction::SetDuty(pct) => {
+                let _ = self.sup.send(SupCmd::SetDuty { pct });
+            }
+            PowerAction::Pause | PowerAction::Resume => self.reconcile_worker(),
+            PowerAction::Fault(sig) => {
+                // Stop mining until the user presses Start; free the GPU.
+                self.fee.on_mining_stopped(unix_s());
+                self.drive_fee();
+                self.store.state.mining_wanted = false;
+                self.store.state.fee = Some(self.fee.persisted());
+                let _ = self.store.save();
+                self.reconcile_worker();
+                let _ = self.sup.send(SupCmd::Release);
+                tracing::error!(target: "spm::power", signature = sig.as_str(), "mining stopped by a GPU fault signature");
+            }
+            PowerAction::Alert { level, msg } => self.alert(level, msg),
+            PowerAction::Event { kind, detail } => {
+                tracing::info!(target: "spm::power", kind, "{detail}");
+                self.push_timeline("log", None, format!("power: {detail}"));
+                let _ = self.opts.events.send(ApiEvent::Power { at_ms: unix_ms(), kind: kind.into(), detail });
+            }
+        }
+    }
+
+    /// SM utilization of the other compute processes over the recent window, when fresh.
+    fn foreign_sm(&self) -> Option<(u32, &'static str)> {
+        let (t, _) = self.procs.back()?;
+        if t.elapsed() > PROCS_WINDOW {
+            return None;
+        }
+        let ours = self.worker_status.borrow().pids.clone();
+        let mut max: std::collections::BTreeMap<u32, ProcUtil> = std::collections::BTreeMap::new();
+        for (_, list) in &self.procs {
+            for p in list {
+                let e = max.entry(p.pid).or_insert(*p);
+                e.sm_pct = e.sm_pct.max(p.sm_pct);
+                e.compute |= p.compute;
+            }
+        }
+        let all: Vec<ProcUtil> = max.into_values().collect();
+        let source = if self.telemetry_source == "nvml" { "nvml" } else { "nvidia-smi" };
+        Some((foreign_compute_sm_pct(&all, &ours), source))
+    }
+
+    fn on_llm(&mut self, result: Result<VllmLoad, String>) {
+        let failed = result.is_err();
+        self.want_procs.store(failed, Ordering::Relaxed);
+        if !failed {
+            self.procs.clear();
+        }
+        let fallback = if failed { self.foreign_sm() } else { None };
+        let now = self.clock0.elapsed();
+        if let Some(t) = self.coexist.on_poll(now, unix_ms(), result, fallback) {
+            self.on_coexist_transition(t);
+            self.reconcile_worker();
+            if self.coexist.gate_hold() == GateHold::Release {
+                // After the paused Desire, so the supervisor never respawns it in between.
+                let _ = self.sup.send(SupCmd::Release);
+            }
+        }
+    }
+
+    /// `yield-release` starts out released (and is released again after a mode change): a worker
+    /// that is there now is made to exit. Call after the paused `Desire`.
+    fn release_if_gate_releases(&mut self) {
+        if self.coexist.gate_hold() == GateHold::Release && self.worker_status.borrow().present {
+            let _ = self.sup.send(SupCmd::Release);
+        }
+    }
+
+    fn on_coexist_transition(&mut self, t: Transition) {
+        let text = format!("coexistence {}: {} → {} ({})", t.scope, t.from, t.to, t.reason);
+        tracing::info!(target: "spm::coexist", "{text}");
+        self.push_timeline("log", None, text);
+        if t.scope == "memory" && self.coexist.mem_state().holds() {
+            self.alert("warn", format!("memory guard: {}", t.reason));
+        }
+        let _ = self.opts.events.send(ApiEvent::Coexist {
+            at_ms: unix_ms(),
+            scope: t.scope.into(),
+            from: t.from.into(),
+            to: t.to.into(),
+            reason: t.reason,
+        });
+        self.dirty = true;
+    }
+
+    /// Memory guard: refuse a start below the headroom, release a worker under pressure.
+    /// Returns (the state changed, the worker must be released).
+    fn check_memory(&mut self, force: bool) -> (bool, bool) {
+        let Some(src) = self.opts.memory.clone() else { return (false, false) };
+        if !force && self.mem_checked_at.is_some_and(|t| t.elapsed() < MEM_CHECK_MIN) {
+            return (false, false);
+        }
+        self.mem_checked_at = Some(Instant::now());
+        let present = self.worker_status.borrow().present;
+        let out = self.coexist.on_memory(src.read(), present, self.wants_run());
+        let changed = out.transition.is_some();
+        if let Some(t) = out.transition {
+            self.on_coexist_transition(t);
+        }
+        (changed, out.release)
+    }
+
+    /// The periodic memory check, applied.
+    fn memory_tick(&mut self) {
+        let (changed, release) = self.check_memory(true);
+        if changed {
+            self.reconcile_worker();
+        }
+        if release {
+            // After the paused Desire, so the supervisor never respawns it in between.
+            let _ = self.sup.send(SupCmd::Release);
+        }
+    }
+
+    /// The vLLM poller runs while mining is wanted in `yield`/`yield-release`.
+    fn ensure_poller(&mut self) {
+        let want = self.user_running && self.coexist.poll_target().is_some();
+        if want && self.poller.is_none() {
+            let Some((url, poll)) = self.coexist.poll_target() else { return };
+            self.poller_gen += 1;
+            let (gen, tx) = (self.poller_gen, self.tx.clone());
+            tracing::info!(target: "spm::coexist", url = %self.coexist.config().metrics_url, poll_ms = poll.as_millis() as u64, "polling the LLM server");
+            self.poller = Some(spawn_poller(url, poll, move |result| tx.send(Msg::Llm { gen, result }).is_ok()));
+        } else if !want {
+            if let Some(p) = self.poller.take() {
+                p.abort();
+                self.poller_gen += 1;
+                self.want_procs.store(false, Ordering::Relaxed);
+                self.coexist.reset_gate(unix_ms());
+            }
+        }
+    }
+
+    fn restart_poller(&mut self) {
+        if let Some(p) = self.poller.take() {
+            p.abort();
+        }
+        self.poller_gen += 1;
+        self.want_procs.store(false, Ordering::Relaxed);
+        self.ensure_poller();
+    }
+
+    fn write_marker_profile(&self, p: Profile) {
+        let info = MarkerInfo {
+            profile: Some(p),
+            started_unix_s: Some(unix_s().saturating_sub(self.started.elapsed().as_secs())),
+            pid: Some(std::process::id()),
+        };
+        if let Err(e) = marker::write_marker(&self.marker, &info) {
+            tracing::warn!(error = %e, "could not update running.marker");
+        }
     }
 
     // ----- messages -----
@@ -1038,6 +1402,12 @@ impl Daemon {
             Msg::Verified { wu_id, proof, result } => self.on_verified(wu_id, proof, result),
             Msg::Api(req) => self.on_api(req),
             Msg::Smi(s) => self.smi = s,
+            Msg::Telemetry(m) => self.on_telemetry(m),
+            Msg::Llm { gen, result } => {
+                if gen == self.poller_gen {
+                    self.on_llm(result);
+                }
+            }
             Msg::Shutdown => {}
         }
     }
@@ -1438,6 +1808,8 @@ impl Daemon {
                 (true, Target::User(_)) => spm_fee::Activity::UserHashing,
                 (true, Target::Dev) => spm_fee::Activity::DevHashing,
                 _ if !self.user_running || self.user_paused => spm_fee::Activity::Paused,
+                _ if self.hold_reason() == Some("yield") => spm_fee::Activity::Yielding,
+                _ if self.hold_reason().is_some() => spm_fee::Activity::Paused,
                 _ => spm_fee::Activity::Idle,
             };
             self.fee.on_activity(activity, secs);
@@ -1450,6 +1822,13 @@ impl Daemon {
             self.store.state.fee = Some(self.fee.persisted());
             let _ = self.store.save();
             self.last_fee_save = Instant::now();
+        }
+        self.memory_tick();
+        // Telemetry that stops (or comes back) changes the hold of a real worker.
+        let blind = self.power.blind(Instant::now().into_std()).is_some();
+        if blind != self.last_blind {
+            self.last_blind = blind;
+            self.reconcile_worker();
         }
         self.dirty = true;
         self.publish();
@@ -1538,9 +1917,36 @@ impl Daemon {
         } else if pool_configs(&new) != pool_configs(old) {
             self.step(Event::ConfigChanged { pools: pool_configs(&new) });
         }
-        if new.worker != old.worker {
+        if new.power != old.power {
+            match select_profile(&new.power) {
+                Ok(p) => {
+                    if let Some((before, after)) = self.power.set_configured(p) {
+                        let detail = format!("power profile {before} → {after}");
+                        tracing::info!(target: "spm::power", "{detail}");
+                        let _ = self.opts.events.send(ApiEvent::Power { at_ms: unix_ms(), kind: "profile".into(), detail });
+                        self.write_marker_profile(after);
+                    }
+                }
+                Err(e) => self.alert("error", format!("power profile refused, keeping {}: {e}", self.power.profile())),
+            }
+        }
+        if new.coexistence != old.coexistence {
+            let before = old.coexistence.mode.as_str();
+            self.coexist = CoexistCtl::new(&new.coexistence, self.opts.memory.is_some(), unix_ms());
+            self.procs.clear();
+            self.restart_poller();
+            tracing::info!(target: "spm::coexist", from = before, to = new.coexistence.mode.as_str(), "coexistence settings changed");
+            let _ = self.opts.events.send(ApiEvent::Coexist {
+                at_ms: unix_ms(),
+                scope: "mode".into(),
+                from: before.into(),
+                to: new.coexistence.mode.as_str().into(),
+                reason: "configuration changed".into(),
+            });
+        }
+        if new.worker != old.worker || effective_launch(&new) != effective_launch(old) {
             let _ = self.sup.send(SupCmd::Configure {
-                launch: new.worker.launch,
+                launch: effective_launch(&new),
                 simulate: new.worker.simulate,
                 sim_interval_ms: new.worker.sim_interval_ms,
             });
@@ -1549,6 +1955,9 @@ impl Daemon {
         let _ = self.opts.events.send(ApiEvent::Config { at_ms: unix_ms(), source: source.as_str().into(), wallet_changed });
         self.dirty = true;
         self.reconcile_worker();
+        if new.coexistence != old.coexistence {
+            self.release_if_gate_releases();
+        }
         ApplyOutcome { applied: true, wallet_changed, restart_required }
     }
 
@@ -1563,7 +1972,7 @@ impl Daemon {
         if !cfg.pools.iter().any(|p| p.enabled) {
             return Err("enable at least one pool".into());
         }
-        if !cfg.worker.simulate && cfg.worker.launch == LaunchMode::Spawn {
+        if !cfg.worker.simulate && effective_launch(cfg) == LaunchMode::Spawn {
             self.alert(
                 "warn",
                 "this build has no CUDA worker yet (M5): enable the CPU simulation (worker.simulate) or use launch = external".into(),
@@ -1572,6 +1981,11 @@ impl Daemon {
         self.hw_fault = false;
         self.verify_failures = 0;
         let _ = self.sup.send(SupCmd::ResetFaults);
+        if self.power.clear_fault() {
+            let detail = "fault cleared by the user: mining restarts at the minimum duty".to_string();
+            tracing::warn!(target: "spm::power", "{detail}");
+            let _ = self.opts.events.send(ApiEvent::Power { at_ms: unix_ms(), kind: "fault_cleared".into(), detail });
+        }
         self.user_running = true;
         self.user_paused = false;
         if !self.store.state.mining_wanted {
@@ -1581,8 +1995,21 @@ impl Daemon {
         if self.fsm.pause_reason().is_some() {
             self.step(Event::ResumeRequest);
         }
+        self.ensure_poller();
+        self.memory_tick();
         self.reconcile_worker();
-        Ok("mining started".into())
+        self.release_if_gate_releases();
+        let msg = match (self.coexist.mode(), self.hold_reason()) {
+            (CoexistMode::SparkModo, _) => "mining started; the worker is controlled by spark-modo (miner runtime)".to_string(),
+            (_, Some("yield")) => format!(
+                "mining started; waiting for {} s of LLM-server idle ({})",
+                self.coexist.config().idle_s,
+                self.coexist.mode()
+            ),
+            (_, Some("memory")) => "mining started, but the memory guard refuses to start the worker (see the alerts)".to_string(),
+            _ => "mining started".to_string(),
+        };
+        Ok(msg)
     }
 
     fn control(&mut self, op: ControlOp) -> Result<String, String> {
@@ -1596,6 +2023,7 @@ impl Daemon {
                 self.fee.on_mining_stopped(unix_s());
                 self.drive_fee();
                 self.step(Event::PauseRequest { reason: PauseReason::UserStop });
+                self.ensure_poller();
                 self.reconcile_worker();
                 let _ = self.sup.send(SupCmd::Release);
                 self.store.state.fee = Some(self.fee.persisted());
@@ -1678,7 +2106,7 @@ impl Daemon {
             status: self.status_view(),
             pools: self.pools_view(),
             fee: self.fee_view(),
-            gpu: GpuView { smi: self.smi.clone(), ..self.gpu.clone() },
+            gpu: GpuView { smi: self.smi.clone(), power: self.power.view(), ..self.gpu.clone() },
             config: self.cfg().clone(),
             about: self.about.clone(),
         };
@@ -1689,14 +2117,19 @@ impl Daemon {
         let cfg = self.cfg().clone();
         let setup_required = !cfg.setup_complete();
         let manager = self.fsm.manager();
+        let hold = self.hold_reason();
         let (state, pause_reason) = if setup_required {
             ("setup_required", None)
         } else if self.hw_fault {
             ("paused", Some("hardware_fault".to_string()))
+        } else if self.power.fault().is_some() {
+            ("paused", Some("power_fault".to_string()))
         } else if !self.user_running {
             ("stopped", None)
         } else if self.user_paused {
             ("paused", Some("user".to_string()))
+        } else if let Some(r) = hold {
+            ("paused", Some(r.to_string()))
         } else {
             match manager {
                 ManagerState::Starting => ("starting", None),
@@ -1718,7 +2151,7 @@ impl Daemon {
             active_pool: self.fsm.active().map(|s| s.0 + 1),
             mining_target: self.target.label().into(),
             running: self.user_running,
-            paused: self.user_paused || self.hw_fault,
+            paused: self.user_paused || self.hw_fault || (self.user_running && hold.is_some()),
             pause_reason,
             hashrate_tmacs: self.credit.rate(std::time::Instant::now()) / 1e12,
             credited_macs_total: self.credit.total(),
@@ -1733,6 +2166,8 @@ impl Daemon {
             wallet_changed: self.wallet_changed.clone(),
             setup_required,
             spark_modo_present: self.spark_modo,
+            power: self.power.view(),
+            coexist: self.coexist.view(&ws.handshake),
             at_ms: unix_ms(),
         }
     }
