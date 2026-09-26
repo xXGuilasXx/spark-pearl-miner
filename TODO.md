@@ -98,6 +98,7 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 - [ ] spark-pearl-miner selftest and bench --minutes 10 (JSON: credited MAC/s, clocks, W, temperatures) recorded at 2200 MHz (needs a window with the vLLM stopped and the clock locked).
 
 ### M6
+- [x] Daemon spawns the real GPU worker in `spawn` mode (`worker.simulate = false`); `--sim` keeps the CPU simulation.
 
 - [ ] LuckyPool BR 3360: at least 5 accepted and 0 rejected with our miner.
 - [ ] HeroMiners BR for 1 h: at least 20 accepted, 0 invalid, stale under 1%; the working proof field (plain_proof_zst or plain_proof) stored in state.json; the worker visible in HeroMiners stats.

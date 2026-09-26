@@ -201,8 +201,10 @@ impl Supervisor {
         Ok((cmd_tx, ev_rx, st_rx))
     }
 
+    /// Spawn mode is always available now that the real GPU worker exists (`spark-pearl-miner
+    /// gpu-worker`); `simulate` only selects the CPU simulation instead of the GPU.
     fn unavailable(&self) -> bool {
-        self.launch == LaunchMode::Spawn && !self.simulate
+        false
     }
 
     fn publish(&self) {
@@ -484,7 +486,6 @@ impl Supervisor {
         // Spawn when needed.
         let want = self.desired_run && self.desired_job.is_some();
         let can = self.launch == LaunchMode::Spawn
-            && self.simulate
             && !self.faulted
             && self.conn.is_none()
             && self.child.is_none()
