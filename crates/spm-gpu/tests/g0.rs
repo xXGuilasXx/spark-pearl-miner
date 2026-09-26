@@ -210,11 +210,12 @@ fn noise_factors_and_operands_match_zk_pow() {
         }
         s
     };
-    // B side: new job per seed (the B side is built at create); A side: many attempts per job.
-    let (b_seeds, a_seeds_per_job) = (25, 40);
-    for _ in 0..b_seeds {
+    // The B side is built at create, the A side at every attempt: one job per seed pair.
+    let seeds = 1000;
+    for _ in 0..seeds {
         let mut c = base;
         c.b_noise_seed = next_seed();
+        c.a_noise_seed = next_seed();
         let f = noise_factors(&p, &c).unwrap();
         let e = f.expand().unwrap();
         let mut job =
@@ -228,25 +229,19 @@ fn noise_factors_and_operands_match_zk_pow() {
             job.read_debug(DebugBuffer::NoisedBt).unwrap(),
             as_bytes(&add_noise(&p.bt, &e.e_bt).unwrap())
         );
-        for _ in 0..a_seeds_per_job {
-            c.a_noise_seed = next_seed();
-            let f = noise_factors(&p, &c).unwrap();
-            let e = f.expand().unwrap();
-            job.set_attempt(&c.a_noise_seed, None).unwrap();
-            assert_eq!(job.read_debug(DebugBuffer::AL).unwrap(), as_bytes(&f.a_l));
-            assert_eq!(
-                job.read_debug(DebugBuffer::PairsA).unwrap(),
-                pairs_bytes(&f.a_r)
-            );
-            assert_eq!(
-                job.read_debug(DebugBuffer::NoisedA).unwrap(),
-                as_bytes(&add_noise(&p.a, &e.e_a).unwrap())
-            );
-        }
+        job.set_attempt(&c.a_noise_seed, None).unwrap();
+        assert_eq!(job.read_debug(DebugBuffer::AL).unwrap(), as_bytes(&f.a_l));
+        assert_eq!(
+            job.read_debug(DebugBuffer::PairsA).unwrap(),
+            pairs_bytes(&f.a_r)
+        );
+        assert_eq!(
+            job.read_debug(DebugBuffer::NoisedA).unwrap(),
+            as_bytes(&add_noise(&p.a, &e.e_a).unwrap())
+        );
     }
     eprintln!(
-        "noise: {b_seeds} B seeds and {} A seeds bit-exact",
-        b_seeds * a_seeds_per_job
+        "noise: {seeds} B seeds and {seeds} A seeds bit-exact (factors, pairs, noised operands)"
     );
 }
 

@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! cargo run --release -p spm-gpu --example bench -- [--m 16384] [--n 16384] [--k 4096]
-//!     [--seconds 10] [--chunk-ctas 0]
+//!     [--seconds 10] [--chunk-ctas 0] [--csv chunks.csv]
 //! ```
 //!
 //! Repeats full attempts (A-side prep + every chunk) for ~`seconds` on a GPU-generated problem
@@ -16,11 +16,12 @@
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
-use spm_gpu::{Chunk, Job, JobParams, Source};
+use spm_gpu::{Chunk, Job, JobParams, Run, Source};
 
 /// Register-only IMMA peak at the 2200 MHz cap (docs/en/BENCHMARKS.md, MB1).
 const PEAK_CAPPED_TMACS: f64 = 96.0;
@@ -33,6 +34,7 @@ struct Args {
     k: u32,
     seconds: f64,
     chunk_ctas: u32,
+    csv: Option<String>,
 }
 
 fn parse_args() -> Result<Args> {
@@ -42,6 +44,7 @@ fn parse_args() -> Result<Args> {
         k: 4096,
         seconds: 10.0,
         chunk_ctas: 0,
+        csv: None,
     };
     let mut it = std::env::args().skip(1);
     while let Some(flag) = it.next() {
@@ -52,9 +55,10 @@ fn parse_args() -> Result<Args> {
             "--k" => a.k = value()?.parse()?,
             "--seconds" => a.seconds = value()?.parse()?,
             "--chunk-ctas" => a.chunk_ctas = value()?.parse()?,
+            "--csv" => a.csv = Some(value()?),
             "-h" | "--help" => {
                 println!(
-                    "bench [--m 16384] [--n 16384] [--k 4096] [--seconds 10] [--chunk-ctas 0]"
+                    "bench [--m 16384] [--n 16384] [--k 4096] [--seconds 10] [--chunk-ctas 0] [--csv FILE]"
                 );
                 std::process::exit(0);
             }
@@ -271,17 +275,23 @@ fn main() -> Result<()> {
     let (mut passes, mut kernel_ms, mut prep_ms) = (0u64, 0.0f64, 0.0f64);
     let mut chunk_ms: Vec<f64> = Vec::new();
     let mut chunk_ctas: Vec<u32> = Vec::new();
+    let mut csv = String::from("pass,chunk,start_ms,ctas,gpu_ms\n");
     let started = Instant::now();
     while started.elapsed().as_secs_f64() < args.seconds {
         seed[..8].copy_from_slice(&(passes + 1).to_le_bytes());
         job.set_attempt(&seed, None)?;
         prep_ms += f64::from(job.info()?.last_prep_ms);
-        loop {
+        for c in 0.. {
+            let t0 = started.elapsed().as_secs_f64() * 1e3;
             let status = job.run_chunk()?;
             let i = job.info()?;
             kernel_ms += f64::from(i.last_chunk_ms);
             chunk_ms.push(f64::from(i.last_chunk_ms));
             chunk_ctas.push(i.chunk_ctas);
+            csv += &format!(
+                "{passes},{c},{t0:.3},{},{:.4}\n",
+                i.chunk_ctas, i.last_chunk_ms
+            );
             if status == Chunk::Done {
                 break;
             }
@@ -290,11 +300,38 @@ fn main() -> Result<()> {
     }
     let wall = started.elapsed().as_secs_f64();
     let ended = Instant::now();
+
+    // Cancellation: another thread raises the abort flag mid-attempt; the latency is the time
+    // until `run` returns (it polls the flag between chunks, so it is bounded by one chunk).
+    let mut abort_ms = Vec::new();
+    for trial in 0..3u64 {
+        seed[..8].copy_from_slice(&(u64::MAX - trial).to_le_bytes());
+        job.set_attempt(&seed, None)?;
+        let abort = Arc::new(AtomicU32::new(0));
+        let raised = Arc::new(Mutex::new(None::<Instant>));
+        let (flag, when) = (abort.clone(), raised.clone());
+        let delay = Duration::from_micros(3000 + 2300 * trial);
+        let raiser = std::thread::spawn(move || {
+            std::thread::sleep(delay);
+            *when.lock().expect("abort lock") = Some(Instant::now());
+            flag.store(1, Ordering::Release);
+        });
+        let outcome = job.run(Some(&abort))?;
+        let returned = Instant::now();
+        raiser.join().expect("abort thread");
+        let at = raised.lock().expect("abort lock").expect("abort raised");
+        if outcome == Run::Aborted {
+            abort_ms.push(returned.saturating_duration_since(at).as_secs_f64() * 1e3);
+        }
+    }
     std::thread::sleep(Duration::from_millis(300));
     let idle = sampler.between(idle_to - Duration::from_millis(1100), idle_to);
     let busy = sampler.between(started + Duration::from_millis(500), ended);
     let others = sampler.others_between(idle_to - Duration::from_millis(1100), ended);
     sampler.stop();
+    if let Some(path) = &args.csv {
+        std::fs::write(path, &csv).with_context(|| format!("writing {path}"))?;
+    }
 
     let kernel_tmacs = passes as f64 * macs_per_pass / (kernel_ms / 1e3) / 1e12;
     let wall_tmacs = passes as f64 * macs_per_pass / wall / 1e12;
@@ -335,10 +372,15 @@ fn main() -> Result<()> {
         prep_ms / passes as f64
     );
     println!(
-        "chunks: {} in {passes} passes, median {typical_ctas} CTAs | chunk ms p50 {:.2} p99 {:.2} max {chunk_max:.2}",
+        "chunks: {} in {passes} passes, median {typical_ctas} CTAs | chunk ms p50 {:.2} p99 {:.2} max {chunk_max:.2} | {} over 10 ms",
         chunk_ms.len(),
         pct(0.5),
-        pct(0.99)
+        pct(0.99),
+        chunk_ms.iter().filter(|&&t| t > 10.0).count()
+    );
+    println!(
+        "abort latency (flag raised mid-attempt -> run returns): {:.2?} ms",
+        abort_ms
     );
     println!("credited T-MAC/s (kernel GPU time): {kernel_tmacs:.2}");
     println!("credited T-MAC/s (wall, incl. prep): {wall_tmacs:.2}");
