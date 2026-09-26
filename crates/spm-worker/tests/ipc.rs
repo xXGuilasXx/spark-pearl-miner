@@ -99,14 +99,14 @@ fn mines_verified_proofs_with_heartbeats_and_stats_then_releases() {
         (4..=8).contains(&beats),
         "{beats} heartbeats in 600 ms at 100 ms"
     );
-    assert!(!conn
-        .seen
-        .iter()
-        .any(|m| matches!(m, ToDaemon::Fault { .. })));
     // The resume was acknowledged.
     assert_eq!(conn.ack().map(|a| a.state), Some(AckState::Running));
     conn.send(ToWorker::Release);
     let out = worker.join(T);
+    assert!(!conn
+        .all()
+        .iter()
+        .any(|m| matches!(m, ToDaemon::Fault { .. })));
     assert_eq!(out.exit, Exit::Release);
     assert!(out.kat_ok && out.attempts >= 1 && out.proofs >= 1);
     assert!(out.canaries >= 1, "one canary per attempt with hits");
@@ -175,12 +175,12 @@ fn pause_is_acknowledged_fast_and_stops_gpu_work_until_resume() {
             thread::sleep(Duration::from_millis(2));
         }
     }
-    assert!(!conn
-        .seen
-        .iter()
-        .any(|m| matches!(m, ToDaemon::Fault { .. })));
     conn.send(ToWorker::Shutdown);
     assert_eq!(worker.join(T).exit, Exit::Shutdown);
+    assert!(!conn
+        .all()
+        .iter()
+        .any(|m| matches!(m, ToDaemon::Fault { .. })));
 }
 
 #[test]
@@ -357,7 +357,7 @@ fn corrupted_hits_fail_the_known_answer_test() {
     let out = worker.join(T);
     assert!(matches!(out.exit, Exit::Fault(FaultKind::KatFailed, _)));
     assert!(!conn
-        .seen
+        .all()
         .iter()
         .any(|m| matches!(m, ToDaemon::Proof { .. })));
 }
@@ -394,7 +394,7 @@ fn a_fault_after_ready_stops_mining_with_a_canary_fault() {
     ));
     assert_eq!(out.proofs, 0);
     assert!(!conn
-        .seen
+        .all()
         .iter()
         .any(|m| matches!(m, ToDaemon::Proof { .. })));
 }

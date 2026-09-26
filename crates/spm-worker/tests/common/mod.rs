@@ -181,6 +181,19 @@ impl Conn {
         out
     }
 
+    /// Every frame received so far, including the ones still queued. Meant for after the worker
+    /// exited: it reads until the connection is closed (at most 2 s, or 200 ms of silence).
+    pub fn all(&mut self) -> &[ToDaemon] {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            match self.rx.recv_timeout(Duration::from_millis(200)) {
+                Ok(m) => self.seen.push(m),
+                Err(_) => break,
+            }
+        }
+        &self.seen
+    }
+
     /// Closes the daemon side.
     pub fn close(self) {
         let _ = self.w.shutdown(std::net::Shutdown::Both);

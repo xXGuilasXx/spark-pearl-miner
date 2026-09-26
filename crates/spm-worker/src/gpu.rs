@@ -1,7 +1,6 @@
 //! The GPU engine: [`Engine`] over `spm_gpu::Job` (libspm_cuda, sm_121a).
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use spm_cpuref::TileResult;
 use spm_gpu::{AbortHandle, ChunkStatus as GpuStatus, GpuError, Job, JobConfig, Operands};
@@ -43,7 +42,6 @@ pub struct GpuEngine {
     flag: Arc<GpuAbort>,
     job: Option<Job>,
     device: String,
-    target_chunk: Duration,
 }
 
 impl GpuEngine {
@@ -64,7 +62,6 @@ impl GpuEngine {
             abort,
             job: None,
             device,
-            target_chunk: Duration::from_millis(6),
         })
     }
 
@@ -98,7 +95,8 @@ impl Engine for GpuEngine {
         );
         cfg.dump = spec.dump;
         cfg.hit_capacity = spec.hit_capacity;
-        cfg.target_chunk = self.target_chunk;
+        // Chunk size: the library's adaptive default (4.5 ms target, capped at ~8 ms of work at
+        // an 1800 MHz clock), which keeps every chunk under the 10 ms cancellation rule.
         cfg.abort = Some(self.abort.clone());
         self.job = Some(Job::new(&cfg).map_err(|e| gpu_err("job create", e))?);
         Ok(())

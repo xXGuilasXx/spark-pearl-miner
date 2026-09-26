@@ -92,7 +92,7 @@ fn signals_pause_resume_and_terminate_the_worker() {
     let out = worker.join(T);
     assert_eq!(out.exit, Exit::Signal("SIGTERM"));
     assert!(!conn
-        .seen
+        .all()
         .iter()
         .any(|m| matches!(m, ToDaemon::Fault { .. })));
 }

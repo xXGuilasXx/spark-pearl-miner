@@ -26,10 +26,10 @@ daemon                                   worker
 * **Merkle layer caches** (`spm_cpuref::MatrixTree`), keyed by `job_key = blake3(header76 ‖ config52)`. The
   tree is exactly `pearl_blake3::MerkleTree`, but only nodes at and above 64-chunk segments are stored, plus
   all of segment 0: about 0.5 MiB of chaining values for a 512 MiB operand. Both trees are built in parallel
-  from regenerated segments (`hazmat` subtree hashing): **67–72 ms** for the two 512 MiB operands of the
+  from regenerated segments (`hazmat` subtree hashing): **67–76 ms** for the two 512 MiB operands of the
   default shape on the GB10's 20 cores.
 * `root_b → bind_root_b(n) → bound_b → b_noise_seed = blake3(job_key ‖ bound_b)`, the B permutation pairs
-  (for the canary), then `spm_gpu::Job::new` builds B'ᵀ on the device (**41–50 ms**, 1.06 GiB for the job).
+  (for the canary), then `spm_gpu::Job::new` builds B'ᵀ on the device (**41–56 ms**, 1.06 GiB for the job).
 * A work unit with the same `job_key` and shape (for example only a new share target) reuses both.
 
 ## Per attempt
@@ -39,7 +39,8 @@ daemon                                   worker
 2. **Incremental root.** `MatrixTree::patch_chunk0`: one leaf hash plus one merge per level (18 parents and
    the root at 2^19 leaves) → `root_a → bind_root_a(m) → bound_a → a_noise_seed`. Microseconds.
 3. **Device.** `set_attempt` with the 1024-byte patched chunk as the A prefix (the GPU copy of chunk 0) builds
-   A' (**3.2 ms** at the default shape); then chunks of ≤ ~10 ms (6 ms adaptive target) until done.
+   A' (**3.2 ms** at the default shape); then chunks with the library's adaptive target (4.5 ms, capped at
+   ~8 ms of work at 1800 MHz) until done.
 4. **Hits** go to the verifier thread; the next attempt starts at once.
 
 The device bound is `max(share_bound, canary_bound)`, where `canary_bound = ⌊2^256 / tiles⌋ · 8` gives about
@@ -85,7 +86,7 @@ Before `Ready`: one fixed 256 × 256 × 2048 job through the production path (ho
 in dump mode). The 512 tile records must equal `spm_cpuref::transcripts` of the same problem built from whole
 matrices (`first_mismatch == None`), the host's roots and seeds the oracle's commitment, the hit ring the
 oracle's hits, and the host proof of a hit must be byte-identical to `build_plain_proof` and pass the
-verifier. 14 ms on the GB10 after the context is up.
+verifier. 13–32 ms on the GB10 once the context is up.
 
 ## Control
 
@@ -103,16 +104,21 @@ verifier. 14 ms on the GB10 after the context is up.
   `MemAvailable − 2 GiB ≥ 20 GiB`; exit below 16 GiB available or above 10 % memory pressure
   (`spm_coexist::memguard`).
 
-## Measurements (2026-09-26, vLLM resident, SM clock not locked)
+## Measurements (2026-09-26, vLLM resident and idle, SM clock not locked)
 
 | | |
 |---|---|
-| default shape 131072² × 4096, attempt | **819 ms** wall (803 ms kernel, 3.2 ms `set_attempt`) at 2424 MHz = **85.9 T-MAC/s credited end to end**; a second run under heavier load: 927 ms kernel at 2314 MHz, 91 W |
-| longest chunk | 8.0–9.4 ms |
-| host job / device job | 67–72 ms / 41–50 ms |
+| default shape 131072² × 4096, attempt | **815–826 ms** wall (777–787 ms kernel, 3.2–3.5 ms `set_attempt`) at 2424 MHz = **85–86 T-MAC/s credited end to end** (before the 4.5 ms chunk graft: 819 ms / 803 ms) |
+| longest chunk | 6.1 ms (8.0–9.4 ms with the former 6 ms target) |
+| host job / device job | 67–76 ms / 41–56 ms |
 | pause ACK / job-switch cancel | 0.6–1.2 ms / 61–290 µs |
+| same, while another agent's CUDA bench time-sliced the GPU | 1.85 s per attempt at 2171 MHz; pause ACK 3.4 ms, cancel 3.7 ms |
 | 4096² × 2048 (tests) | 0.55 ms per attempt; ~4 verified shares per attempt at share bound 2^241 |
-| Release → process exit | 125 ms (2048² job) |
+| Release → process exit | 120–170 ms (2048² job) |
+
+Not wired yet: the opt-in double-buffered A side of `spm-gpu` (`prepare_attempt`) would hide the 3.2 ms
+`set_attempt` (~0.4 % of an attempt) for 528 MiB more device memory; its build runs on a second stream
+that a pause does not wait for, so it needs an ABI call to fence it before the ACK.
 
 ## Code
 

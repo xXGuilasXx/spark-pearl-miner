@@ -144,7 +144,7 @@ fn gpu_worker_mines_verified_proofs() {
     assert_eq!(out.exit, Exit::Release);
     assert!(out.canaries >= 1, "canary tiles checked");
     assert!(!conn
-        .seen
+        .all()
         .iter()
         .any(|m| matches!(m, ToDaemon::Fault { .. })));
 }
@@ -196,6 +196,7 @@ fn gpu_worker_default_shape() {
     let mut wu2 = work_unit(Shape::MINING, 210, 0x42, 2);
     wu2.job_id = "same-header".into();
     assert_eq!(wu2.job_key, wu.job_key);
+    let wu2_nbits = wu2.nbits_share;
     conn.send(ToWorker::SetJob { wu: Box::new(wu2) });
     std::thread::sleep(Duration::from_millis(1500));
     conn.send(ToWorker::Release);
@@ -208,23 +209,30 @@ fn gpu_worker_default_shape() {
     assert!(!t.cancels.is_empty() && t.cancels[0] < Duration::from_millis(50));
     assert!(out.canaries >= 1);
     assert!(out.proofs >= 1, "a verified full-size proof");
+    // Both work units share the header; each proof must pass at its own share target.
     let header = IncompleteBlockHeader::from_bytes(&wu.header).unwrap();
     let mut checked = 0;
-    for m in &conn.seen {
+    for m in conn.all() {
         if let ToDaemon::Proof {
-            wu_id: 1,
+            wu_id,
             proof_bincode,
             ..
         } = m
         {
+            let nbits = if *wu_id == 1 {
+                wu.nbits_share
+            } else {
+                wu2_nbits
+            };
             let p: PlainProof = bincode::deserialize(proof_bincode).unwrap();
-            verify_v3(&header, &p, Some(wu.nbits_share)).expect("full-size proof verifies");
+            verify_v3(&header, &p, Some(nbits)).expect("full-size proof verifies");
             checked += 1;
         }
     }
     eprintln!("{checked} full-size proofs re-verified by the test");
+    assert_eq!(checked as u64, out.proofs);
     assert!(!conn
-        .seen
+        .all()
         .iter()
         .any(|m| matches!(m, ToDaemon::Fault { .. })));
 }
@@ -303,7 +311,7 @@ fn gpu_worker_binary_frees_the_gpu_on_release() {
     assert!(status.success());
     assert!(!compute_pids().contains(&pid), "the CUDA context is gone");
     assert!(!conn
-        .seen
+        .all()
         .iter()
         .any(|m| matches!(m, ToDaemon::Fault { .. })));
 }
