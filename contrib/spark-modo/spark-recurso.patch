@@ -1,0 +1,48 @@
+--- /usr/local/libexec/spark-recurso
++++ /usr/local/libexec/spark-recurso
+@@ -1,7 +1,8 @@
+ #!/usr/bin/python3 -I
+ """Lease do recurso compartilhado, mantido durante toda a vida do runtime.
+ 
+-IA usa LOCK_EX; ligas usam LOCK_SH entre si. O modo e a seleção são lidos
++IA usa LOCK_EX (o minerador também: é um runtime do modo IA); ligas usam
++LOCK_SH entre si. O modo e a seleção são lidos
+ DEPOIS da aquisição. A trava de operação do controlador é outra: nunca
+ seguramos aquela trava enquanto esperamos um processo carregar.
+ """
+@@ -33,7 +34,7 @@
+ 
+ def acquire(kind, lock=LOCK, mode=MODE, selection=SELECTION,
+             block='/run/spark-modo/bloqueio-modelo', profile=None):
+-    if kind not in ('treino', 'lmstudio', 'gguf', 'vllm'):
++    if kind not in ('treino', 'lmstudio', 'gguf', 'vllm', 'miner'):
+         raise ValueError('Tipo de runtime inválido')
+     fd = os.open(lock, os.O_RDWR | os.O_NOFOLLOW)
+     try:
+@@ -177,20 +178,21 @@
+ def main(argv):
+     if argv == ['lmstudio']:
+         return lmstudio()
+-    if len(argv) >= 3 and argv[0] in ('treino', 'gguf', 'vllm') and argv[1] == '--':
++    if len(argv) >= 3 and argv[0] in ('treino', 'gguf', 'vllm', 'miner') and argv[1] == '--':
+         fd = acquire(argv[0])  # descritor herdado pelo exec; só fecha ao terminar
+         try:
+             if argv[0] == 'treino':
+                 require_training_cuda()
+-            elif argv[0] == 'vllm':
+-                # o contêiner roda fora deste cgroup: a GPU tem de estar vazia
+-                # ANTES, senão dois runtimes dividiriam a memória unificada
++            elif argv[0] in ('vllm', 'miner'):
++                # vllm: o contêiner roda fora deste cgroup; miner: o worker cria
++                # o contexto CUDA. Nos dois casos a GPU tem de estar vazia ANTES,
++                # senão dois runtimes dividiriam a memória unificada
+                 require_idle_cuda()
+         except BaseException:
+             os.close(fd)
+             raise
+         os.execv(argv[2], argv[2:])
+-    raise ValueError('uso: spark-recurso treino|gguf|vllm -- executável [args] | lmstudio')
++    raise ValueError('uso: spark-recurso treino|gguf|vllm|miner -- executável [args] | lmstudio')
+ 
+ 
+ if __name__ == '__main__':

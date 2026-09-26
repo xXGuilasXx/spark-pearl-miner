@@ -1,0 +1,31 @@
+# spark-pearl-miner daemon, as a systemd --user service. It never creates a CUDA context; the GPU
+# worker is a separate process (spawned by the daemon, or the spark-miner system unit under
+# spark-modo). The GUI and API listen on http://127.0.0.1:4078 only.
+#
+# Install:
+#   install -Dm0755 target/release/spark-pearl-miner ~/.local/bin/spark-pearl-miner
+#   install -Dm0644 packaging/systemd/user/spark-pearl-miner.service ~/.config/systemd/user/spark-pearl-miner.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now spark-pearl-miner
+# Keep it running without a desktop session: sudo loginctl enable-linger "$USER"
+[Unit]
+Description=spark-pearl-miner daemon (Pearl miner, GUI on http://127.0.0.1:4078)
+Documentation=https://github.com/xXGuilasXx/spark-pearl-miner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/spark-pearl-miner daemon
+Restart=on-failure
+RestartSec=5
+# SIGTERM goes to the daemon, which tells the worker to exit and saves its state; anything left
+# after the timeout is killed.
+KillMode=mixed
+TimeoutStopSec=20
+Environment=RUST_LOG=info
+NoNewPrivileges=yes
+UMask=0077
+
+[Install]
+WantedBy=default.target

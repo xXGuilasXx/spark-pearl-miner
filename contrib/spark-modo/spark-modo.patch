@@ -1,0 +1,189 @@
+--- /usr/local/sbin/spark-modo
++++ /usr/local/sbin/spark-modo
+@@ -41,20 +41,24 @@
+                                   (/run/spark-modo/pedidos, via spark-modo.path)
+   spark-modo permite-ia           ExecCondition de spark-code, spark-dsh e nvpair
+   spark-modo permite-modelo       ExecCondition do spark-model (= permite-ia)
+-  spark-modo permite-gguf|permite-vllm
+-                                  ExecCondition do spark-gguf / spark-vllm:
+-                                  modo IA E o backend dele selecionado
++  spark-modo permite-gguf|permite-vllm|permite-miner
++                                  ExecCondition do spark-gguf / spark-vllm /
++                                  spark-miner: modo IA E o backend dele
++                                  selecionado
+   spark-modo permite-treino       ExecCondition das 4 ligas (torneio inclusive)
+   spark-modo runtime BACKEND [PERFIL]
+-                                  troca SÓ o runtime do modelo (lmstudio | gguf
+-                                  PERFIL | vllm PERFIL), com OpenCode, DeepSeek
++                                  troca SÓ o runtime do modelo (lmstudio | miner
++                                  | gguf PERFIL | vllm PERFIL), com OpenCode, DeepSeek
+                                   e PAIR de pé; só no modo IA. É o que o
+                                   roteador de modelos chama quando um harness
+                                   pede um modelo que não está carregado.
+ 
+-Três runtimes de modelo, um por vez (a seleção em /var/lib/spark-modo/
++Quatro runtimes, um por vez (a seleção em /var/lib/spark-modo/
+ modelo.json escolhe qual): spark-model (LM Studio, 1234), spark-gguf
+-(llama.cpp, 8080) e spark-vllm (vLLM em contêiner, 8001). O contêiner do
++(llama.cpp, 8080), spark-vllm (vLLM em contêiner, 8001) e spark-miner (o
++worker de GPU do spark-pearl-miner, sem porta: pronto = o worker já roda
++depois da lease; só por `spark-modo runtime miner`, nunca pelo portal, e
++um pedido de modelo do roteador o troca pelo modelo). O contêiner do
+ vLLM vive fora do cgroup da unit: por isso "runtime parado" aqui é cgroup
+ vazio E contêiner ausente, e o modo treino só sobe as ligas com a GPU vazia
+ (nvidia-smi sem processo de computação).
+@@ -97,10 +101,12 @@
+ 
+ SELECAO_FILE = '/var/lib/spark-modo/modelo.json'
+ BLOQUEIO_MODELO = RUN_DIR + '/bloqueio-modelo'
+-RUNTIMES = ('spark-model', 'spark-gguf', 'spark-vllm')
++RUNTIMES = ('spark-model', 'spark-gguf', 'spark-vllm', 'spark-miner')
+ RUNTIME_DO_BACKEND = {'lmstudio': 'spark-model', 'gguf': 'spark-gguf',
+-                      'vllm': 'spark-vllm'}
+-PORTA_DO_RUNTIME = {'spark-model': 1234, 'spark-gguf': 8080, 'spark-vllm': 8001}
++                      'vllm': 'spark-vllm', 'miner': 'spark-miner'}
++# spark-miner (worker de GPU do spark-pearl-miner) não tem porta: None.
++PORTA_DO_RUNTIME = {'spark-model': 1234, 'spark-gguf': 8080, 'spark-vllm': 8001,
++                    'spark-miner': None}
+ VLLM_PERFIS = '/etc/spark-vllm/perfis.json'     # root; instalado pelo instalar.sh
+ VLLM_ENV = '/etc/spark-vllm/vllm.env'           # root 0600: VLLM_API_KEY=
+ VLLM_CONTEINER = 'spark-vllm'
+@@ -141,7 +147,12 @@
+         return []
+ 
+ 
+-CATALOGO = CATALOGO_BASE + catalogo_vllm()
++# O minerador entra no catálogo só para `spark-modo runtime miner` (a seleção
++# precisa estar no catálogo); não é um modelo e nenhum harness o pede.
++CATALOGO_MINER = [{'backend': 'miner', 'perfil': 'pearl',
++                   'nome': 'spark-pearl-miner · minerador Pearl (PRL) · GPU',
++                   'contexto': 0, 'experimental': True}]
++CATALOGO = CATALOGO_BASE + catalogo_vllm() + CATALOGO_MINER
+ SELECAO = {'backend': 'lmstudio', 'perfil': 'qwen3.8-27b'}
+ MODELO = 'spark-model'
+ # Ordem de PARADA no modo treino: quem depende sai primeiro (spark-code tem
+@@ -155,6 +166,7 @@
+ LIGAS = LIGAS_GPU + LIGAS_CPU
+ UNIDADES = ('spark-code', 'spark-dsh', 'nvpair') + RUNTIMES + LIGAS
+ NOMES = {'spark-gguf': 'Modelo GGUF selecionado', 'spark-vllm': 'Modelo vLLM selecionado',
++         'spark-miner': 'Minerador Pearl (spark-pearl-miner)',
+          MODELO: 'Modelo Qwen3.8 27B', 'spark-code': 'OpenCode',
+          'spark-dsh': 'DeepSeek Harness',
+          'nvpair': 'PAIR (roteador de inferência)',
+@@ -196,7 +208,8 @@
+ # (o modelo: ExecStop `lms daemon down` e depois o SIGTERM, 90 s cada)
+ PARADA_TIMEOUT = {'spark-code': 90, 'spark-dsh': 90, 'nvpair': 80,
+                   MODELO: 200, 'spark-gguf': 150,
+-                  'spark-vllm': 180}   # TimeoutStopSec=150 da unit + folga
++                  'spark-vllm': 180,   # TimeoutStopSec=150 da unit + folga
++                  'spark-miner': 45}   # TimeoutStopSec=30 da unit + folga
+ 
+ # Memória unificada: CPU e GPU usam o mesmo pool. O cgroup NÃO enxerga as
+ # alocações CUDA (medido: llama-server com 29,7 GiB e MemoryCurrent 10 GiB),
+@@ -347,6 +360,7 @@
+ 
+ def validar_selecao(backend, perfil=None):
+     perfil = 'qwen3.8-27b' if backend == 'lmstudio' and perfil is None else perfil
++    perfil = 'pearl' if backend == 'miner' and perfil is None else perfil
+     if backend not in RUNTIME_DO_BACKEND:
+         raise ValueError('Backend/perfil de modelo inválido')
+     if not any(c['backend'] == backend and c['perfil'] == perfil for c in CATALOGO):
+@@ -598,6 +612,8 @@
+     def modelo_ocupado(self):
+         """True se o LM Studio diz que há resposta em andamento ou fila.
+         None se não deu para saber (daemon parado, CLI falhou)."""
++        if MODELO == 'spark-miner':
++            return False         # minerar nunca segura um pedido de agente: troca já
+         if MODELO == 'spark-vllm':
+             rodando = self._vllm_metricas()
+             return True if rodando is None else rodando > 0   # desconhecido: requer --forcar
+@@ -714,7 +730,22 @@
+             return self.conteiner_vivo() is False
+         return True
+ 
++    def minerador_pronto(self):
++        """O worker do minerador já roda: o spark-recurso pegou a lease, viu a
++        GPU vazia e fez o exec (o processo principal da unit virou o binário)."""
++        v = self._show(['spark-miner'], 'MainPID').get('spark-miner', {})
++        pid = v.get('MainPID', '0')
++        if not pid.isdigit() or pid == '0':
++            return False
++        try:
++            with open(f'{PROC}/{pid}/comm') as f:
++                return f.read().strip().startswith('spark-pearl')
++        except OSError:
++            return False
++
+     def modelo_carregado(self):
++        if MODELO == 'spark-miner':
++            return self.minerador_pronto()
+         if MODELO == 'spark-vllm':
+             texto = self._vllm_get('/v1/models')
+             try:
+@@ -734,6 +765,8 @@
+ 
+     def porta_aberta(self, porta=None):
+         porta = MODELO_PORTA if porta is None else porta
++        if porta is None:
++            return True          # o minerador não tem porta
+         try:
+             with socket.create_connection(('127.0.0.1', porta), timeout=2):
+                 return True
+@@ -903,8 +936,9 @@
+         if ia:
+             frase += '; ainda de pé do modo IA: ' + _nomes(ia)
+     else:
+-        frase = ('Spark em modo IA: modelo '
+-                 + ('carregado' if est.get(MODELO) == 'active'
++        miner = MODELO == 'spark-miner'
++        frase = ('Spark em modo IA: ' + ('minerador ' if miner else 'modelo ')
++                 + (('ativo' if miner else 'carregado') if est.get(MODELO) == 'active'
+                     else est.get(MODELO, '?')))
+         fora = [u for u in SERVICOS_IA
+                 if u != MODELO and est.get(u) != 'active']
+@@ -1004,7 +1038,8 @@
+                       and self.sis.modelo_carregado())
+             livre = self._mem(pr)
+             if pronto:
+-                pr.item(MODELO, 'ativo', 100, f'pronto na porta {MODELO_PORTA}')
++                pr.item(MODELO, 'ativo', 100, f'pronto na porta {MODELO_PORTA}'
++                        if MODELO_PORTA else 'minerando')
+                 pct_mod = 100
+             elif a_mod == 'failed':
+                 pr.item(MODELO, 'falhou', None,
+@@ -1758,7 +1793,8 @@
+ 
+         pr.iniciar('subir_modelo')
+         if subir(nova):
+-            pr.item(MODELO, 'ativo', 100, f'pronto na porta {MODELO_PORTA}')
++            pr.item(MODELO, 'ativo', 100, f'pronto na porta {MODELO_PORTA}'
++                    if MODELO_PORTA else 'minerando')
+             pr.concluir('subir_modelo')
+             p.inicio = None
+             p.publicar('pronto', f'Spark em modo IA: {nome} carregado.', destino='ia')
+@@ -1808,9 +1844,9 @@
+     # ExecCondition: roda como o usuário da unit e nunca pode travar o boot.
+     # Serviços de IA (e o modelo): na dúvida SOBEM (comportamento anterior à
+     # troca de modo). Ligas do treino: na dúvida NÃO sobem.
+-    if cmd in ('permite-modelo', 'permite-gguf', 'permite-vllm'):
++    if cmd in ('permite-modelo', 'permite-gguf', 'permite-vllm', 'permite-miner'):
+         backend = {'permite-modelo': 'lmstudio', 'permite-gguf': 'gguf',
+-                   'permite-vllm': 'vllm'}[cmd]
++                   'permite-vllm': 'vllm', 'permite-miner': 'miner'}[cmd]
+         try:
+             return 0 if (ler_modo() == 'ia' and SELECAO['backend'] == backend
+                          and not os.path.exists(BLOQUEIO_MODELO)) else 1
+@@ -1873,11 +1909,11 @@
+         return rc
+     if cmd == 'runtime':
+         try:
+-            if not 1 <= len(resto) <= 2 or (len(resto) == 1) != (resto[0] == 'lmstudio'):
++            if not 1 <= len(resto) <= 2 or (len(resto) == 1) != (resto[0] in ('lmstudio', 'miner')):
+                 raise ValueError(resto)
+             nova = validar_selecao(resto[0], resto[1] if len(resto) == 2 else None)
+         except ValueError:
+-            print('uso: spark-modo runtime lmstudio|gguf PERFIL|vllm PERFIL', file=sys.stderr)
++            print('uso: spark-modo runtime lmstudio|miner|gguf PERFIL|vllm PERFIL', file=sys.stderr)
+             return 64
+         fd = _trava(bloquear=True)
+         try:

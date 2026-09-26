@@ -1,0 +1,37 @@
+# Runtime "miner" do spark-modo: o worker de GPU do spark-pearl-miner, o ÚNICO processo CUDA do
+# minerador. Só sobe no MODO IA com o backend "miner" selecionado (ExecCondition) e sempre por
+# dentro da lease exclusiva do recurso (spark-recurso miner, LOCK_EX), que também exige a GPU
+# vazia antes do exec. O daemon (serviço --user spark-pearl-miner do xxguilasxx) fica de pé e
+# nunca cria contexto CUDA; este worker se conecta ao socket dele.
+#
+# Liga-se com `sudo spark-modo runtime miner`; um pedido de modelo do roteador troca o minerador
+# pelo modelo (spark-modo para esta unit e espera a GPU esvaziar). No modo treino nunca sobe.
+# Nada reinicia sozinho (Restart=no), como os outros runtimes.
+[Unit]
+Description=Worker de GPU do spark-pearl-miner (runtime miner do spark-modo)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=xxguilasxx
+Group=xxguilasxx
+SupplementaryGroups=spark-runtime
+Environment=HOME=/home/xxguilasxx
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+ExecCondition=/usr/local/sbin/spark-modo permite-miner
+ExecStart=/usr/local/libexec/spark-recurso miner -- /home/xxguilasxx/.local/bin/spark-pearl-miner gpu-worker --attach /run/user/1000/spark-pearl-miner/worker.sock
+Restart=no
+TimeoutStartSec=120
+# O worker sai em milissegundos (Release/Shutdown do daemon ou SIGTERM); sem contêiner para
+# esperar, 30 s bastam antes do SIGKILL.
+TimeoutStopSec=30
+KillMode=mixed
+NoNewPrivileges=yes
+PrivateTmp=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
