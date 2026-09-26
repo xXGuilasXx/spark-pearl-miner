@@ -4,6 +4,8 @@
 //!   SPM_GPU_TESTS=1 cargo test --release -p spm-gpu --features gpu --test g0 -- --test-threads=1
 //! Each test computes every oracle result on the CPU first and only then opens the CUDA context, so
 //! the GPU is held for a short burst (the vLLM-resident rule: ≤ ~10 s, ≤ 2 GiB).
+#![forbid(unsafe_code)]
+
 use std::time::{Duration, Instant};
 
 use spm_cpuref::{

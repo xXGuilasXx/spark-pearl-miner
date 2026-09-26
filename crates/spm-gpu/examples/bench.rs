@@ -6,6 +6,8 @@
 //! Runs attempts back to back for ~`seconds` (each attempt: A-side prep for a new a_noise_seed,
 //! then every tile in chunks) and prints credited T-MAC/s (m·n·k per attempt), the SM clock and
 //! board power sampled with nvidia-smi, the chunk times, and the rate relative to the MB1 peaks.
+#![forbid(unsafe_code)]
+
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
