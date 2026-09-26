@@ -1,0 +1,27 @@
+# spark-pearl-miner: boot-time GPU clock cap for the DGX Spark (GB10).
+#
+# GB10 has no software power limit (nvidia-smi -pl is unsupported) and some units power off hard
+# under sustained GPU load around 88-92 W. Capping the SM clock at 2200 MHz costs ~9 % of peak
+# throughput and keeps the GPU well below that band. The lock needs root and is lost on reboot,
+# hence this unit. It is optional: the miner's own governor runs without it.
+#
+# Install with packaging/install-clockcap.sh (prints the sudo commands; --apply runs them as root).
+# Stopping or disabling the unit restores the default clocks (nvidia-smi -rgc).
+#
+# Not ordered After=multi-user.target on purpose: the unit is wanted by multi-user.target, and
+# ordering it after its own target would be a dependency cycle.
+
+[Unit]
+Description=spark-pearl-miner GPU clock cap (SM clock locked to 300-2200 MHz)
+Documentation=https://github.com/xXGuilasXx/spark-pearl-miner/blob/main/docs/en/POWER-THERMAL.md
+After=nvidia-persistenced.service
+ConditionPathExists=/usr/bin/nvidia-smi
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/nvidia-smi -lgc 300,2200
+ExecStop=/usr/bin/nvidia-smi -rgc
+
+[Install]
+WantedBy=multi-user.target
