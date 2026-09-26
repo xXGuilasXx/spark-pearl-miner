@@ -100,10 +100,10 @@ launch gaps. Interleaved A/B medians (3–4 rounds of 3 s each) during developme
 | no loads at all (compute + fold + epilogue only) | ~90 |
 | **warp-specialized producer (setmaxnreg)** | 84.5 |
 | + L2 prefetch of A and B from every CTA, 4/8/16 k-tiles ahead | 72.9 / 79.3 / 79.6 |
-| + L2 hints (A evict_last, B evict_first) | 84.7 (no gain) |
-| + row pitch padded by 64/128/256 B | 83.1 / 82.8 / 84.5 (no gain) |
-| **+ B prefetch by the band's first CTA row, 4 k-tiles ahead** (final) | 86.0 (8 ahead: 85.3) |
-| band height 12 / 16 / 24 / 32 (final kernel) | 81.2 / **85.8** / 77.5 / 82.0 |
+| + L2 hints: A evict_last / A evict_last + B evict_first (same session: 84.6 without) | 85.1 / 84.7 (within noise) |
+| + row pitch padded by 64/128/256 B (same session: 84.4 without) | 83.1 / 82.8 / 84.5 (no gain) |
+| **+ B prefetch by the band's first CTA row, 4 k-tiles ahead** (final; same session: 84.4 without) | 86.0 (8 ahead: 85.3) |
+| band height 12 / 16 / 24 / 32 (warp-specialized kernel, noisy session) | 81.2 / **85.8** / 77.5 / 82.0 |
 
 Without the fold or without the BLAKE3 epilogue the rate does not change measurably: the kernel is
 bound by load latency. Raw TMA streaming of the same pattern reaches ~1.9–2.1 TB/s into shared
