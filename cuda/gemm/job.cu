@@ -15,6 +15,12 @@
 #include "spm_internal.h"
 #include "splitmix.cuh"
 
+// The Rust bindings (crates/spm-gpu/src/ffi.rs) mirror these layouts; its tests pin the same sizes.
+static_assert(sizeof(spm_job_params_t) == 80, "spm_job_params_t layout changed");
+static_assert(sizeof(spm_hit_t) == 40, "spm_hit_t layout changed");
+static_assert(sizeof(spm_job_info_t) == 88, "spm_job_info_t layout changed");
+static_assert(sizeof(spm::DeviceHit) == 40, "DeviceHit layout changed");
+
 namespace {
 
 using spm::DeviceHit;

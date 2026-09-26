@@ -96,6 +96,12 @@ fn other_compute_processes() -> Vec<String> {
         .collect()
 }
 
+fn median(v: &[f64]) -> f64 {
+    let mut s = v.to_vec();
+    s.sort_by(f64::total_cmp);
+    s.get(s.len() / 2).copied().unwrap_or(0.0)
+}
+
 fn stats(v: &[f64]) -> (f64, f64, f64) {
     if v.is_empty() {
         return (0.0, 0.0, 0.0);
@@ -225,9 +231,11 @@ fn main() -> anyhow::Result<()> {
     let (c_mean, c_min, c_max) = stats(&chunk_ms);
     let (p_mean, _, _) = stats(&prep_gpu_ms);
     let (k_mean, k_best, _) = stats(&kernel_attempt_ms);
+    let k_median = median(&kernel_attempt_ms);
 
     let tmacs_kernel = macs / (k_mean / 1e3) / 1e12;
     let tmacs_kernel_best = macs / (k_best / 1e3) / 1e12;
+    let tmacs_kernel_median = macs / (k_median / 1e3) / 1e12;
     let tmacs_gemm = macs * sustained as f64 / gemm_s / 1e12;
     let tmacs_total = macs * sustained as f64 / (gemm_s + prep_s) / 1e12;
     let peak_at_clock = PEAK_MAC_PER_CLK_SM * f64::from(dev.sm_count) * clk * 1e6 / 1e12;
@@ -247,7 +255,7 @@ fn main() -> anyhow::Result<()> {
         "SM clock (nvidia-smi): mean {clk:.0} MHz (min {clk_min:.0}, max {clk_max:.0}); power mean {w_mean:.1} W, max {w_max:.1} W"
     );
     println!(
-        "kernel only ({kernel_attempts} attempts, sum of chunk GPU times): {tmacs_kernel:.2} T-MAC/s mean, {tmacs_kernel_best:.2} best = {:.1} % of {PEAK_2200_TMACS} T-MAC/s, {:.1} % of the register-only peak at {clk:.0} MHz ({peak_at_clock:.1} T-MAC/s)",
+        "kernel only ({kernel_attempts} attempts, sum of chunk GPU times): {tmacs_kernel:.2} T-MAC/s mean, {tmacs_kernel_median:.2} median, {tmacs_kernel_best:.2} best; mean = {:.1} % of {PEAK_2200_TMACS} T-MAC/s, {:.1} % of the register-only peak at {clk:.0} MHz ({peak_at_clock:.1} T-MAC/s)",
         pct(tmacs_kernel),
         pct_clk(tmacs_kernel)
     );

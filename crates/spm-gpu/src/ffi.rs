@@ -318,3 +318,18 @@ impl Drop for JobHandle {
         unsafe { spm_job_destroy(self.0.as_ptr()) }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::mem::size_of;
+
+    /// Same sizes as the static_asserts in cuda/gemm/job.cu (LP64).
+    #[test]
+    fn layouts_match_the_c_header() {
+        assert_eq!(size_of::<JobParamsRaw>(), 80);
+        assert_eq!(size_of::<HitRaw>(), 40);
+        assert_eq!(size_of::<JobInfoRaw>(), 88);
+        assert_eq!(size_of::<DeviceInfoRaw>(), 64 + 6 * 4 + 8);
+    }
+}
