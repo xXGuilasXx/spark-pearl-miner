@@ -6,7 +6,7 @@ members = ["crates/spm-pow", "crates/spm-proto", "crates/spm-fee"]
 version = "0.0.1"
 edition = "2021"
 license = "Apache-2.0"
-repository = "https://github.com/xxguilasxx/spark-pearl-miner"
+repository = "https://github.com/xXGuilasXx/spark-pearl-miner"
 rust-version = "1.88"
 
 [workspace.dependencies]

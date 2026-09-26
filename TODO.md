@@ -151,7 +151,7 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 - [ ] ci.yml, release.yml and upstream-watch.yml green on ubuntu-24.04-arm; no job mines or contacts a pool.
 - [ ] G4: the user signed the ownership challenge for prl1pxtue…eydh in oystercli; signature and verification steps published in FEE.md.
 - [ ] tools/gpu-validate.sh report (selftest, 10 min bench, 1 h HeroMiners soak with 0 invalid, fee-test) attached to the draft release; reproducibility diff clean; SHA256SUMS and attestations present; gh attestation verify passes.
-- [ ] After the user's explicit OK: public repo xxguilasxx/spark-pearl-miner created and v0.1.0 tagged; a fresh install from the tarball reaches Mining through the GUI alone.
+- [ ] After the user's explicit OK: public repo xXGuilasXx/spark-pearl-miner created and v0.1.0 tagged; a fresh install from the tarball reaches Mining through the GUI alone.
 
 ### M14
 
