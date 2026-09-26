@@ -7,4 +7,4 @@
 - **CI nunca minera nem contata pool** (Termos do GitHub). Builds em `ubuntu-24.04-arm`; releases com `SHA256SUMS` + attestation.
 - **GPU nesta máquina (DGX Spark do autor)**: avisar o usuário antes de parar o vLLM (`spark-modo`), travar clock em 2200 MHz nos testes; o worker roda como runtime `miner` do `spark-modo` (lease exclusivo); nunca deixar processo CUDA residente fora desse runtime.
 - **Consenso**: `zk-pow`/`pearl-blake3` fixados em `3fe2267`; verificar toda share localmente antes de submeter; `cert_version` ≥ 4 ⇒ pausar com "update required".
-- Commits com a linha de atribuição padrão do Claude Code; nunca fazer push sem pedido explícito.
+- **Sem marca de IA**: mensagens de commit, comentários de código, PRs e docs escritos como se fossem do dono do repo (`xxguilasxx`), em primeira pessoa quando couber; **nunca** adicionar `Co-Authored-By: Claude …`, `🤖 Generated with Claude Code` nem qualquer menção a IA. Nunca fazer push sem pedido explícito.
