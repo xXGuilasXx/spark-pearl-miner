@@ -12,3 +12,6 @@
 /tests/fixtures/*unredacted*
 /docs/benchmarks/*.tmp
 .DS_Store
+
+# Local-only Cargo overrides (e.g. a space-free target-dir when the checkout path has spaces)
+/.cargo/config.toml
