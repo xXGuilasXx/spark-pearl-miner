@@ -25,9 +25,9 @@ thread_local int32_t g_last_cuda_error = 0;
 
 constexpr uint64_t kDefaultBudget = 2ull << 30;
 constexpr uint32_t kDefaultHitCapacity = 4096;
-// Adaptive chunk target. Consecutive chunks of the same size differ by up to ~25 % in kernel time
-// (per CTA tile: 62-94 us at 2330 MHz, 131072^2 x 4096), so the target sits well below the 10 ms
-// cancellation rule.
+// Adaptive chunk target. Chunks of the same size differ in kernel time: per CTA tile 61-94 us at
+// ~2330 MHz on 131072^2 x 4096 (mean 72), with isolated chunks up to 116 us when other load on the
+// SoC interferes; so the target sits well below the 10 ms cancellation rule.
 constexpr uint32_t kDefaultTargetChunkUs = 4500;
 constexpr uint32_t kDefaultBand = 16;
 constexpr uint32_t kMaxPrefix = 4096;
@@ -35,11 +35,13 @@ constexpr uint32_t kMaxPrefix = 4096;
 // ramp-up and the tail wave, and their timing is not representative).
 constexpr uint32_t kMinTilesPerCta = 4;
 // Hard ceiling of adaptive chunks, whatever the target and the timing history: the CTA tiles per
-// CTA that take kChunkCeilingUs at the clock floor with the slowest per-SM rate seen in a chunk
-// (612 MAC/clk/SM, a slow chunk of the 131072^2 x 4096 job at 2333 MHz). A throttled GPU or an
-// estimate that lags a clock drop therefore still ends its chunks within ~8 ms, under the 10 ms rule.
+// CTA that take kChunkCeilingUs at the clock floor at a per-SM rate below that of the slow chunks
+// (~590 MAC/clk/SM on 131072^2 x 4096 at 2300 MHz; the mean is ~790). That is 60 tiles per CTA at
+// k = 4096, so a throttled GPU or an estimate that lags a clock drop still ends its chunks within
+// ~8 ms. Isolated chunks slowed by other load on the SoC (507 MAC/clk/SM, 1 of 183) would take
+// ~8.8 ms at 1800 MHz: still under the 10 ms rule.
 constexpr double kClockFloorMhz = 1800.0;
-constexpr double kFloorMacPerClkPerSm = 600.0;
+constexpr double kFloorMacPerClkPerSm = 560.0;
 constexpr double kChunkCeilingUs = 8000.0;
 // Chunks kept in flight: the next chunk is queued behind the running one, so the GPU does not idle
 // while the host reads the finished chunk back and launches the following one.
