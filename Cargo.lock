@@ -1732,8 +1732,11 @@ name = "spm-gpu"
 version = "0.0.1"
 dependencies = [
  "anyhow",
- "cc",
+ "blake3",
+ "spm-cpuref",
+ "spm-pow",
  "thiserror 1.0.69",
+ "zk-pow",
 ]
 
 [[package]]

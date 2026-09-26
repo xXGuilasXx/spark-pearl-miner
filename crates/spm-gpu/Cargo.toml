@@ -8,9 +8,21 @@ repository.workspace = true
 rust-version.workspace = true
 build = "build.rs"
 
+[features]
+# Integration tests that run kernels on the GPU (tests/g0.rs). They also need SPM_GPU_TESTS=1 at
+# run time, so a plain `cargo test --all-features` never grabs the GPU by accident.
+gpu = []
+
 [dependencies]
 anyhow.workspace = true
 thiserror.workspace = true
 
-[build-dependencies]
-cc = "1"
+[dev-dependencies]
+spm-cpuref = { path = "../spm-cpuref" }
+spm-pow.workspace = true
+zk-pow.workspace = true
+blake3.workspace = true
+
+[[test]]
+name = "g0"
+required-features = ["gpu"]
