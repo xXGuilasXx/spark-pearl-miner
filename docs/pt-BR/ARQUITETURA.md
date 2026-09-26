@@ -1,0 +1,43 @@
+# Arquitetura
+
+Um único binário Apache-2.0, `spark-pearl-miner` (alias `spm`), em três papéis. O desenho foi escolhido numa revisão tripla (MVP primeiro, kernel primeiro, produto primeiro) pontuada por três juízes independentes; o resultado mesclado está resumido aqui. Código de consenso nunca é reimplementado: os crates oficiais `zk-pow` e `pearl-blake3` (ISC, fixados em `3fe2267`) são linkados nativamente.
+
+## Processos
+- **Daemon** (`spm daemon`, serviço `systemd --user`). **Nunca cria contexto CUDA** (NVML só para telemetria), então nunca aparece como processo de computação. Tarefas: serviço de config (TOML, escrita atômica, hot reload), gerente de pools (failover por redutor puro sobre até 3 sessões de usuário + 1 de dev), árbitro de trabalho (pausa → fatia de dev → pool ativa → ocioso; amarra cada job à sua sessão; contadores de MACs creditados; agendador da taxa), supervisor do worker (heartbeat 500 ms, watchdog 5 s, backoff 5 s/30 s/2 min, alerta de defeito após 3 falhas em 10 min), governor de energia (NVML 10 Hz + `acpitz`, controle PI de duty, trips, assinaturas de defeito, rebaixamento após desligamento sujo), coexistência (spark-modo / yield / yield-release / exclusive), servidor de API (`127.0.0.1:4078`, REST + SSE, GUI web embutida), socket de controle (`$XDG_RUNTIME_DIR/spark-pearl-miner/control.sock`, 0600, `SO_PEERCRED`).
+- **GPU worker** (`spm gpu-worker`): o único processo que segura contexto CUDA. Orçamento fixo ≤ 2 GiB. Threads: controle/IPC, driver CUDA (streams de preparação e GEMM), pool de prova (2–4 threads rayon nos núcleos Cortex-A725). Frames bincode versionados por `worker.sock` (Hello/SetJob/Pause/Resume/SetDuty/Release/Shutdown ↔ Ready/Heartbeat/Stats/Proof/Fault). Stop/Release **encerram o processo**, liberando o contexto. Modos de lançamento: `spawn` (genérico) ou `external` (DGX Spark com `spark-modo`: a unit do sistema roda o worker sob o lease exclusivo da GPU).
+- **CLI**: `probe | capture | selftest | bench | fee-test | verify-proof | status | start | stop | gui | install-clock-cap`.
+
+## Fluxo de dados (pool → job → GPU → share)
+1. `mining.notify` na sessão S → `Job{sessão, job_id, header76, target, height, cert_version}`. `cert_version ≥ 4` ou desconhecido ⇒ a pool é pausada com "atualização de rede — atualize o minerador" (nunca uma share inválida).
+2. Unidade de trabalho: m = n = 131072, k = 4096, r = 128, tile de hash 8×16 alinhado aos fragmentos do `mma.sync` (linhas 0,8,…,56 × colunas 0,1,8,9,…,56,57), `nbits_share = compact(target)`, bound = `penalized_target_bound(expand(nbits_share))` usando o *menor* entre `target` e `expand(compact(target))`, exatamente como as pools verificam com `nbits_override`.
+3. Por job: A_base e Bᵀ são preenchimentos estruturados de baixa entropia a partir de uma seed (nunca armazenados inteiros); camadas Merkle BLAKE3 com chave `job_key = blake3(header76 ‖ config52)`; `root_B → bind_root_b(n) → b_noise_seed`; a GPU constrói E_B e B'ᵀ uma vez por job.
+4. Por tentativa: um nonce no chunk 0 de A com atualização incremental da raiz (1 valor de encadeamento + 19 pais) → `root_A → bind_root_a(m) → a_noise_seed`; a GPU constrói E_A e A' (~3–5 ms); um GEMM IMMA fundido sobre todos os m·n/128 tiles (XOR-fold por fatia de k, transcript rotl-13, BLAKE3 com chave, comparação com o bound) ≈ 7,0e13 MACs creditados em ~0,7–1,1 s; um tile-canário por tentativa recomputado na CPU.
+5. Num hit, o pool de prova reconstrói as 8 linhas de A e 16 linhas de Bᵀ, caminha os irmãos de Merkle (mesmo algoritmo de `pearl_blake3::get_multileaf_proof`), monta `PlainProof{m,n,k,noise_rank,a,bt,moe:None}` e **verifica localmente** (`check_cert_version_eligible(3)` + `verify_plain_proof(…, Some(nbits_share), SeedDerivation::Salted)`). Falha na verificação é defeito de computação: nada é enviado, o teste de resposta conhecida roda de novo, a mineração para se repetir.
+6. O daemon codifica a prova no dialeto da sessão (plain / zstd / gzip, base64) e envia **só na sessão de origem e só se o `job_id` atual dela for o do hit**; senão o hit é descartado como stale.
+
+## Onde cada coisa vive
+- Chave da taxa: só no árbitro de trabalho (agendador de débito do `spm-fee`). O worker não sabe de taxa.
+- Failover: só no redutor `spm-pool`. O worker nunca vê identidades de pool.
+- Consenso: `spm-pow` sobre os crates oficiais, despachado por `cert_version` (V3 hoje; V4/FP8 atrás do mesmo trait).
+- GUI: arquivos estáticos embutidos falando REST + SSE. Nunca toca em arquivos nem cria processos.
+
+## Kernel de GPU (sm_121a)
+- v0 `gemm_v0_cpasync`: tile de CTA 128×256×64, `cp.async` em 3 estágios, 2×4 warps de 64×64, tile de hash residente em registradores, transcript em L1, epílogo BLAKE3, anel de hits mapeado. Portões de CI: `ptxas -v` com 0 spills e ≤ 232 registradores; SASS contém `IMMA.16832.S8.S8` e `LDSM`, sem `HMMA`. Flag de abort lida por chunk (≤ 10 ms).
+- v1 `gemm_v1_tma`: persistente (48 CTAs), TMA para B com anel de mbarrier, raster em bandas de L2, A' com buffer duplo, varredura de BK=128×2 / 64×4 / 128×128 @ 2 CTAs/SM; meta ≥ 85 % do pico IMMA medido a 2200 MHz; abort por tile (< 0,2 ms).
+- O mainloop é templatizado em `MmaPolicy { Int8V3 | Fp8V4 }`: o mesmo layout de `ldmatrix`/fragmentos aciona `mma.sync.m16n8k32.kind::f8f6f4.e4m3` (`QMMA.16832` em sm_121a) para o fork de certificado v4, com uma cadeia de acumulação FP32 por saída em K ascendente e sem split-K.
+- Contingência: o padrão oficial 2×64 no mesmo mainloop via combinação XOR entre warps, selecionável por pool (`auto|official`).
+
+## Pools e protocolo
+`spm-proto`: codec NDJSON (cap de leitura 4 MiB, guarda de escrita 2 MiB), TLS `rustls` on/off/auto (TLS primeiro, plain só em erro de protocolo, cache por host), dialetos `object` (HeroMiners — capturado ao vivo em 2026-09-26 — e LuckyPool), `kryptex` (v1 + v2-gzip), stubs `cryptonote` e `positional`; codificadores de prova plain/zstd/gzip aprendidos por pool. Padrões: HeroMiners BR → LuckyPool BR → Kryptex.
+
+## Failover (P0)
+Redutor puro `step(estado, evento, agora)` com relógio injetado. Gatilhos de falha no slot ativo: falha de DNS/conexão/TLS, erro de autenticação (→ ConfigError, tentado a cada 10 min), sem job em 30 s, EOF/reset, stall de 900 s (reconexão suave primeiro), ≥ 5 rejeições "invalid" seguidas ou > 50 % das últimas 20, 3 timeouts de ack de submit, stale > 2 % em 100 shares, texto de ban (→ quarentena de 10 min). Política: começa no slot de maior prioridade; em falha vai para o próximo utilizável com wrap-around; se o próximo também rejeitar em série → `Paused{RejectEverywhere}`; todos fora → retentativas round-robin respeitando backoff; retorna a um slot de maior prioridade após probe de 300 s + 60 s de saúde estável; fixação manual sobrepõe tudo. Invariantes (proptest): no máximo uma sessão de usuário ativa, hits só na sessão de origem, nenhuma share perdida ou duplicada, a sessão de dev nunca recebe hits do usuário.
+
+## Taxa do desenvolvedor
+2,00 % como fatia de tempo numa sessão separada e pré-conectada (HeroMiners; fallbacks LuckyPool/Kryptex), worker `devfee`, fatias de 120 s, débito 200/9800 acumulado só enquanto minera, persistido, com teto; primeira fatia em ponto aleatório; desliga sozinha quando a carteira do usuário é a da taxa; toda constante em `crates/spm-fee/src/lib.rs`; banner, logs, `/api/v1/fee`, `spm fee-test`, hash das constantes em `--version`; o CI falha se os READMEs divergirem das constantes.
+
+## Energia e coexistência
+Perfis Eco / **Balanced (alvo 75 W, corte 85 W, padrão)** / Max; unit opcional de cap de clock no boot (`nvidia-smi -lgc 300,2200`, root uma vez); governor NVML sem root; assinaturas de defeito; `running.marker`. Memória: worker ≤ 2 GiB; recusa iniciar se `MemAvailable − orçamento < 20 GiB`; sai abaixo de 16 GiB ou com PSI de memória `some avg10 > 10 %`. Numa máquina com `spark-modo` o worker roda só como runtime `miner`; carregar um modelo o para (≤ 10 ms em v0).
+
+## Segurança da API local
+Arquivo de token (0600) trocado por cookie HttpOnly SameSite=Strict + header CSRF; allowlist de Host/Origin; CSP estrita; strings da pool só como texto; mudanças de config auditadas; bind em LAN opt-in e só com TLS.
