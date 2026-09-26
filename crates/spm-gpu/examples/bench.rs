@@ -223,6 +223,36 @@ fn main() -> anyhow::Result<()> {
         sustained += 1;
     }
     let wall2 = phase2.elapsed().as_secs_f64();
+
+    // Phase 3 (cancellation): another thread raises the abort flag in the middle of an attempt;
+    // the latency is the time from the store until run_attempt has returned (its in-flight
+    // chunks drained).
+    let mut abort_ms = Vec::new();
+    for trial in 0..5u64 {
+        attempts += 1;
+        seed[..8].copy_from_slice(&attempts.to_le_bytes());
+        job.set_attempt(&seed, None)?;
+        let flag = Arc::new(AtomicU32::new(0));
+        let raised = Arc::new(Mutex::new(None::<Instant>));
+        let raiser = {
+            let flag = Arc::clone(&flag);
+            let raised = Arc::clone(&raised);
+            thread::spawn(move || {
+                thread::sleep(Duration::from_millis(3 + 2 * trial));
+                if let Ok(mut r) = raised.lock() {
+                    *r = Some(Instant::now());
+                }
+                flag.store(1, Ordering::Relaxed);
+            })
+        };
+        let st = job.run_attempt(&flag)?;
+        let returned = Instant::now();
+        raiser.join().ok();
+        let raised_at = raised.lock().ok().and_then(|r| *r);
+        if let (ChunkStatus::Aborted, Some(t)) = (st, raised_at) {
+            abort_ms.push(returned.saturating_duration_since(t).as_secs_f64() * 1e3);
+        }
+    }
     stop.store(true, Ordering::Relaxed);
     sampler.join().ok();
     let samples = samples.lock().map(|s| s.clone()).unwrap_or_default();
@@ -263,6 +293,13 @@ fn main() -> anyhow::Result<()> {
         println!(
             "sustained ({sustained} attempts in {wall2:.2} s, wall clock): {tmacs_gemm:.2} T-MAC/s fused kernel, {tmacs_total:.2} T-MAC/s incl. A prep ({p_mean:.2} ms GPU per attempt) = {:.1} % of {PEAK_2200_TMACS} T-MAC/s",
             pct(tmacs_gemm)
+        );
+    }
+    if !abort_ms.is_empty() {
+        let (a_mean, _, a_max) = stats(&abort_ms);
+        println!(
+            "abort latency (flag raised mid-attempt, {} trials): mean {a_mean:.2} ms, max {a_max:.2} ms",
+            abort_ms.len()
         );
     }
     let mut others: Vec<String> = samples.others.into_iter().collect();
