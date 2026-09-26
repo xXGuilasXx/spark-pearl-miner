@@ -92,7 +92,7 @@ bool encode_operand(CUtensorMap* map, const int8_t* base, uint32_t rows, uint32_
   const cuuint32_t box[2] = {spm::gemm::BK, box_rows};
   const cuuint32_t elem_strides[2] = {1, 1};
   return fn(map, CU_TENSOR_MAP_DATA_TYPE_UINT8, 2, const_cast<int8_t*>(base), dims, strides, box,
-            elem_strides, CU_TENSOR_MAP_INTERLEAVE_NONE, CU_TENSOR_MAP_SWIZZLE_64B,
+            elem_strides, CU_TENSOR_MAP_INTERLEAVE_NONE, spm::gemm::OPERAND_SWIZZLE,
             CU_TENSOR_MAP_L2_PROMOTION_L2_256B, CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE) == CUDA_SUCCESS;
 }
 
