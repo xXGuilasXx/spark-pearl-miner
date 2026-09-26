@@ -250,13 +250,20 @@ __device__ __forceinline__ void produce(const CUtensorMap* tmap_a, const CUtenso
 
 // ---- MMA warps -----------------------------------------------------------------------------
 
+// `#pragma unroll` for code that is also compiled for the host (host compilers warn about it).
+#if defined(__CUDA_ARCH__)
+#define SPM_DEVICE_UNROLL _Pragma("unroll")
+#else
+#define SPM_DEVICE_UNROLL
+#endif
+
 /// t <- t rotated right by kBy positions when `apply` (static indices only, stays in registers).
 template <uint32_t kBy>
 __host__ __device__ __forceinline__ void rotate_right_if(uint32_t (&t)[16], bool apply) {
   uint32_t u[16];
-#pragma unroll
+  SPM_DEVICE_UNROLL
   for (uint32_t j = 0; j < 16; ++j) u[j] = t[(j + 16u - kBy) & 15u];
-#pragma unroll
+  SPM_DEVICE_UNROLL
   for (uint32_t j = 0; j < 16; ++j) t[j] = apply ? u[j] : t[j];
 }
 

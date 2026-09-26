@@ -12,7 +12,9 @@ use spm_cpuref::{
     add_noise, build_plain_proof, first_mismatch, noise_factors, tiles_digest, verify_v3,
     IncompleteBlockHeader, NoiseFactors, Oracle, Problem, TileResult, U256,
 };
-use spm_gpu::{Buffer, ChunkStatus, Job, JobConfig, Operands, TileRecord};
+use spm_gpu::{
+    job_device_bytes, Buffer, ChunkStatus, GpuError, Job, JobConfig, Operands, TileRecord,
+};
 
 /// ~1/16 of the tiles hit at k = 2048 (same constant as the spm-cpuref proof tests).
 const EASY_NBITS: u32 = 0x1e03_ffff;
@@ -694,6 +696,130 @@ fn g0_chunking_does_not_change_the_hits() {
     assert_eq!(auto[0], run(Some(48 * 5), 1)[0], "fixed whole waves");
     assert_eq!(auto[0], run(Some(1000), 1)[0], "fixed odd size");
     assert_eq!(auto[0], run(Some(7), 1)[0], "tiny chunks");
+}
+
+/// Double-buffered attempts: A' of the next attempt is built with `prepare_attempt` while the
+/// current one runs, and `set_attempt` swaps it in. Every attempt (prepared or not, nonce patches of
+/// 0, 64 and 4096 bytes, a prepared set kept across an unrelated attempt, a prepared seed with the
+/// wrong prefix) must still equal the oracle tile for tile, with its own A' and hits. A job whose
+/// budget has no room for the spare A side refuses to prepare and keeps working.
+#[test]
+fn g0_prepared_attempts_are_bit_exact() {
+    if !gpu_enabled() {
+        return;
+    }
+    // Partial CTA tiles along m and n, 17 slices.
+    let (m, n, k, seed) = (320usize, 448usize, 2176usize, 0x6462_7566u64);
+    let base = Problem::generate(m, n, k, header(EASY_NBITS), seed).unwrap();
+    let b_seed = Oracle::new(&base).unwrap().commitment().b_noise_seed;
+    let bound = spm_pow::extract_difficulty_bound(EASY_NBITS, &base.config);
+    struct Attempt {
+        prefix: Vec<i8>,
+        a_seed: [u8; 32],
+        expected: Vec<TileResult>,
+        noised_a: Vec<i8>,
+    }
+    let attempts: Vec<Attempt> = [0usize, 64, 4096]
+        .iter()
+        .enumerate()
+        .map(|(i, &len)| {
+            let prefix: Vec<i8> = (0..len)
+                .map(|x| ((x * 31 + 7 * i + 3) % 129) as i8 - 64)
+                .collect();
+            let mut a = base.a.clone();
+            a[..len].copy_from_slice(&prefix);
+            let p = Problem::from_matrices(base.header, m, n, k, a, base.bt.clone()).unwrap();
+            let o = Oracle::new(&p).unwrap();
+            assert_eq!(
+                o.commitment().b_noise_seed,
+                b_seed,
+                "the prefix only touches A"
+            );
+            Attempt {
+                a_seed: o.commitment().a_noise_seed,
+                expected: o.transcripts().unwrap(),
+                noised_a: o.noised_a().to_vec(),
+                prefix,
+            }
+        })
+        .collect();
+    let run_and_check = |job: &mut Job, at: &Attempt, what: &str| {
+        assert!(job.run_attempt().unwrap().completed, "{what}");
+        let got: Vec<TileResult> = job.dump_records().unwrap().iter().map(to_tile).collect();
+        assert_eq!(first_mismatch(&at.expected, &got), None, "{what}: dump");
+        let a = job.read_buffer(Buffer::ANoised).unwrap();
+        assert_eq!(first_diff(&at.noised_a, &a), None, "{what}: A'");
+        let (_, total) = job.hits().unwrap();
+        let want = at.expected.iter().filter(|t| t.meets(bound)).count();
+        assert_eq!(total as usize, want, "{what}: hits");
+    };
+    let le = le_bytes(bound);
+    let mut cfg = JobConfig::new(
+        m as u32,
+        n as u32,
+        k as u32,
+        Operands::Generated { seed },
+        b_seed,
+    );
+    cfg.dump = true;
+    let mut job = Job::new(&cfg).expect("job");
+    let before = job.info().unwrap().device_bytes;
+
+    job.set_attempt_with_prefix(&attempts[0].a_seed, &le, &attempts[0].prefix)
+        .unwrap();
+    job.prepare_attempt_with_prefix(&attempts[1].a_seed, &attempts[1].prefix)
+        .unwrap();
+    run_and_check(&mut job, &attempts[0], "built, next prepared meanwhile");
+    let spare = job.info().unwrap().device_bytes - before;
+    assert_eq!(
+        spare,
+        (m * k + m * 128 + 2 * k + 4096) as u64,
+        "spare A side"
+    );
+
+    job.set_attempt_with_prefix(&attempts[1].a_seed, &le, &attempts[1].prefix)
+        .unwrap();
+    job.prepare_attempt_with_prefix(&attempts[2].a_seed, &attempts[2].prefix)
+        .unwrap();
+    run_and_check(&mut job, &attempts[1], "prepared, swapped in");
+
+    job.set_attempt_with_prefix(&attempts[0].a_seed, &le, &attempts[0].prefix)
+        .unwrap();
+    run_and_check(
+        &mut job,
+        &attempts[0],
+        "unrelated attempt while one is prepared",
+    );
+
+    job.set_attempt_with_prefix(&attempts[2].a_seed, &le, &attempts[2].prefix)
+        .unwrap();
+    run_and_check(
+        &mut job,
+        &attempts[2],
+        "prepared set kept across an unrelated attempt",
+    );
+
+    // Same seed, other prefix: the prepared set must not be used.
+    job.prepare_attempt_with_prefix(&attempts[1].a_seed, &attempts[2].prefix)
+        .unwrap();
+    job.set_attempt_with_prefix(&attempts[1].a_seed, &le, &attempts[1].prefix)
+        .unwrap();
+    run_and_check(
+        &mut job,
+        &attempts[1],
+        "prepared with another prefix, rebuilt",
+    );
+    drop(job);
+
+    // No room for the spare A side: prepare refuses, attempts still work.
+    cfg.mem_budget_bytes = job_device_bytes(m as u32, n as u32, k as u32, false, true, 0);
+    let mut job = Job::new(&cfg).expect("job at its exact budget");
+    assert_eq!(
+        job.prepare_attempt(&attempts[0].a_seed).unwrap_err(),
+        GpuError::Budget
+    );
+    job.set_attempt(&attempts[0].a_seed, &le).unwrap();
+    run_and_check(&mut job, &attempts[0], "after a refused prepare");
 }
 
 /// The abort flag stops a running chunk within one CTA tile (< 1 ms), and chunks refuse to start

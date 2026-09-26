@@ -130,6 +130,17 @@ int32_t spm_job_create(const spm_job_params_t* params, spm_job_t** out);
 int32_t spm_job_set_attempt(spm_job_t* job, const uint8_t a_noise_seed[32], const uint8_t bound[32],
                             const uint8_t* a_prefix, uint32_t a_prefix_len);
 
+// Double buffering: builds A_L, A_R and A' of a future attempt (same arguments as set_attempt,
+// without the bound) on a second, lowest-priority stream, while chunks of the current attempt run
+// (the build takes the SMs the GEMM leaves idle at chunk tails). The next spm_job_set_attempt with
+// the same a_noise_seed and prefix swaps the prepared buffers in instead of building them; one with
+// other arguments builds as usual and keeps the prepared set for later. A new call replaces the
+// prepared set. The first call allocates the spare buffers (m*k + m*128 + 2k + 4096 bytes), which
+// must fit the job's memory budget (SPM_E_BUDGET otherwise; set_attempt still works). Returns
+// without waiting for the GPU.
+int32_t spm_job_prepare_attempt(spm_job_t* job, const uint8_t a_noise_seed[32], const uint8_t* a_prefix,
+                                uint32_t a_prefix_len);
+
 // Waits for the next chunk of the attempt and describes it in `info`. Returns SPM_OK, SPM_DONE,
 // SPM_ABORTED or an error. Launches are pipelined: while a chunk is waited on, the following one is
 // already queued, so after SPM_OK one chunk may still be running (the abort flag stops it within a

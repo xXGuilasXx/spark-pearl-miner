@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <new>
+#include <utility>
 
 #include "spm_cuda.h"
 
@@ -138,6 +139,22 @@ struct spm_job {
 
   CUtensorMap tmap_a, tmap_b;
   cudaStream_t stream = nullptr;
+  uint64_t budget = 0;
+
+  // Double buffering of the A side (spm_job_prepare_attempt): a spare A', A_L, A_R and prefix,
+  // allocated on first use and built on a low-priority stream while chunks of the current attempt
+  // run; set_attempt swaps them in when the seed and the prefix match.
+  int8_t* alt_a_noised = nullptr;
+  int8_t* alt_a_factor = nullptr;
+  uint8_t* alt_a_pairs = nullptr;
+  uint8_t* alt_prefix = nullptr;
+  uint32_t alt_prefix_len = 0;
+  CUtensorMap alt_tmap_a;
+  cudaStream_t prep_stream = nullptr;
+  cudaEvent_t prep_done = nullptr;
+  bool prepared = false;  // the spare set holds the A side of prepared_seed + prepared_prefix
+  uint8_t prepared_seed[32] = {0};
+  uint8_t prepared_prefix[kMaxPrefix] = {0};
 
   // Chunks in flight, oldest at `head`; slot s owns counters[2s], counters[2s + 1], its events and
   // h_status[s] (pinned copy of its status word, written by the stream after the kernel).
@@ -169,6 +186,13 @@ namespace {
 void release(spm_job* j) {
   if (j == nullptr) return;
   if (j->stream) cudaStreamSynchronize(j->stream);
+  if (j->prep_stream) cudaStreamSynchronize(j->prep_stream);
+  cudaFree(j->alt_a_noised);
+  cudaFree(j->alt_a_factor);
+  cudaFree(j->alt_a_pairs);
+  cudaFree(j->alt_prefix);
+  if (j->prep_done) cudaEventDestroy(j->prep_done);
+  if (j->prep_stream) cudaStreamDestroy(j->prep_stream);
   cudaFree(j->a_stored);
   cudaFree(j->a_noised);
   cudaFree(j->bt_noised);
@@ -204,30 +228,52 @@ cudaError_t alloc(spm_job* j, T** ptr, uint64_t bytes) {
 
 bool valid_dim(uint32_t x) { return x >= 64 && x % 64 == 0 && x <= (1u << 24); }
 
-// A-side / B-side operand build on the job stream.
-cudaError_t build_operand(spm_job* j, bool a_side, const uint8_t seed_bytes[32], int8_t* out,
-                          bool noise_only, bool base_only) {
+// The factor, pairs, prefix and stream an operand build uses.
+struct SideBuffers {
+  int8_t* factor;
+  uint8_t* pairs;
+  const uint8_t* prefix;
+  uint32_t prefix_len;
+  cudaStream_t stream;
+};
+
+// The job's current A side (a_side) or its B side, on the job stream.
+SideBuffers current_side(const spm_job* j, bool a_side) {
+  if (a_side) return SideBuffers{j->a_factor, j->a_pairs, j->prefix, j->prefix_len, j->stream};
+  return SideBuffers{j->bt_factor, j->b_pairs, nullptr, 0, j->stream};
+}
+
+// A-side / B-side operand build on `sb.stream`.
+cudaError_t build_operand(spm_job* j, bool a_side, const SideBuffers& sb,
+                          const uint8_t seed_bytes[32], int8_t* out, bool noise_only,
+                          bool base_only) {
   const uint32_t rows = a_side ? j->m : j->n;
-  int8_t* factor = a_side ? j->a_factor : j->bt_factor;
-  uint8_t* pairs = a_side ? j->a_pairs : j->b_pairs;
   const uint32_t label = a_side ? spm::LABEL_A_W0 : spm::LABEL_B_W0;
   spm::prep::OperandSource src;
   src.stored = a_side ? j->a_stored : (j->generated ? nullptr : j->bt_noised);
   src.gen_state = j->gen_seed ^ (a_side ? spm::DOMAIN_A : spm::DOMAIN_BT);
-  src.prefix = a_side ? j->prefix : nullptr;
-  src.prefix_len = a_side ? j->prefix_len : 0;
+  src.prefix = sb.prefix;
+  src.prefix_len = sb.prefix_len;
   if (base_only) {
     if (src.stored != nullptr || !j->generated) return cudaErrorInvalidValue;
-    return spm::prep::launch_fill_int7(out, (uint64_t)rows * j->k, src.gen_state, j->stream);
+    return spm::prep::launch_fill_int7(out, (uint64_t)rows * j->k, src.gen_state, sb.stream);
   }
   if (seed_bytes != nullptr) {
     const spm::prep::Seed seed = seed_from_bytes(seed_bytes);
-    cudaError_t e = spm::prep::launch_uniform_factor(factor, rows, seed, label, j->stream);
+    cudaError_t e = spm::prep::launch_uniform_factor(sb.factor, rows, seed, label, sb.stream);
     if (e != cudaSuccess) return e;
-    e = spm::prep::launch_pairs(pairs, j->k, seed, label, j->stream);
+    e = spm::prep::launch_pairs(sb.pairs, j->k, seed, label, sb.stream);
     if (e != cudaSuccess) return e;
   }
-  return spm::prep::launch_noised_operand(out, src, factor, pairs, rows, j->k, noise_only, j->stream);
+  return spm::prep::launch_noised_operand(out, src, sb.factor, sb.pairs, rows, j->k, noise_only,
+                                          sb.stream);
+}
+
+bool valid_attempt_args(const spm_job* j, const uint8_t* a_noise_seed, const uint8_t* a_prefix,
+                        uint32_t a_prefix_len) {
+  if (a_noise_seed == nullptr) return false;
+  if (a_prefix_len > kMaxPrefix || (a_prefix_len != 0 && a_prefix == nullptr)) return false;
+  return (uint64_t)a_prefix_len <= (uint64_t)j->m * j->k;
 }
 
 }  // namespace
@@ -325,6 +371,7 @@ int32_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
   j->generated = generated;
   j->gen_seed = p.gen_seed;
   j->dump_bytes = dump_bytes;
+  j->budget = budget;
   j->hit_capacity = (uint32_t)hit_capacity;
   j->band = p.band_rows ? p.band_rows : kDefaultBand;
   j->target_chunk_us = p.target_chunk_us ? p.target_chunk_us : kDefaultTargetChunkUs;
@@ -371,7 +418,12 @@ int32_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
   if (e == cudaSuccess) e = spm::gemm::configure_gemm_hash_s8();
   if (e != cudaSuccess) return fail(fail_cuda(e));
 
-  e = cudaStreamCreateWithFlags(&j->stream, cudaStreamNonBlocking);
+  // Highest stream priority for the chunks: the A-side builds of spm_job_prepare_attempt run on a
+  // lowest-priority stream and only take SMs no queued chunk CTA is waiting for.
+  int lowest = 0, highest = 0;
+  e = cudaDeviceGetStreamPriorityRange(&lowest, &highest);
+  if (e == cudaSuccess)
+    e = cudaStreamCreateWithPriority(&j->stream, cudaStreamNonBlocking, highest);
   for (uint32_t s = 0; s < kPipeline && e == cudaSuccess; ++s) {
     e = cudaEventCreate(&j->ev_begin[s]);
     if (e == cudaSuccess) e = cudaEventCreate(&j->ev_end[s]);
@@ -401,7 +453,7 @@ int32_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
     if (e != cudaSuccess) return fail(fail_cuda(e));
   }
   // B side, once per job: B_Rᵀ, B_L pairs, B'ᵀ = Bᵀ + E_Bᵀ (in place over the uploaded Bᵀ).
-  e = build_operand(j, false, j->b_seed, j->bt_noised, false, false);
+  e = build_operand(j, false, current_side(j, false), j->b_seed, j->bt_noised, false, false);
   if (e == cudaSuccess) e = cudaMemsetAsync(j->counters, 0, kCounterWords * 4, j->stream);
   if (e == cudaSuccess) e = cudaStreamSynchronize(j->stream);
   if (e != cudaSuccess) return fail(fail_cuda(e));
@@ -415,23 +467,85 @@ int32_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
 
 int32_t spm_job_set_attempt(spm_job_t* j, const uint8_t a_noise_seed[32], const uint8_t bound[32],
                             const uint8_t* a_prefix, uint32_t a_prefix_len) {
-  if (j == nullptr || a_noise_seed == nullptr || bound == nullptr) return SPM_E_INVALID;
-  if (a_prefix_len > kMaxPrefix || (a_prefix_len != 0 && a_prefix == nullptr)) return SPM_E_INVALID;
-  if ((uint64_t)a_prefix_len > (uint64_t)j->m * j->k) return SPM_E_INVALID;
+  if (j == nullptr || bound == nullptr) return SPM_E_INVALID;
+  if (!valid_attempt_args(j, a_noise_seed, a_prefix, a_prefix_len)) return SPM_E_INVALID;
   j->attempt_ready = false;
   // Chunks of the previous attempt still in flight finish first (abort them for a faster switch).
   SPM_TRY(cudaStreamSynchronize(j->stream));
   j->head = j->count = 0;
   spm::le_words_from_bytes(a_noise_seed, j->key);
   spm::le_words_from_bytes(bound, j->bound);
-  j->prefix_len = a_prefix_len;
-  if (a_prefix_len != 0)
-    SPM_TRY(cudaMemcpyAsync(j->prefix, a_prefix, a_prefix_len, cudaMemcpyHostToDevice, j->stream));
-  SPM_TRY(build_operand(j, true, a_noise_seed, j->a_noised, false, false));
+  const bool use_prepared =
+      j->prepared && memcmp(j->prepared_seed, a_noise_seed, 32) == 0 &&
+      j->alt_prefix_len == a_prefix_len &&
+      (a_prefix_len == 0 || memcmp(j->prepared_prefix, a_prefix, a_prefix_len) == 0);
+  if (use_prepared) {
+    // The A side was built ahead on the prep stream: swap it in. The old set becomes the spare; it
+    // is idle, since the job stream is drained.
+    j->prepared = false;
+    SPM_TRY(cudaEventSynchronize(j->prep_done));
+    std::swap(j->a_noised, j->alt_a_noised);
+    std::swap(j->a_factor, j->alt_a_factor);
+    std::swap(j->a_pairs, j->alt_a_pairs);
+    std::swap(j->prefix, j->alt_prefix);
+    std::swap(j->prefix_len, j->alt_prefix_len);
+    std::swap(j->tmap_a, j->alt_tmap_a);
+  } else {
+    j->prefix_len = a_prefix_len;
+    if (a_prefix_len != 0)
+      SPM_TRY(cudaMemcpyAsync(j->prefix, a_prefix, a_prefix_len, cudaMemcpyHostToDevice, j->stream));
+    SPM_TRY(build_operand(j, true, current_side(j, true), a_noise_seed, j->a_noised, false, false));
+  }
   SPM_TRY(cudaMemsetAsync(j->counters, 0, kCounterWords * 4, j->stream));
   SPM_TRY(cudaStreamSynchronize(j->stream));
   j->next_tile = j->enqueue_tile = 0;
   j->attempt_ready = true;
+  return SPM_OK;
+}
+
+int32_t spm_job_prepare_attempt(spm_job_t* j, const uint8_t a_noise_seed[32], const uint8_t* a_prefix,
+                                uint32_t a_prefix_len) {
+  if (j == nullptr) return SPM_E_INVALID;
+  if (!valid_attempt_args(j, a_noise_seed, a_prefix, a_prefix_len)) return SPM_E_INVALID;
+  j->prepared = false;
+  if (j->alt_a_noised == nullptr) {
+    const uint64_t m = j->m, k = j->k;
+    const uint64_t extra = m * k + m * spm::prep::RANK + 2 * k + kMaxPrefix;
+    if (j->device_bytes + extra > j->budget) return SPM_E_BUDGET;
+    // Lowest priority: the prep kernels take the SMs the GEMM leaves idle at chunk tails, and a
+    // queued chunk's CTAs wait at most for one prep block.
+    int lowest = 0, highest = 0;
+    cudaError_t e = cudaDeviceGetStreamPriorityRange(&lowest, &highest);
+    if (e == cudaSuccess && j->prep_stream == nullptr)
+      e = cudaStreamCreateWithPriority(&j->prep_stream, cudaStreamNonBlocking, lowest);
+    if (e == cudaSuccess && j->prep_done == nullptr)
+      e = cudaEventCreateWithFlags(&j->prep_done, cudaEventDisableTiming);
+    if (e == cudaSuccess && j->alt_a_factor == nullptr)
+      e = alloc(j, &j->alt_a_factor, m * spm::prep::RANK);
+    if (e == cudaSuccess && j->alt_a_pairs == nullptr) e = alloc(j, &j->alt_a_pairs, 2 * k);
+    if (e == cudaSuccess && j->alt_prefix == nullptr)
+      e = alloc(j, &j->alt_prefix, (uint64_t)kMaxPrefix);
+    // A' last: it is the "allocated" marker, so a failure above is retried by the next call.
+    if (e == cudaSuccess) e = alloc(j, &j->alt_a_noised, m * k);
+    if (e != cudaSuccess) return fail_cuda(e);
+    if (!encode_operand(&j->alt_tmap_a, j->alt_a_noised, j->m, j->k, spm::gemm::BM)) {
+      cudaFree(j->alt_a_noised);
+      j->alt_a_noised = nullptr;
+      j->device_bytes -= m * k;
+      return SPM_E_TMA;
+    }
+  }
+  memcpy(j->prepared_seed, a_noise_seed, 32);
+  if (a_prefix_len != 0) memcpy(j->prepared_prefix, a_prefix, a_prefix_len);
+  j->alt_prefix_len = a_prefix_len;
+  if (a_prefix_len != 0)
+    SPM_TRY(cudaMemcpyAsync(j->alt_prefix, a_prefix, a_prefix_len, cudaMemcpyHostToDevice,
+                            j->prep_stream));
+  const SideBuffers spare{j->alt_a_factor, j->alt_a_pairs, j->alt_prefix, a_prefix_len,
+                          j->prep_stream};
+  SPM_TRY(build_operand(j, true, spare, a_noise_seed, j->alt_a_noised, false, false));
+  SPM_TRY(cudaEventRecord(j->prep_done, j->prep_stream));
+  j->prepared = true;
   return SPM_OK;
 }
 
@@ -610,7 +724,8 @@ int32_t spm_job_read_buffer(spm_job_t* j, int32_t which, uint8_t* out, uint64_t 
   }
   int8_t* tmp = nullptr;
   SPM_TRY(cudaMalloc(&tmp, size));
-  cudaError_t e = build_operand(j, a_side, nullptr, tmp, !base_only, base_only);
+  cudaError_t e =
+      build_operand(j, a_side, current_side(j, a_side), nullptr, tmp, !base_only, base_only);
   if (e == cudaSuccess) e = cudaStreamSynchronize(j->stream);
   if (e == cudaSuccess) e = cudaMemcpy(out, tmp, size, cudaMemcpyDeviceToHost);
   cudaFree(tmp);

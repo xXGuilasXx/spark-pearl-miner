@@ -24,8 +24,9 @@
 // shapes and band heights, and the kernel's transcript queue plus rotate_right_if put slot s at
 // word s for every slice count.
 //
-// Build and run (no GPU needed; `cargo test -p spm-gpu --test layout` does the same):
-//   nvcc -std=c++17 -I third_party/cutlass/include -I cuda/include \
+// Build and run (no GPU needed; `cargo test -p spm-gpu --test layout` does the same), from the
+// repository root:
+//   nvcc -std=c++17 -I third_party/cutlass/include -I cuda/include
 //        -gencode arch=compute_121a,code=sm_121a -o layout_check cuda/tests/layout_check.cu
 //   ./layout_check
 #include <cstdint>

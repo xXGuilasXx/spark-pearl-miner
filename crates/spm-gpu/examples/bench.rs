@@ -2,7 +2,7 @@
 //!
 //!   cargo run --release -p spm-gpu --features gpu --example bench -- [--seconds 10] [--m 16384]
 //!       [--n 16384] [--k 4096] [--band 16] [--chunk-ms 0] [--chunk-tiles 0] [--csv FILE]
-//!       [--abort-trials 3]
+//!       [--abort-trials 3] [--prepare 0]
 //!
 //! Runs attempts back to back for ~`seconds` (each attempt: A-side prep for a new a_noise_seed,
 //! then every tile in chunks driven by `run_chunk`, the worker's path) and prints:
@@ -17,6 +17,9 @@
 //! * the other processes holding a CUDA context during the run (anything besides the resident,
 //!   idle vLLM makes the numbers unreliable) and the host CPU utilization (the GB10's CPU and GPU
 //!   share one power budget and the memory).
+//!
+//! `--prepare 1` builds the next attempt's A' with `Job::prepare_attempt` while the current one
+//! runs (double buffering), so `set_attempt` only swaps buffers.
 //!
 //! `--seconds 0` runs exactly one timed attempt after the warm-up (a quick check at the 131072²
 //! default job shape). `--chunk-ms 0` (default) keeps the library's adaptive target; `--chunk-tiles`
@@ -45,10 +48,12 @@ struct Args {
     chunk_tiles: u32,
     csv: Option<String>,
     abort_trials: u32,
+    prepare: bool,
 }
 
 const USAGE: &str = "bench [--seconds 10] [--m 16384] [--n 16384] [--k 4096] [--band 16] \
-                     [--chunk-ms 0] [--chunk-tiles 0] [--csv FILE] [--abort-trials 3]";
+                     [--chunk-ms 0] [--chunk-tiles 0] [--csv FILE] [--abort-trials 3] \
+                     [--prepare 0]";
 
 fn parse_args() -> anyhow::Result<Args> {
     let mut a = Args {
@@ -61,6 +66,7 @@ fn parse_args() -> anyhow::Result<Args> {
         chunk_tiles: 0,
         csv: None,
         abort_trials: 3,
+        prepare: false,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut it = argv.iter();
@@ -82,6 +88,7 @@ fn parse_args() -> anyhow::Result<Args> {
             "--chunk-tiles" => a.chunk_tiles = val.parse()?,
             "--csv" => a.csv = Some(val.clone()),
             "--abort-trials" => a.abort_trials = val.parse()?,
+            "--prepare" => a.prepare = val.parse::<u8>()? != 0,
             other => anyhow::bail!("unknown flag {other}\n{USAGE}"),
         }
     }
@@ -424,8 +431,13 @@ fn main() -> anyhow::Result<()> {
         _ => "adaptive, library default target".to_owned(),
     };
     println!(
-        "chunks: {chunking}; first chunk {} CTA tiles",
-        info.chunk_tiles
+        "chunks: {chunking}; first chunk {} CTA tiles; next A' {}",
+        info.chunk_tiles,
+        if args.prepare {
+            "prepared during the current attempt (double buffering)"
+        } else {
+            "built by set_attempt"
+        }
     );
 
     // Idle baseline: the process holds its context but the GPU does no work.
@@ -437,6 +449,9 @@ fn main() -> anyhow::Result<()> {
     let origin = Instant::now();
     let mut warm_rows = Vec::new();
     job.set_attempt(&seed_bytes(0), &never)?;
+    if args.prepare {
+        job.prepare_attempt(&seed_bytes(1))?;
+    }
     run_attempt_chunks(&mut job, 0, origin, &mut warm_rows)?;
     let settled = job.info()?.chunk_tiles;
 
@@ -449,6 +464,9 @@ fn main() -> anyhow::Result<()> {
         let t = Instant::now();
         job.set_attempt(&seed_bytes(attempts), &never)?;
         prep += t.elapsed();
+        if args.prepare {
+            job.prepare_attempt(&seed_bytes(attempts + 1))?;
+        }
         let (completed, k) = run_attempt_chunks(&mut job, attempts, start, &mut rows)?;
         anyhow::ensure!(completed, "attempt aborted");
         kernel += k;
@@ -534,7 +552,7 @@ fn main() -> anyhow::Result<()> {
         std::thread::available_parallelism().map_or(0, |n| n.get())
     );
     println!(
-        "{attempts} attempts in {:.2} s ({} chunks, A-side prep {:.2} ms/attempt)",
+        "{attempts} attempts in {:.2} s ({} chunks, set_attempt {:.2} ms/attempt)",
         wall.as_secs_f64(),
         rows.len(),
         prep.as_secs_f64() * 1e3 / attempts as f64

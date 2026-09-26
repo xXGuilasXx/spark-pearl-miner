@@ -397,6 +397,28 @@ impl Job {
         check(self.raw.set_attempt(a_noise_seed, bound, &bytes))
     }
 
+    /// Double buffering: builds A_L, the A_R pairs and A' of a future attempt on a second,
+    /// lowest-priority stream while the chunks of the current attempt run (the build uses the SMs
+    /// the GEMM leaves idle at chunk tails), and returns without waiting. The next
+    /// [`Job::set_attempt`] with the same `a_noise_seed` (and no prefix) swaps the prepared
+    /// buffers in instead of building them; one with other arguments builds as usual. A new call
+    /// replaces the prepared attempt. The first call allocates a spare A side (m·k + m·128 bytes
+    /// and change) inside the job's memory budget; [`GpuError::Budget`] leaves the job usable
+    /// without double buffering.
+    pub fn prepare_attempt(&mut self, a_noise_seed: &[u8; 32]) -> Result<(), GpuError> {
+        check(self.raw.prepare_attempt(a_noise_seed, &[]))
+    }
+
+    /// [`Job::prepare_attempt`] for [`Job::set_attempt_with_prefix`] with the same `prefix`.
+    pub fn prepare_attempt_with_prefix(
+        &mut self,
+        a_noise_seed: &[u8; 32],
+        prefix: &[i8],
+    ) -> Result<(), GpuError> {
+        let bytes: Vec<u8> = prefix.iter().map(|&x| x as u8).collect();
+        check(self.raw.prepare_attempt(a_noise_seed, &bytes))
+    }
+
     /// Waits for the next chunk (~4.5 ms of kernel time with the default target, ≤ ~8 ms at an
     /// 1800 MHz clock) and reports it. Launches are pipelined: the chunk after it is already
     /// queued when this returns [`ChunkStatus::More`], so the GPU does not idle between calls.
