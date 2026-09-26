@@ -26,5 +26,10 @@ A GB10 is expected to reach roughly 65–85 TH/s (credited, pool units) inside a
 ## Requirements (target)
 DGX OS 7.x (Ubuntu 24.04, aarch64), CUDA 13.0 driver ≥ 580, Rust ≥ 1.88 to build, a Pearl wallet address (`prl1…`, bech32m). Optional: `sudo` once to install the boot-time GPU clock cap.
 
+## Documentation
+- [Architecture](docs/en/ARCHITECTURE.md) · [Kernel contract](docs/en/KERNEL.md) · [Benchmarks](docs/en/BENCHMARKS.md) · [Viability](docs/en/VIABILITY.md)
+- [Power & thermal](docs/en/POWER-THERMAL.md) · [Coexistence with a resident LLM](docs/en/COEXISTENCE.md) · [Dual mining verdict](docs/en/DUAL-MINING.md)
+- [Pool protocols](docs/protocol/) · [Decisions](docs/en/DECISIONS.md) · [TODO](TODO.md)
+
 ## License
 Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE) (ISC: Pearl Research Labs and The Decred developers; BSD-3: NVIDIA CUTLASS).
