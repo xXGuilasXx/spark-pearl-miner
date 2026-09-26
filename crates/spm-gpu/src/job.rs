@@ -242,7 +242,8 @@ impl Job {
             chunk_ctas: p.chunk_ctas,
             mem_budget_bytes: p.mem_budget_bytes,
         };
-        let handle = ffi::JobHandle::create(&args).map_err(|code| GpuError::status("spm_job_create", code))?;
+        let handle = ffi::JobHandle::create(&args)
+            .map_err(|code| GpuError::status("spm_job_create", code))?;
         Ok(Self {
             handle,
             m: p.m,
@@ -260,8 +261,16 @@ impl Job {
 
     /// Builds the A side (A_L, A pairs, A') for `a_noise_seed`, resets the hit ring and the chunk
     /// cursor. `bound: None` keeps the current bound.
-    pub fn set_attempt(&mut self, a_noise_seed: &[u8; 32], bound: Option<&[u8; 32]>) -> Result<(), GpuError> {
-        check("spm_job_set_attempt", self.handle.set_attempt(a_noise_seed, bound)).map(|_| ())
+    pub fn set_attempt(
+        &mut self,
+        a_noise_seed: &[u8; 32],
+        bound: Option<&[u8; 32]>,
+    ) -> Result<(), GpuError> {
+        check(
+            "spm_job_set_attempt",
+            self.handle.set_attempt(a_noise_seed, bound),
+        )
+        .map(|_| ())
     }
 
     /// Runs one launch chunk and waits for it.
@@ -269,7 +278,9 @@ impl Job {
         match check("spm_job_run_chunk", self.handle.run_chunk())? {
             ffi::SPM_CHUNK_MORE => Ok(Chunk::More),
             ffi::SPM_CHUNK_DONE => Ok(Chunk::Done),
-            other => Err(GpuError::Invalid(format!("unexpected chunk status {other}"))),
+            other => Err(GpuError::Invalid(format!(
+                "unexpected chunk status {other}"
+            ))),
         }
     }
 
@@ -304,7 +315,9 @@ impl Job {
     /// Every tile's record in the reference order (dump mode).
     pub fn read_dump(&mut self) -> Result<Vec<TileRecord>, GpuError> {
         if !self.dump {
-            return Err(GpuError::Invalid("read_dump needs a job created with dump = true".into()));
+            return Err(GpuError::Invalid(
+                "read_dump needs a job created with dump = true".into(),
+            ));
         }
         let tiles = u64::from(self.m) * u64::from(self.n) / 128;
         let len = usize::try_from(tiles * RECORD_LEN as u64)
@@ -312,8 +325,10 @@ impl Job {
         let mut bytes = vec![0u8; len];
         check("spm_job_read_dump", self.handle.read_dump(&mut bytes))?;
         Ok(bytes
-            .chunks_exact(RECORD_LEN)
-            .map(|c| TileRecord::from_bytes(c.try_into().expect("chunk of RECORD_LEN bytes")))
+            .as_chunks::<RECORD_LEN>()
+            .0
+            .iter()
+            .map(TileRecord::from_bytes)
             .collect())
     }
 
@@ -329,7 +344,10 @@ impl Job {
         };
         let len = usize::try_from(len).map_err(|_| GpuError::Invalid("buffer too large".into()))?;
         let mut out = vec![0u8; len];
-        check("spm_job_read_debug", self.handle.read_debug(which as i32, &mut out))?;
+        check(
+            "spm_job_read_debug",
+            self.handle.read_debug(which as i32, &mut out),
+        )?;
         Ok(out)
     }
 
@@ -404,7 +422,10 @@ mod tests {
         assert_eq!(err.code(), Some(-2), "{err}");
         let bad_host = JobParams {
             m: 128,
-            source: Source::Host { a: &[0; 3], bt: &[0; 3] },
+            source: Source::Host {
+                a: &[0; 3],
+                bt: &[0; 3],
+            },
             ..p
         };
         assert!(matches!(Job::create(&bad_host), Err(GpuError::Invalid(_))));

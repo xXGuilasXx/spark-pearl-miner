@@ -12,8 +12,8 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use spm_cpuref::{
-    add_noise, build_plain_proof, first_mismatch, noise_factors, tiles_digest, verify_v3, Commitment,
-    IncompleteBlockHeader, Oracle, Problem, TileResult, U256,
+    add_noise, build_plain_proof, first_mismatch, noise_factors, tiles_digest, verify_v3,
+    Commitment, IncompleteBlockHeader, Oracle, Problem, TileResult, U256,
 };
 use spm_gpu::{Chunk, DebugBuffer, Job, JobParams, Run, Source, TileRecord};
 
@@ -46,7 +46,13 @@ fn u256_le(x: U256) -> [u8; 32] {
     out
 }
 
-fn params<'a>(p: &Problem, c: &Commitment, source: Source<'a>, dump: bool, bound: [u8; 32]) -> JobParams<'a> {
+fn params<'a>(
+    p: &Problem,
+    c: &Commitment,
+    source: Source<'a>,
+    dump: bool,
+    bound: [u8; 32],
+) -> JobParams<'a> {
     JobParams {
         m: p.m as u32,
         n: p.n as u32,
@@ -143,14 +149,21 @@ fn g0_every_shape_is_bit_exact() {
                     let p = Problem::generate(m, n, k, header(EASY_NBITS), seed).unwrap();
                     let label = format!("m={m} n={n} k={k} seed={seed}");
                     let d = check_problem(&p, Source::Fill { seed }, &label);
-                    eprintln!("G0 ok  {label:<32} tiles={:>5} tiles_blake3={}", m * n / 128, hex::encode(&d[..8]));
+                    eprintln!(
+                        "G0 ok  {label:<32} tiles={:>5} tiles_blake3={}",
+                        m * n / 128,
+                        hex::encode(&d[..8])
+                    );
                     count += 1;
                 }
             }
         }
     }
     assert_eq!(count, 54);
-    eprintln!("G0: 54/54 problems bit-exact in {:.1} s", started.elapsed().as_secs_f64());
+    eprintln!(
+        "G0: 54/54 problems bit-exact in {:.1} s",
+        started.elapsed().as_secs_f64()
+    );
 }
 
 #[test]
@@ -160,9 +173,17 @@ fn ragged_and_long_k_are_bit_exact() {
     }
     // k mod 128 = 64 (the last 64 columns never enter the transcript), S mod 16 != 0 (the
     // transcript slot wraps mid-way) and a long k (each slot written three times).
-    for (m, n, k, seed) in [(128usize, 256usize, 2112usize, 11u64), (256, 128, 2176, 12), (128, 128, 6144, 13)] {
+    for (m, n, k, seed) in [
+        (128usize, 256usize, 2112usize, 11u64),
+        (256, 128, 2176, 12),
+        (128, 128, 6144, 13),
+    ] {
         let p = Problem::generate(m, n, k, header(EASY_NBITS), seed).unwrap();
-        check_problem(&p, Source::Fill { seed }, &format!("m={m} n={n} k={k} seed={seed}"));
+        check_problem(
+            &p,
+            Source::Fill { seed },
+            &format!("m={m} n={n} k={k} seed={seed}"),
+        );
     }
 }
 
@@ -173,7 +194,11 @@ fn noise_factors_and_operands_match_zk_pow() {
     }
     let p = Problem::generate(256, 256, 2048, header(EASY_NBITS), 5).unwrap();
     let base = spm_cpuref::commit(&p).unwrap();
-    let pairs_bytes = |v: &[[u32; 2]]| v.iter().flat_map(|&[a, b]| [a as u8, b as u8]).collect::<Vec<u8>>();
+    let pairs_bytes = |v: &[[u32; 2]]| {
+        v.iter()
+            .flat_map(|&[a, b]| [a as u8, b as u8])
+            .collect::<Vec<u8>>()
+    };
     let mut x = 0x9e37_79b9_7f4a_7c15u64;
     let mut next_seed = || {
         let mut s = [0u8; 32];
@@ -192,21 +217,37 @@ fn noise_factors_and_operands_match_zk_pow() {
         c.b_noise_seed = next_seed();
         let f = noise_factors(&p, &c).unwrap();
         let e = f.expand().unwrap();
-        let mut job = Job::create(&params(&p, &c, Source::Fill { seed: 5 }, true, [0; 32])).unwrap();
+        let mut job =
+            Job::create(&params(&p, &c, Source::Fill { seed: 5 }, true, [0; 32])).unwrap();
         assert_eq!(job.read_debug(DebugBuffer::BRt).unwrap(), as_bytes(&f.b_rt));
-        assert_eq!(job.read_debug(DebugBuffer::PairsB).unwrap(), pairs_bytes(&f.b_l));
-        assert_eq!(job.read_debug(DebugBuffer::NoisedBt).unwrap(), as_bytes(&add_noise(&p.bt, &e.e_bt).unwrap()));
+        assert_eq!(
+            job.read_debug(DebugBuffer::PairsB).unwrap(),
+            pairs_bytes(&f.b_l)
+        );
+        assert_eq!(
+            job.read_debug(DebugBuffer::NoisedBt).unwrap(),
+            as_bytes(&add_noise(&p.bt, &e.e_bt).unwrap())
+        );
         for _ in 0..a_seeds_per_job {
             c.a_noise_seed = next_seed();
             let f = noise_factors(&p, &c).unwrap();
             let e = f.expand().unwrap();
             job.set_attempt(&c.a_noise_seed, None).unwrap();
             assert_eq!(job.read_debug(DebugBuffer::AL).unwrap(), as_bytes(&f.a_l));
-            assert_eq!(job.read_debug(DebugBuffer::PairsA).unwrap(), pairs_bytes(&f.a_r));
-            assert_eq!(job.read_debug(DebugBuffer::NoisedA).unwrap(), as_bytes(&add_noise(&p.a, &e.e_a).unwrap()));
+            assert_eq!(
+                job.read_debug(DebugBuffer::PairsA).unwrap(),
+                pairs_bytes(&f.a_r)
+            );
+            assert_eq!(
+                job.read_debug(DebugBuffer::NoisedA).unwrap(),
+                as_bytes(&add_noise(&p.a, &e.e_a).unwrap())
+            );
         }
     }
-    eprintln!("noise: {b_seeds} B seeds and {} A seeds bit-exact", b_seeds * a_seeds_per_job);
+    eprintln!(
+        "noise: {b_seeds} B seeds and {} A seeds bit-exact",
+        b_seeds * a_seeds_per_job
+    );
 }
 
 #[test]
@@ -226,7 +267,11 @@ fn host_matrices_and_nonce_patch_are_bit_exact() {
         bt[i] = if i % 2 == 0 { 64 } else { -64 };
     }
     let p = Problem::from_matrices(g.header, m, n, k, a.clone(), bt.clone()).unwrap();
-    check_problem(&p, Source::Host { a: &a, bt: &bt }, "host source, extreme entries");
+    check_problem(
+        &p,
+        Source::Host { a: &a, bt: &bt },
+        "host source, extreme entries",
+    );
 
     // A nonce patched into chunk 0 of A: same result through the fill source (override region)
     // and through the host source (written into the stored A).
@@ -238,13 +283,20 @@ fn host_matrices_and_nonce_patch_are_bit_exact() {
     let oracle = Oracle::new(&pp).unwrap();
     let c = *oracle.commitment();
     let expected = oracle.transcripts().unwrap();
-    for source in [Source::Fill { seed: 21 }, Source::Host { a: &g.a, bt: &g.bt }] {
+    for source in [
+        Source::Fill { seed: 21 },
+        Source::Host { a: &g.a, bt: &g.bt },
+    ] {
         let mut job = Job::create(&params(&pp, &c, source, true, [0; 32])).unwrap();
         job.patch_a(offset, &nonce).unwrap();
         job.set_attempt(&c.a_noise_seed, None).unwrap();
         job.run(None).unwrap();
         let got: Vec<TileResult> = job.read_dump().unwrap().iter().map(to_tile).collect();
-        assert_eq!(first_mismatch(&expected, &got), None, "patched A ({source:?})");
+        assert_eq!(
+            first_mismatch(&expected, &got),
+            None,
+            "patched A ({source:?})"
+        );
     }
 }
 
@@ -290,7 +342,11 @@ fn forced_hits_become_verified_plain_proofs() {
     }
     let hdr = header(EASY_NBITS);
     let mut proofs = 0;
-    for (m, n, k, seed) in [(512usize, 512usize, 2048usize, 41u64), (256, 512, 4096, 42), (1024, 256, 2048, 43)] {
+    for (m, n, k, seed) in [
+        (512usize, 512usize, 2048usize, 41u64),
+        (256, 512, 4096, 42),
+        (1024, 256, 2048, 43),
+    ] {
         let p = Problem::generate(m, n, k, hdr, seed).unwrap();
         let oracle = Oracle::new(&p).unwrap();
         let c = *oracle.commitment();
@@ -303,18 +359,37 @@ fn forced_hits_become_verified_plain_proofs() {
             .collect();
         expected.sort();
 
-        let mut job = Job::create(&params(&p, &c, Source::Fill { seed }, false, u256_le(bound))).unwrap();
+        let mut job = Job::create(&params(
+            &p,
+            &c,
+            Source::Fill { seed },
+            false,
+            u256_le(bound),
+        ))
+        .unwrap();
         job.set_attempt(&c.a_noise_seed, None).unwrap();
         assert_eq!(job.run(None).unwrap(), Run::Done);
         let hits = job.read_hits().unwrap();
         assert_eq!(hits.lost, 0);
-        let mut got: Vec<(u32, u32, [u8; 32])> = hits.hits.iter().map(|h| (h.t_rows, h.t_cols, h.digest)).collect();
+        let mut got: Vec<(u32, u32, [u8; 32])> = hits
+            .hits
+            .iter()
+            .map(|h| (h.t_rows, h.t_cols, h.digest))
+            .collect();
         got.sort();
-        assert_eq!(got, expected, "m={m} n={n} k={k}: GPU hits differ from the oracle's");
+        assert_eq!(
+            got, expected,
+            "m={m} n={n} k={k}: GPU hits differ from the oracle's"
+        );
         assert!(!got.is_empty());
 
         for &(t_rows, t_cols, digest) in &got {
-            let tile = TileResult { t_rows, t_cols, transcript: [0; 16], digest };
+            let tile = TileResult {
+                t_rows,
+                t_cols,
+                transcript: [0; 16],
+                digest,
+            };
             let proof = build_plain_proof(&p, &tile).unwrap();
             verify_v3(&hdr, &proof, None).unwrap();
             verify_v3(&hdr, &proof, Some(EASY_NBITS)).unwrap();
@@ -323,17 +398,40 @@ fn forced_hits_become_verified_plain_proofs() {
         }
         // A mutated proof fails.
         let (t_rows, t_cols, digest) = got[0];
-        let mut bad = build_plain_proof(&p, &TileResult { t_rows, t_cols, transcript: [0; 16], digest }).unwrap();
+        let mut bad = build_plain_proof(
+            &p,
+            &TileResult {
+                t_rows,
+                t_cols,
+                transcript: [0; 16],
+                digest,
+            },
+        )
+        .unwrap();
         bad.a.row_indices[0] ^= 1;
-        assert!(verify_v3(&hdr, &bad, None).is_err(), "mutated row index must fail");
+        assert!(
+            verify_v3(&hdr, &bad, None).is_err(),
+            "mutated row index must fail"
+        );
 
         // Smallest digest: with the bound set to it exactly, the GPU reports that tile alone.
-        let min = got.iter().min_by_key(|h| U256::from_little_endian(&h.2)).copied().unwrap();
+        let min = got
+            .iter()
+            .min_by_key(|h| U256::from_little_endian(&h.2))
+            .copied()
+            .unwrap();
         job.set_attempt(&c.a_noise_seed, Some(&min.2)).unwrap();
         job.run(None).unwrap();
         let only = job.read_hits().unwrap();
         assert_eq!(only.hits.len(), 1);
-        assert_eq!((only.hits[0].t_rows, only.hits[0].t_cols, only.hits[0].digest), min);
+        assert_eq!(
+            (
+                only.hits[0].t_rows,
+                only.hits[0].t_cols,
+                only.hits[0].digest
+            ),
+            min
+        );
     }
     assert!(proofs >= 100, "only {proofs} proofs");
     eprintln!("forced hits: {proofs} GPU hits turned into PlainProofs, all pass verify_v3 and the rank penalty");

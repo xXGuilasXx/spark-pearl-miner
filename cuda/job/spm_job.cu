@@ -22,9 +22,14 @@ constexpr uint32_t kDefaultHitCapacity = 4096;
 constexpr uint32_t kMaxPatch = 4096;
 constexpr uint32_t kRank = 128;
 constexpr uint64_t kRecordBytes = 104;  // TileResult::DUMP_LEN
-constexpr double kTargetChunkMs = 8.0;  // adaptive chunks aim here; the contract is <= 10 ms
+constexpr double kTargetChunkMs = 7.0;  // adaptive chunks aim here; the contract is <= 10 ms
 constexpr double kInitialMacsPerMs = 50e9;  // first-chunk estimate (50 T-MAC/s), then measured
-constexpr int kGroupM = 8;              // CTA rows per raster group
+// CTA rows per raster group: the group's A' strips (kGroupM x 512 KiB at k = 4096) stay in the
+// 24 MiB L2 while B'ᵀ strips stream past, so B'ᵀ is read from DRAM m / (128 kGroupM) times.
+#ifndef SPM_GROUP_M
+#define SPM_GROUP_M 8
+#endif
+constexpr int kGroupM = SPM_GROUP_M;
 
 // Bytes 8..20 of MiningConfiguration::to_bytes() for our 8x16 pattern (spm_pow::mining_config).
 constexpr uint8_t kPatternBytes[12] = {0x07, 0x07, 0, 0, 0, 0, 0x00, 0x01, 0x03, 0x07, 0, 0};
@@ -392,10 +397,12 @@ int32_t spm_job_run_chunk(spm_job_t* job) {
   if (rc != SPM_OK) return rc;
   job->last_chunk = ctas;
   job->last_chunk_ms = ms;
-  // Re-estimate the rate from full-size chunks only (a short tail chunk under-fills the GPU).
+  // Re-estimate the rate from chunks of at least 4 waves (a short tail under-fills the GPU).
+  // A slowdown (clock drop, another process on the GPU) is followed at once; a speed-up only
+  // gradually, so a chunk overshoots the target by little when the rate falls.
   if (job->chunk_fixed == 0 && ctas >= 4 * job->wave && ms > 0.05f) {
     const double rate = static_cast<double>(ctas) / ms;
-    job->ctas_per_ms = 0.5 * job->ctas_per_ms + 0.5 * rate;
+    job->ctas_per_ms = rate < job->ctas_per_ms ? rate : 0.75 * job->ctas_per_ms + 0.25 * rate;
   }
   job->next_cta += ctas;
   return job->next_cta >= job->cta_tiles ? SPM_CHUNK_DONE : SPM_CHUNK_MORE;

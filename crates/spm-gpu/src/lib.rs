@@ -32,7 +32,11 @@ pub fn version() -> String {
 pub fn device_info() -> anyhow::Result<DeviceInfo> {
     let raw = ffi::device_info()
         .map_err(|rc| anyhow::anyhow!("cudaGetDeviceProperties failed with CUDA error {rc}"))?;
-    let end = raw.name.iter().position(|&b| b == 0).unwrap_or(raw.name.len());
+    let end = raw
+        .name
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(raw.name.len());
     let nonneg = |x: i32| u32::try_from(x).unwrap_or(0);
     Ok(DeviceInfo {
         name: String::from_utf8_lossy(&raw.name[..end]).into_owned(),
@@ -67,7 +71,10 @@ mod tests {
         }
         let d = device_info().expect("device info");
         assert!(d.sm_count > 0);
-        assert!(d.max_smem_optin_bytes >= 99 * 1024, "GB10 exposes ~99 KB opt-in smem per block");
+        assert!(
+            d.max_smem_optin_bytes >= 99 * 1024,
+            "GB10 exposes ~99 KB opt-in smem per block"
+        );
         eprintln!("{d:?}");
     }
 }

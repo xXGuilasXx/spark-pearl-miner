@@ -80,14 +80,19 @@ fn main() {
                                 || l.contains("spill")
                                 || l.contains("Compiling entry")
                         }) {
-                            println!("cargo:warning={}: {line}", src.file_name().unwrap().to_string_lossy());
+                            println!(
+                                "cargo:warning={}: {line}",
+                                src.file_name().unwrap().to_string_lossy()
+                            );
                         }
                     }
                     obj
                 })
             })
             .collect();
-        jobs.into_iter().map(|j| j.join().expect("nvcc thread panicked")).collect()
+        jobs.into_iter()
+            .map(|j| j.join().expect("nvcc thread panicked"))
+            .collect()
     });
 
     println!("cargo:rerun-if-env-changed=SPM_CUDA_ARCH");
@@ -96,7 +101,12 @@ fn main() {
     println!("cargo:rerun-if-env-changed=NVCC");
     let lib = out.join("libspm_cuda.a");
     let _ = fs::remove_file(&lib);
-    let st = Command::new("ar").arg("rcs").arg(&lib).args(&objs).status().expect("ar");
+    let st = Command::new("ar")
+        .arg("rcs")
+        .arg(&lib)
+        .args(&objs)
+        .status()
+        .expect("ar");
     assert!(st.success());
     println!("cargo:rustc-link-search=native={}", out.display());
     println!("cargo:rustc-link-lib=static=spm_cuda");

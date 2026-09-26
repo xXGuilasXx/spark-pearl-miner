@@ -4,7 +4,7 @@
 //! a function whose arguments make the call sound (lengths checked against the shape, pointers
 //! taken from live Rust borrows, the job handle owned and never aliased), and each `unsafe` block
 //! states why. Status codes are passed through unchanged; `crate::job` turns them into errors.
-#![allow(unsafe_code)]
+//! (`unsafe_code` is allowed for this module only, at its declaration in lib.rs.)
 
 use std::ffi::{c_char, c_void, CStr};
 use std::ptr::NonNull;
@@ -281,7 +281,8 @@ impl JobHandle {
         let (mut n, mut lost) = (0u32, 0u32);
         // SAFETY: live, exclusively borrowed handle; `out` has room for `cap` records and the
         // library writes at most `cap`; `n` and `lost` are valid out-params.
-        let rc = unsafe { spm_job_read_hits(self.0.as_ptr(), out.as_mut_ptr(), cap, &mut n, &mut lost) };
+        let rc =
+            unsafe { spm_job_read_hits(self.0.as_ptr(), out.as_mut_ptr(), cap, &mut n, &mut lost) };
         (rc, n, lost)
     }
 
@@ -294,7 +295,12 @@ impl JobHandle {
     pub fn read_debug(&mut self, which: i32, out: &mut [u8]) -> i32 {
         // SAFETY: as for read_dump: the library writes exactly `out.len()` bytes or refuses.
         unsafe {
-            spm_job_read_debug(self.0.as_ptr(), which, out.as_mut_ptr().cast(), out.len() as u64)
+            spm_job_read_debug(
+                self.0.as_ptr(),
+                which,
+                out.as_mut_ptr().cast(),
+                out.len() as u64,
+            )
         }
     }
 
