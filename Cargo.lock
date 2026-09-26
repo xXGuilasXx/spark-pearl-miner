@@ -1733,6 +1733,9 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "cc",
+ "hex",
+ "spm-cpuref",
+ "spm-pow",
  "thiserror 1.0.69",
 ]
 

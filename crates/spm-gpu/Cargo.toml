@@ -8,9 +8,18 @@ repository.workspace = true
 rust-version.workspace = true
 build = "build.rs"
 
+[features]
+# GPU integration tests (tests/g0.rs); they also need SPM_GPU_TESTS=1 at run time.
+gpu = []
+
 [dependencies]
 anyhow.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+spm-cpuref = { path = "../spm-cpuref" }
+spm-pow.workspace = true
+hex.workspace = true
 
 [build-dependencies]
 cc = "1"
