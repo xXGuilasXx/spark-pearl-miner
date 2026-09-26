@@ -26,14 +26,17 @@ def redact(obj, wallet):
         s = s.replace(wallet, "<WALLET>")
     return json.loads(s)
 
-def connect(host, port, tls_mode, timeout=15):
+def connect(host, port, tls_mode, timeout=15, insecure=False):
     raw = socket.create_connection((host, port), timeout=timeout)
     if tls_mode == "off":
         return raw, "plain"
     ctx = ssl.create_default_context()
+    if insecure:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
     try:
         s = ctx.wrap_socket(raw, server_hostname=host)
-        return s, "tls"
+        return s, "tls" + (" (unverified)" if insecure else "")
     except ssl.SSLError as e:
         raw.close()
         if tls_mode == "on":
@@ -86,6 +89,8 @@ def main():
     ap.add_argument("--listen", type=int, default=600, help="seconds to listen for jobs after a successful handshake")
     ap.add_argument("--only", default="", help="comma-separated hypothesis ids to try (default: all in order)")
     ap.add_argument("--out", default="")
+    ap.add_argument("--insecure", action="store_true", help="TLS without certificate verification (probe only)")
+    ap.add_argument("--jsonrpc", action="store_true", help='add "jsonrpc":"2.0" to every request')
     a = ap.parse_args()
     out = open(a.out, "a") if a.out else None
     def log(ev):
@@ -104,13 +109,14 @@ def main():
             log({"ev": "rate-limit", "msg": f"stop: {MAX_CONN} connections used"}); break
         conns += 1
         try:
-            sock, mode = connect(a.host, a.port, a.tls)
+            sock, mode = connect(a.host, a.port, a.tls, insecure=a.insecure)
         except Exception as e:
             log({"ev": "connect-error", "hyp": hid, "err": repr(e)}); continue
         log({"ev": "connected", "hyp": hid, "transport": mode, "peer": f"{a.host}:{a.port}"})
         ok = False
         try:
             for m in msgs:
+                if a.jsonrpc: m = {"jsonrpc": "2.0", **m}
                 send(sock, m); log({"ev": "send", "hyp": hid, "msg": m})
                 deadline = time.time() + 15
                 for r in recv_lines(sock, deadline):
