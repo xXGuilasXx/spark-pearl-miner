@@ -1844,7 +1844,7 @@ mod tests {
         assert_eq!(c.worker, DEV_WORKER);
         assert_eq!(c.tls, TlsMode::luckypool());
         assert_eq!(c.jsonrpc, Some(true));
-        let c = dev_session_config("prl.kryptex.network", 8048, None);
+        let c = dev_session_config("prl-br.kryptex.network", 8048, None);
         assert_eq!(c.dialect, Dialect::Kryptex);
         assert_eq!(c.tls, TlsMode::On);
         let c = dev_session_config("br.pearl.herominers.com", 1200, Some(ProofField::PlainProofZst));

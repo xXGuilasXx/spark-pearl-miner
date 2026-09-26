@@ -20,7 +20,7 @@ There is no override path of any kind for `DEV_WALLET`, `FEE_BPS`, `DEV_POOLS`, 
 | `FEE_BPS` | 200 | 2.00 % of *active mining time* |
 | `DEV_WALLET` | `prl1pkqprrek7pemaxyvl4deusyz2hrkywnkhl86w7yqv53x0qyvsd5fs57s90n` | self-custody Pearl P2TR address (bech32m, checked by a test) |
 | `DEV_WORKER` | devfee | worker name on the dev session |
-| `DEV_POOLS` | br.pearl.herominers.com:1200, us.pearl.herominers.com:1200, de.pearl.herominers.com:1200, pearl-br.luckypool.io:3360, prl.kryptex.network:8048 | dev pools in preference order (HeroMiners region first, then fallbacks) |
+| `DEV_POOLS` | br.pearl.herominers.com:1200, us.pearl.herominers.com:1200, de.pearl.herominers.com:1200, pearl-br.luckypool.io:3360, prl-br.kryptex.network:8048 | dev pools in preference order (HeroMiners region first, then fallbacks) |
 | `SLICE_SECS` | 120 | length of one dev slice |
 | `DEBT_NUM` / `DEBT_DEN` | 200 / 9800 | dev seconds owed per user second |
 | `FIRST_SLICE_MIN_SECS` | 1800 | earliest first slice of a run (30 min) |

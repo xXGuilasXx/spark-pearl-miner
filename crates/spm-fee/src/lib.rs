@@ -28,7 +28,7 @@ pub const DEV_POOLS: &[(&str, u16, bool)] = &[
     ("us.pearl.herominers.com", 1200, true),
     ("de.pearl.herominers.com", 1200, true),
     ("pearl-br.luckypool.io", 3360, true),
-    ("prl.kryptex.network", 8048, true),
+    ("prl-br.kryptex.network", 8048, true),
 ];
 /// Length of one developer slice, in seconds of active mining.
 pub const SLICE_SECS: u64 = 120;
