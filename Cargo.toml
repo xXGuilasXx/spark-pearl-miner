@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/spm-pow", "crates/spm-proto", "crates/spm-fee"]
+members = ["crates/spm-pow", "crates/spm-proto", "crates/spm-fee", "crates/spm-gpu"]
 
 [workspace.package]
 version = "0.0.1"
