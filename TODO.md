@@ -84,16 +84,17 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 
 - [x] User stopped spark-vllm.service and ran bench/mb1.sh with sudo clock locks; vLLM restored afterwards
 - [x] IMMA register-only peak measured at stock/2200/2000/1800 MHz: 108.6/96.0/85.0/75.7 T-MAC/s (919 MAC/clk/SM); QMMA FP8 rate equal to INT8 (107.0 T-MAC/s stock)
-- [ ] ldmatrix, cp.async vs TMA fill, L2 (12 MiB band) and DRAM bandwidth measured; vLLM restored; docs/BENCHMARKS.md updated.
+- [ ] ldmatrix, cp.async vs TMA fill, L2 (12 MiB band) and DRAM bandwidth measured; vLLM restored; docs/BENCHMARKS.md updated. (Partial, vLLM resident: TMA streaming of the GEMM access pattern reaches ~1.9–2.1 TB/s into shared memory, `cuda/probes/tma_stream.cu`.)
 
 ### M5
 
-- [ ] Noise kernels are bit-exact against zk-pow generate_uniform_random_matrix and generate_permutation_matrix for 1000 seeds; A' and B' rows equal compute_noise_for_indices.
+- [x] Noise kernels are bit-exact against zk-pow generate_uniform_random_matrix and generate_permutation_matrix for 1000 seeds; A' and B' rows equal compute_noise_for_indices. (Strategy C: `crates/spm-gpu/tests/g0.rs` `g0_noise_matches_the_official_generators`, 1000 A seeds and 64 B seeds through `spm_cpuref::noise_factors`; E_A, E_Bᵀ, A', B'ᵀ and the generated A/Bᵀ equal the oracle, which spm-cpuref proves equal to compute_noise_for_indices.)
 - [ ] gemm_v0 (128x256x64, 3-stage cp.async, 2x4 warps of 64x64, 8x16 register-local hash tile, L1 transcript, BLAKE3 epilogue, mapped hit ring) builds with 0 spills and at most 232 registers; SASS contains IMMA.16832.S8.S8 and LDSM.
-- [ ] G0: 100% of debug-dump transcripts and digests equal spm-cpuref for m,n in {256,512,1024}, k in {2048,4096}, 3 seeds each.
-- [ ] Forced-hit test: at least 100 GPU PlainProofs pass verify_plain_proof(Salted) and check_rank_penalty; mutated proofs fail.
-- [ ] compute-sanitizer memcheck, racecheck and synccheck are clean.
-- [ ] gpu-worker runs the KAT at start, heartbeats, cancels on epoch change in 10 ms or less, and recomputes one canary tile per attempt; spark-pearl-miner selftest and bench --minutes 10 (JSON: credited MAC/s, clocks, W, temperatures) recorded at 2200 MHz.
+  - [x] Strategy C equivalent (`cuda/gemm/gemm_tma.cuh`: persistent, TMA + mbarrier 4-stage ring, 128x256x64, 8 MMA warps of 64x64 + producer warpgroup, register-local hash tile and transcript, BLAKE3 epilogue, hit ring): 0 spills, 168 launch registers and 232 for the MMA warps via setmaxnreg; SASS has IMMA.16832.S8.S8 and LDSM, no HMMA (crates/spm-gpu/README.md).
+- [x] G0: 100% of debug-dump transcripts and digests equal spm-cpuref for m,n in {256,512,1024}, k in {2048,4096}, 3 seeds each. (Strategy C: 54 problems, 150,528 tiles, 0 mismatches; also odd shapes, host operands, nonce prefix, pipelined chunks with abort + resume.)
+- [x] Forced-hit test: at least 100 GPU PlainProofs pass verify_plain_proof(Salted) and check_rank_penalty; mutated proofs fail. (Strategy C: 135 GPU hits → PlainProofs pass verify_v3 and check_rank_penalty; tampered leaf data or row indices fail.)
+- [~] compute-sanitizer memcheck, racecheck and synccheck are clean. (Strategy C: memcheck and synccheck clean; racecheck reports 4 WAR hazards on the per-stage command word, whose read and next write are ordered by the stage's empty mbarrier, which racecheck does not model.)
+- [ ] gpu-worker runs the KAT at start, heartbeats, cancels on epoch change in 10 ms or less, and recomputes one canary tile per attempt; spark-pearl-miner selftest and bench --minutes 10 (JSON: credited MAC/s, clocks, W, temperatures) recorded at 2200 MHz. (Strategy C library side: abort within 37–72 µs, adaptive chunks ≤ 10 ms; the worker process is not written yet.)
 
 ### M6
 
@@ -130,9 +131,9 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 
 ### M10
 
-- [ ] gemm_v1 (persistent 48 CTAs, TMA for B with an mbarrier ring, L2 band raster, per-tile epoch check, double-buffered A') passes the full M5 bit-exact suite.
-- [ ] Sweep of BK=128x2, BK=64x4 and 128x128 at 2 CTAs/SM recorded; winner chosen; cancel latency under 1 ms.
-- [ ] Kernel-only throughput reaches at least 85% of the measured IMMA peak at 2200 MHz, or the reason is documented; credited TH/s and GPU W published (goal: at least 76 TH/s at 85 W or less).
+- [~] gemm_v1 (persistent 48 CTAs, TMA for B with an mbarrier ring, L2 band raster, per-tile epoch check, double-buffered A') passes the full M5 bit-exact suite. (Strategy C has everything but the double-buffered A' and passes the suite.)
+- [~] Sweep of BK=128x2, BK=64x4 and 128x128 at 2 CTAs/SM recorded; winner chosen; cancel latency under 1 ms. (Strategy C: 3 vs 4 stages, band 12/16/24/32, L2 prefetch and eviction hints, pitch padding recorded in crates/spm-gpu/README.md; cancel latency 37–72 µs.)
+- [~] Kernel-only throughput reaches at least 85% of the measured IMMA peak at 2200 MHz, or the reason is documented; credited TH/s and GPU W published (goal: at least 76 TH/s at 85 W or less). (Strategy C, clock not locked, vLLM resident: 84.8 T-MAC/s kernel-only, 80.1 end-to-end at 2273 MHz and 84 W board = 88.3 % of 96.0, 84.6 % of the MB1 peak at that clock; still to be repeated at a locked 2200 MHz.)
 
 ### M11
 - [ ] After the 24 h soak passes at 2200 MHz, evaluate a 2300 and a 2400 MHz step with soak-log evidence (worth +5–10 % PRL; see docs/en/DUAL-MINING.md). CPU dual mining stays disabled by design (X925 load reaches 84–87 °C in a minute).

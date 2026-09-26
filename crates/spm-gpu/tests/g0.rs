@@ -7,8 +7,8 @@
 use std::time::{Duration, Instant};
 
 use spm_cpuref::{
-    build_plain_proof, first_mismatch, tiles_digest, verify_v3, IncompleteBlockHeader, Oracle,
-    Problem, TileResult, U256,
+    build_plain_proof, first_mismatch, noise_factors, tiles_digest, verify_v3,
+    IncompleteBlockHeader, NoiseFactors, Oracle, Problem, TileResult, U256,
 };
 use spm_gpu::{Buffer, ChunkStatus, Job, JobConfig, Operands, TileRecord};
 
@@ -386,6 +386,8 @@ fn g0_forced_hits_verify() {
             assert_eq!(t.digest, h.digest);
             let proof = build_plain_proof(p, t).unwrap();
             verify_v3(&hdr, &proof, Some(EASY_NBITS)).expect("hit verifies");
+            spm_pow::check_rank_penalty(&p.config, &h.digest, EASY_NBITS)
+                .expect("hit passes the pool-side rank-penalized bound");
             verified += 1;
         }
         // 3. A tampered proof of a GPU hit fails.
@@ -397,9 +399,114 @@ fn g0_forced_hits_verify() {
         let mut bad = build_plain_proof(p, t).unwrap();
         bad.a.proof.leaf_data[0][3] ^= 1;
         assert!(verify_v3(&hdr, &bad, Some(EASY_NBITS)).is_err());
+        let mut bad = build_plain_proof(p, t).unwrap();
+        bad.bt.row_indices.iter_mut().for_each(|r| *r += 2);
+        assert!(verify_v3(&hdr, &bad, Some(EASY_NBITS)).is_err());
     }
     eprintln!("forced hits: {verified} GPU PlainProofs verified");
     assert!(verified >= 100, "only {verified} proofs verified");
+}
+
+/// Noise stage: the GPU's uniform factors (A_L, B_Rᵀ) and permutation pairs (A_R, B_L) equal the
+/// official zk-pow generators (`spm_cpuref::noise_factors`) for 1000 A seeds and 64 B seeds; E_A,
+/// E_Bᵀ, A', B'ᵀ and the generated A, Bᵀ equal the oracle's for the problem's own commitment.
+#[test]
+fn g0_noise_matches_the_official_generators() {
+    if !gpu_enabled() {
+        return;
+    }
+    let (m, n, k) = (128usize, 64usize, 4096usize);
+    let p = Problem::generate(m, n, k, header(EASY_NBITS), 99).unwrap();
+    let oracle = Oracle::new(&p).unwrap();
+    let base = *oracle.commitment();
+    let seed_of = |i: u64, salt: u8| -> [u8; 32] {
+        let mut s = [0u8; 32];
+        for (j, b) in s.iter_mut().enumerate() {
+            *b = (i
+                .wrapping_mul(0x9e37_79b9_7f4a_7c15)
+                .rotate_left(7 * j as u32) as u8)
+                ^ salt
+                ^ j as u8;
+        }
+        s
+    };
+    let factors = |a: &[u8; 32], b: &[u8; 32]| -> NoiseFactors {
+        let mut c = base;
+        c.a_noise_seed = *a;
+        c.b_noise_seed = *b;
+        noise_factors(&p, &c).unwrap()
+    };
+    let bytes = |v: &[i8]| -> Vec<u8> { v.iter().map(|&x| x as u8).collect() };
+    let pair_bytes =
+        |v: &[[u32; 2]]| -> Vec<u8> { v.iter().flat_map(|&[p, q]| [p as u8, q as u8]).collect() };
+    let a_seeds: Vec<[u8; 32]> = (0..1000).map(|i| seed_of(i, 0xa5)).collect();
+    let b_seeds: Vec<[u8; 32]> = (0..64).map(|i| seed_of(i, 0x5a)).collect();
+    let a_expect: Vec<NoiseFactors> = a_seeds.iter().map(|a| factors(a, &b_seeds[0])).collect();
+    let b_expect: Vec<NoiseFactors> = b_seeds.iter().map(|b| factors(&a_seeds[0], b)).collect();
+    let noise = oracle.noise().unwrap();
+
+    let host = Operands::Host { a: &p.a, bt: &p.bt };
+    let (m32, n32, k32) = (m as u32, n as u32, k as u32);
+    let mut job = Job::new(&JobConfig::new(m32, n32, k32, host, b_seeds[0])).unwrap();
+    for (i, (a, e)) in a_seeds.iter().zip(&a_expect).enumerate() {
+        job.set_attempt(a, &[0u8; 32]).unwrap();
+        assert_eq!(
+            job.read_buffer(Buffer::AFactor).unwrap(),
+            bytes(&e.a_l),
+            "A_L, seed {i}"
+        );
+        assert_eq!(
+            job.read_buffer(Buffer::APairs).unwrap(),
+            pair_bytes(&e.a_r),
+            "A_R, seed {i}"
+        );
+    }
+    for (i, (b, e)) in b_seeds.iter().zip(&b_expect).enumerate() {
+        let mut job = Job::new(&JobConfig::new(m32, n32, k32, host, *b)).unwrap();
+        assert_eq!(
+            job.read_buffer(Buffer::BtFactor).unwrap(),
+            bytes(&e.b_rt),
+            "B_Rᵀ, seed {i}"
+        );
+        assert_eq!(
+            job.read_buffer(Buffer::BPairs).unwrap(),
+            pair_bytes(&e.b_l),
+            "B_L, seed {i}"
+        );
+    }
+    let generated = Operands::Generated { seed: 99 };
+    let mut job = Job::new(&JobConfig::new(m32, n32, k32, generated, base.b_noise_seed)).unwrap();
+    job.set_attempt(&base.a_noise_seed, &[0u8; 32]).unwrap();
+    assert_eq!(
+        job.read_buffer(Buffer::ABase).unwrap(),
+        bytes(&p.a),
+        "A = fill_int7"
+    );
+    assert_eq!(
+        job.read_buffer(Buffer::BtBase).unwrap(),
+        bytes(&p.bt),
+        "Bᵀ = fill_int7"
+    );
+    assert_eq!(
+        job.read_buffer(Buffer::ANoise).unwrap(),
+        bytes(&noise.e_a),
+        "E_A"
+    );
+    assert_eq!(
+        job.read_buffer(Buffer::BtNoise).unwrap(),
+        bytes(&noise.e_bt),
+        "E_Bᵀ"
+    );
+    assert_eq!(
+        job.read_buffer(Buffer::ANoised).unwrap(),
+        bytes(oracle.noised_a()),
+        "A'"
+    );
+    assert_eq!(
+        job.read_buffer(Buffer::BtNoised).unwrap(),
+        bytes(oracle.noised_bt()),
+        "B'ᵀ"
+    );
 }
 
 /// The abort flag stops a running chunk within one CTA tile (< 1 ms), and chunks refuse to start
