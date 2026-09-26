@@ -2148,6 +2148,7 @@ impl Daemon {
             paused: self.user_paused || self.hw_fault || (self.user_running && hold.is_some()),
             pause_reason,
             hashrate_tmacs: self.credit.rate(std::time::Instant::now()) / 1e12,
+            hashrate_tmacs_60s: self.credit.rate_60s(std::time::Instant::now()) / 1e12,
             credited_macs_total: self.credit.total(),
             shares: self.counts,
             uptime_s: self.started.elapsed().as_secs(),

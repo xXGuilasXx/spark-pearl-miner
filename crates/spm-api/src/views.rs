@@ -25,8 +25,11 @@ pub struct StatusView {
     pub running: bool,
     pub paused: bool,
     pub pause_reason: Option<String>,
-    /// Credited MAC/s over the last 10 s, in tera (T-MAC/s ≈ TH/s in pool units).
+    /// Credited MAC/s over the last 10 s, in tera (T-MAC/s ≈ TH/s in pool units). Quantized to whole
+    /// attempts (one attempt ≈ 7.04e13 MACs in the production shape), so it moves in ±7 steps.
     pub hashrate_tmacs: f64,
+    /// Credited MAC/s over the last 60 s, in tera: the figure to read as the mining rate.
+    pub hashrate_tmacs_60s: f64,
     /// Credited MACs since the daemon started (user + dev).
     pub credited_macs_total: f64,
     pub shares: ShareCounts,

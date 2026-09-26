@@ -110,6 +110,9 @@ pub struct Credit {
 }
 
 pub const RATE_WINDOW: Duration = Duration::from_secs(10);
+/// One attempt credits m·n·k MACs (7.04e13 in the production shape, about 1.4 s), so a 10 s window is
+/// quantized to whole attempts (±7 T-MAC/s); the 60 s window is what to read as "the rate".
+pub const RATE_WINDOW_LONG: Duration = Duration::from_secs(60);
 
 impl Credit {
     pub fn add(&mut self, target: Target, macs: u64, now: Instant) {
@@ -125,16 +128,25 @@ impl Credit {
     }
 
     fn trim(&mut self, now: Instant) {
-        while self.window.front().is_some_and(|(t, _)| now.duration_since(*t) > RATE_WINDOW) {
+        while self.window.front().is_some_and(|(t, _)| now.duration_since(*t) > RATE_WINDOW_LONG) {
             self.window.pop_front();
         }
     }
 
-    /// Credited MAC/s over the last 10 s.
+    /// Credited MAC/s over the last 10 s (quantized to whole attempts).
     pub fn rate(&mut self, now: Instant) -> f64 {
+        self.rate_over(now, RATE_WINDOW)
+    }
+
+    /// Credited MAC/s over the last 60 s.
+    pub fn rate_60s(&mut self, now: Instant) -> f64 {
+        self.rate_over(now, RATE_WINDOW_LONG)
+    }
+
+    fn rate_over(&mut self, now: Instant, window: Duration) -> f64 {
         self.trim(now);
-        let total: u64 = self.window.iter().map(|(_, m)| m).sum();
-        total as f64 / RATE_WINDOW.as_secs_f64()
+        let total: u64 = self.window.iter().filter(|(t, _)| now.duration_since(*t) <= window).map(|(_, m)| m).sum();
+        total as f64 / window.as_secs_f64()
     }
 
     pub fn total(&self) -> f64 {
@@ -193,5 +205,8 @@ mod tests {
         assert_eq!(c.rate(t0), 200.0);
         assert_eq!(c.total(), 2000.0);
         assert_eq!(c.rate(t0 + Duration::from_secs(11)), 0.0);
+        // The 60 s window still sees the credit after the 10 s one has forgotten it.
+        assert!((c.rate_60s(t0 + Duration::from_secs(11)) - 2000.0 / 60.0).abs() < 1e-9);
+        assert_eq!(c.rate_60s(t0 + Duration::from_secs(61)), 0.0);
     }
 }

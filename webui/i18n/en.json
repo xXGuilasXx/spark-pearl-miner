@@ -88,7 +88,7 @@
   "dash.pool": "Active pool",
   "dash.no_pool": "no pool is mining",
   "dash.hashrate": "Hashrate",
-  "dash.hashrate.sub": "credited, last 10 s",
+  "dash.hashrate.sub": "credited, last 60 s",
   "dash.hashrate.sim": "simulated worker (CPU)",
   "dash.shares": "Shares accepted / rejected",
   "dash.shares.sub": "{stale} stale · {discarded} discarded",

@@ -276,7 +276,11 @@ async fn status(json: bool) -> ExitCode {
     let s = &st["status"];
     println!("state        {} ({})", s["state"].as_str().unwrap_or("?"), s["manager"].as_str().unwrap_or(""));
     println!("target       {}", s["mining_target"].as_str().unwrap_or("?"));
-    println!("hashrate     {:.3} T-MAC/s (credited, 10 s)", s["hashrate_tmacs"].as_f64().unwrap_or(0.0));
+    println!(
+        "hashrate     {:.1} T-MAC/s (credited, 60 s) | {:.1} (10 s, whole attempts)",
+        s["hashrate_tmacs_60s"].as_f64().unwrap_or(0.0),
+        s["hashrate_tmacs"].as_f64().unwrap_or(0.0)
+    );
     let sh = &s["shares"];
     println!(
         "shares       {} accepted, {} rejected, {} stale, {} discarded (dev {}/{})",

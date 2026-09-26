@@ -88,7 +88,7 @@
   "dash.pool": "Pool ativa",
   "dash.no_pool": "nenhuma pool minerando",
   "dash.hashrate": "Hashrate",
-  "dash.hashrate.sub": "creditado, últimos 10 s",
+  "dash.hashrate.sub": "creditado, últimos 60 s",
   "dash.hashrate.sim": "worker simulado (CPU)",
   "dash.shares": "Shares aceitas / rejeitadas",
   "dash.shares.sub": "{stale} obsoletas · {discarded} descartadas",
