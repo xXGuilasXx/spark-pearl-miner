@@ -40,17 +40,17 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 - [ ] [M0] **Fee wallet is an exchange deposit address (SafeTrade) — user confirmed 2026-09-26.** Before v0.1.0: (1) create a self-custody Pearl wallet (official desktop wallet or oystercli) for `DEV_WALLET`; (2) until then keep the exchange address but document that exchanges may have a minimum deposit and can change/block addresses; (3) set the HeroMiners payout threshold for the user's own mining ≥ SafeTrade's PRL minimum deposit so 1 PRL payouts are not lost; (4) G4 (signed ownership challenge) is only possible with a self-custody wallet.
 
 - [ ] docs/decisions.md records the user's answers: rustup install; optional CPPminer bring-up; LuckyPool/Kryptex authorize-only probes; GPU windows (warning before each vLLM stop plus the 2200 MHz lock); gh done by the user; repo public from day 1 or at v0.1.0; commit identity.
-- [ ] rustup installed at user level with the rustup-init sha256 verified; cargo --version reports 1.88 or newer; clippy and rustfmt present.
+- [x] rustup installed at user level with the rustup-init sha256 verified; cargo --version reports 1.88 or newer; clippy and rustfmt present.
 - [ ] User installed gh and ran gh auth login; gh auth status shows xxguilasxx.
-- [ ] Repo created with git init -b main at /home/xxguilasxx/Desktop/Miner PRL/spark-pearl-miner. It contains LICENSE (Apache-2.0), NOTICE (ISC Pearl Research Labs + Decred, BSD-3 CUTLASS), THIRD_PARTY_NOTICES.md, CLAUDE.md (Opus 5.5 subagents, EN+PT-BR docs, fee only in spm-fee/src/lib.rs, never mine in CI), TODO.md and TODO.pt-BR.md.
-- [ ] TODO.md carries the P0 request verbatim: GUI do minerador para configurar o endereço da carteira e até 3 endereços de pool e portas; se o usuário colocou mais de uma e a primeira falhar, ele vai automaticamente para a segunda.
-- [ ] zk-pow and pearl-blake3 pinned as git deps at rev 3fe226761a139a9652b8f28a6464a4bbc25986c8; cargo build --release -p spm-pow succeeds on aarch64; Cargo.lock committed locally.
-- [ ] third_party/cutlass submodule pinned to a v4.x tag; the probe built with nvcc -gencode arch=compute_121,code=sm_121 shows IMMA.16832.S8.S8 in cuobjdump -sass.
+- [x] Repo created with git init -b main at /home/xxguilasxx/Desktop/Miner PRL/spark-pearl-miner. It contains LICENSE (Apache-2.0), NOTICE (ISC Pearl Research Labs + Decred, BSD-3 CUTLASS), THIRD_PARTY_NOTICES.md, CLAUDE.md (Opus 5.5 subagents, EN+PT-BR docs, fee only in spm-fee/src/lib.rs, never mine in CI), TODO.md and TODO.pt-BR.md.
+- [x] TODO.md carries the P0 request verbatim: GUI do minerador para configurar o endereço da carteira e até 3 endereços de pool e portas; se o usuário colocou mais de uma e a primeira falhar, ele vai automaticamente para a segunda.
+- [x] zk-pow and pearl-blake3 pinned as git deps at rev 3fe226761a139a9652b8f28a6464a4bbc25986c8; cargo build --release -p spm-pow succeeds on aarch64; Cargo.lock committed locally.
+- [x] third_party/cutlass submodule pinned to a v4.x tag; the probe built with nvcc -gencode arch=compute_121,code=sm_121 shows IMMA.16832.S8.S8 in cuobjdump -sass.
 
 ### M1
 
-- [ ] Pattern bytes asserted: rows [0,8,...,56] give 07 07 00 00 00 00; cols [0,1,8,9,...,56,57] give 00 01 03 07 00 00. The 52-byte MiningConfiguration is asserted too.
-- [ ] Partition test passes: tiles at t_rows = 64a+g (g<8) and t_cols = 64b+2t (t<4) cover a 512x512 output exactly once, matching offset_is_valid.
+- [x] Pattern bytes asserted: rows [0,8,...,56] give 07 07 00 00 00 00; cols [0,1,8,9,...,56,57] give 00 01 03 07 00 00. The 52-byte MiningConfiguration is asserted too.
+- [x] Partition test passes: tiles at t_rows = 64a+g (g<8) and t_cols = 64b+2t (t<4) cover a 512x512 output exactly once, matching offset_is_valid.
 - [ ] Bound math passes: diff 2,097,152 gives target 0x7fff8<<184, nbits 0x1a07fff8 and bound = target*2^19. expand(compact(t)) <= t holds under proptest, and overflow returns None.
 - [ ] bind_root_a/b and the commitment chain reproduce the zk-pow seed.rs pinned vectors.
 - [ ] Layer builder, multileaf sibling walker and attempt-path overlay match pearl_blake3 MerkleTree and get_multileaf_proof on 1000 random cases, and the root equals blake3::keyed_hash(job_key, data).
@@ -59,9 +59,9 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 
 ### M2
 
-- [ ] tools/spm-probe.py: sends one authorize per connection, allows at most 5 connections per pool per hour, listens 10 min, never submits, writes redacted JSONL.
-- [ ] tools/spm-proxy.py: logging TCP/TLS forwarder recording both directions with timestamps; the wallet is replaced with a placeholder and proofs are logged as sha256 plus length.
-- [ ] HeroMiners BR certificate chain, issuer and SAN recorded with openssl s_client, using no credentials.
+- [x] tools/spm-probe.py: sends one authorize per connection, allows at most 5 connections per pool per hour, listens 10 min, never submits, writes redacted JSONL.
+- [x] tools/spm-proxy.py: logging TCP/TLS forwarder recording both directions with timestamps; the wallet is replaced with a placeholder and proofs are logged as sha256 plus length.
+- [x] HeroMiners BR certificate chain, issuer and SAN recorded with openssl s_client, using no credentials.
 - [ ] HeroMiners BR authorize-only capture runs H1 object, then H1b wallet.worker, then H2 array, then H3 CryptoNote login, stopping at the first result:true. It records the notify fields, target endianness, cert_version presence, diff, job cadence and idle behaviour.
 - [ ] LuckyPool BR and Kryptex 7048 authorize-only captures done after the user's approval.
 - [ ] Redacted fixtures and the docs/protocol draft committed; notify.target == floor(0xFFFF*2^208/diff) confirmed per pool.
