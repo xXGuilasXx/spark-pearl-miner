@@ -122,6 +122,7 @@ sim_interval_ms = 1000
 bind = "127.0.0.1"
 port = 4078
 lan = false
+trust_local_user = true
 
 [gui]
 language = "auto"
@@ -230,6 +231,7 @@ de 2 GiB dele não deixar 20 GiB (e com a pressão de memória acima de 10 %), e
 | `api.bind` | `"127.0.0.1"` | só endereço de loopback |
 | `api.port` | 4078 | 1–65535 (precisa reiniciar) |
 | `api.lan` | `false` | `true` é recusado: acesso pela rede local exige TLS, que esta versão não implementa; use `ssh -L 4078:127.0.0.1:4078` |
+| `api.trust_local_user` | `true` | conexões desta máquina feitas pela mesma conta de usuário não precisam de token (o UID do outro lado é conferido); todo o resto continua exigindo o token. `false` exige o token em todo lugar (precisa reiniciar). Veja [GUI.md](GUI.md#acesso-local-sem-token) |
 | `gui.language` | `"auto"` | `auto`, `en`, `pt-BR` (a escolha no cabeçalho vale para aquele navegador) |
 
 ## Outros arquivos
