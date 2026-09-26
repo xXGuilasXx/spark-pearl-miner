@@ -1,5 +1,6 @@
 # Contributing
 
+- **Merge gate**: run `tools/merge-check.sh` (workspace tests, fee guard, fixture checksums, clippy) and merge only when it prints `MERGE-CHECK: OK`.
 - **Branches**: every change goes on a branch (`feat/<milestone>-<topic>`, `fix/<topic>`, `docs/<topic>`); merge into `main` only when tests pass. `main` must always build and be publishable.
 - **Clean room**: never open, copy or adapt code from `akoya-miner` (no license) or any closed miner binary. Permissively-licensed references (MIT/Apache/ISC/BSD) may be adapted with their notices kept in the file header and in `NOTICE`.
 - **Consensus code is never re-implemented**: `zk-pow` and `pearl-blake3` are consumed as pinned git dependencies. Bumping the pin requires re-running the bit-exact suite.
