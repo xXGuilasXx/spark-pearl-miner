@@ -12,13 +12,19 @@
 
 mod commit;
 mod golden;
+mod merkle;
 mod noise;
 mod oracle;
 mod problem;
 mod proof;
+mod rows;
 
 pub use commit::{commit, job_key, matrix_bytes, matrix_root, seed_chain, Commitment, Hash256};
 pub use golden::{Golden, GoldenTile, GOLDEN_FORMAT};
+pub use merkle::{
+    subtree_cv, ChunkPatch, ChunkSource, MatrixTree, SliceSource, CHUNK_BYTES,
+    DEFAULT_SEGMENT_LEVEL,
+};
 pub use noise::{
     add_noise, noise_factors, Noise, NoiseFactors, NOISE_ABS_MAX, SEED_LABEL_A, SEED_LABEL_B,
     UNIFORM_MAX, UNIFORM_MIN,
@@ -30,6 +36,7 @@ pub use problem::{
     fill_int7, Problem, SplitMix64, DOMAIN_A, DOMAIN_BT, GEN_MAX, GEN_MIN, SIGNAL_MAX, SIGNAL_MIN,
 };
 pub use proof::{build_plain_proof, matrix_proof, verify_v3};
+pub use rows::{fill_int7_at, fill_int7_bytes_at, tile_from_rows, NoiseSide};
 
 pub use spm_pow::{IncompleteBlockHeader, MiningConfiguration, PlainProof, U256};
 
