@@ -15,7 +15,7 @@
 
 **Unit:** in Pearl, 1 "hash" = 1 int7×int7 multiply-accumulate of the noised GEMM, normalized to noise rank 128. `1 TH/s = 10¹² MAC/s = 2 INT8 TOPS` of useful GEMM. Pools credit `diff × 2³²` MACs per accepted share.
 
-**GB10 expectation (unmeasured on this unit yet):** the INT8 tensor peak measured by the community is ~215 TOPS, so the hard ceiling is ~107 TH/s. Best sm_120-class kernels reach 85–94 % of peak. Inside a *safe* 75–85 W envelope (see the power-off risk) we plan on **65–85 TH/s credited**. A closed-source DGX Spark miner claims ~76 TH/s at ~99 W.
+**GB10 expectation (unmeasured on this unit yet):** the INT8 tensor peak **measured on this unit** (MB1, `docs/en/BENCHMARKS.md`) is 217 TOPS at stock and 192 TOPS at the 2200 MHz cap, so the hard ceiling is ~108 TH/s (~96 TH/s capped). Best sm_120-class kernels reach 85–94 % of peak. Inside a *safe* 75–85 W envelope (see the power-off risk) we plan on **65–85 TH/s credited**. A closed-source DGX Spark miner claims ~76 TH/s at ~99 W.
 
 | Hashrate | PRL/day gross | US$/day @ 1.30 | US$/day @ 0.70 | US$/day @ 0.30 |
 |---|---|---|---|---|

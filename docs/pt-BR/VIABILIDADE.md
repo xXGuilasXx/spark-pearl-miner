@@ -15,7 +15,7 @@
 
 **Unidade:** no Pearl, 1 "hash" = 1 multiplica-acumula int7×int7 do GEMM com ruído, normalizado ao rank 128. `1 TH/s = 10¹² MAC/s = 2 TOPS INT8` de GEMM útil. As pools creditam `diff × 2³²` MACs por share aceita.
 
-**Expectativa para o GB10 (ainda não medida nesta unidade):** o pico INT8 medido pela comunidade é ~215 TOPS, então o teto é ~107 TH/s. Os melhores kernels da classe sm_120 chegam a 85–94 % do pico. Dentro de um envelope *seguro* de 75–85 W (ver o risco de desligamento) planejamos **65–85 TH/s creditados**. Um minerador fechado para DGX Spark declara ~76 TH/s a ~99 W.
+**Expectativa para o GB10 (ainda não medida nesta unidade):** o pico INT8 **medido nesta unidade** (MB1, `docs/pt-BR/BENCHMARKS.md`) é 217 TOPS em stock e 192 TOPS no cap de 2200 MHz, então o teto é ~108 TH/s (~96 TH/s com cap). Os melhores kernels da classe sm_120 chegam a 85–94 % do pico. Dentro de um envelope *seguro* de 75–85 W (ver o risco de desligamento) planejamos **65–85 TH/s creditados**. Um minerador fechado para DGX Spark declara ~76 TH/s a ~99 W.
 
 | Hashrate | PRL/dia bruto | US$/dia @ 1,30 | US$/dia @ 0,70 | US$/dia @ 0,30 |
 |---|---|---|---|---|

@@ -41,7 +41,7 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 
 - [ ] docs/decisions.md records the user's answers: rustup install; optional CPPminer bring-up; LuckyPool/Kryptex authorize-only probes; GPU windows (warning before each vLLM stop plus the 2200 MHz lock); gh done by the user; repo public from day 1 or at v0.1.0; commit identity.
 - [x] rustup installed at user level with the rustup-init sha256 verified; cargo --version reports 1.88 or newer; clippy and rustfmt present.
-- [ ] User installed gh and ran gh auth login; gh auth status shows xxguilasxx.
+- [x] User installed gh and ran gh auth login; gh auth status shows xXGuilasXx
 - [x] Repo created with git init -b main at /home/xxguilasxx/Desktop/Miner PRL/spark-pearl-miner. It contains LICENSE (Apache-2.0), NOTICE (ISC Pearl Research Labs + Decred, BSD-3 CUTLASS), THIRD_PARTY_NOTICES.md, CLAUDE.md (Opus 5.5 subagents, EN+PT-BR docs, fee only in spm-fee/src/lib.rs, never mine in CI), TODO.md and TODO.pt-BR.md.
 - [x] TODO.md carries the P0 request verbatim: GUI do minerador para configurar o endereço da carteira e até 3 endereços de pool e portas; se o usuário colocou mais de uma e a primeira falhar, ele vai automaticamente para a segunda.
 - [x] zk-pow and pearl-blake3 pinned as git deps at rev 3fe226761a139a9652b8f28a6464a4bbc25986c8; cargo build --release -p spm-pow succeeds on aarch64; Cargo.lock committed locally.
@@ -82,8 +82,8 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 
 ### M5a
 
-- [ ] User warned; vLLM stopped via spark-modo; the user ran sudo nvidia-smi -lgc 300,2200; environment snapshot saved.
-- [ ] IMMA register-only peak measured at 1800, 2000 and 2200 MHz (MAC/clk/SM recorded); QMMA FP8 f32 rate measured.
+- [x] User stopped spark-vllm.service and ran bench/mb1.sh with sudo clock locks; vLLM restored afterwards
+- [x] IMMA register-only peak measured at stock/2200/2000/1800 MHz: 108.6/96.0/85.0/75.7 T-MAC/s (919 MAC/clk/SM); QMMA FP8 rate equal to INT8 (107.0 T-MAC/s stock)
 - [ ] ldmatrix, cp.async vs TMA fill, L2 (12 MiB band) and DRAM bandwidth measured; vLLM restored; docs/BENCHMARKS.md updated.
 
 ### M5
