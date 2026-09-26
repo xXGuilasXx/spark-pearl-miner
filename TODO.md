@@ -74,11 +74,11 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 
 ### M4
 
-- [ ] spm-proto: NDJSON codec (4 MiB read cap, 2 MiB write guard); rustls TLS on/off/auto with a per-host cache, SNI and system roots.
-- [ ] object and kryptex (v1 and v2 gzip) dialects implemented, with cryptonote and positional stubs; replaying the fixtures reproduces the outgoing frames byte for byte.
-- [ ] plain, zstd and gzip encoders pass round-trip tests; proof size is logged.
-- [ ] spm-work: turns a notify into a WorkUnit with target/diff/nbits/bound and the block flag; cert_version 4 or above gives 'update required'.
-- [ ] spm-ipc frames and spm-mockpool fault injection work; the CI end-to-end test (cpuref share against mockpool, verified with zk-pow) is green.
+- [x] spm-proto: NDJSON codec (4 MiB read cap, 2 MiB write guard, CRLF tolerant); rustls TLS off/on/auto/pinned with a per-endpoint cache and SNI. Roots come from webpki-roots (Mozilla bundle), not the OS store. Auto falls back to plain only on a TLS protocol error (garbage record, EOF or silence during the handshake), never on a certificate error. Pinned checks SHA-256(SPKI) of the end-entity key (LuckyPool `d0ehDQxa…/mk=`) and still verifies handshake signatures. Tested against local TLS/plain servers (`crates/spm-proto/tests/tls.rs`).
+- [~] object, kryptex (v1) and kryptex-v2 (gzip) dialects implemented, with an optional `"jsonrpc":"2.0"` per pool (LuckyPool needs it); replaying the fixtures reproduces the outgoing handshake frames byte for byte (modulo the probe's `json.dumps` separators). Open: cryptonote and positional stubs (no pool needs them yet); kryptex-v2 is from open-source clients, not confirmed live.
+- [x] plain, zstd (level 3) and gzip encoders pass round-trip tests (bounded decompression); proof and wire sizes are logged on every submit; the proof field (`plain_proof` / `plain_proof_zst`) is learned per pool (switch after 3 consecutive format rejects).
+- [x] spm-work: turns a notify into a WorkUnit with target/diff/nbits_share/share bound, block bound and hash classification (miss/share/block), job_key = blake3(header76 ‖ config52), fill_seed = blake3(job_key ‖ "spm/fill/v1"); cert_version 4 or above, any other value, or a missing field gives 'update required'.
+- [x] spm-ipc frames (versioned, length-prefixed bincode, 4 MiB cap) and spm-mockpool fault injection (refuse, blackhole, auth reject, no job, reject storm, mute submits, stall, EOF mid-submit, oversized line) work; the CI end-to-end test is green in under 1 s (release): the official reference miner (`try_mine_one`, m = n = 256, k = 2048, our 8x16 pattern) produces the share, the daemon-side path verifies it locally, submits it through `PoolSession`, and the mock verifies it with zk-pow and accepts it (object/plain, kryptex/zstd, kryptex-v2/gzip); a stale job's proof is refused before it reaches the wire. The share comes from the reference miner because spm-cpuref (M1) is not written yet; TLS failures are covered in spm-proto instead of the (plain-TCP) mock.
 
 ### M5a
 

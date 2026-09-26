@@ -1,6 +1,14 @@
 [workspace]
 resolver = "2"
-members = ["crates/spm-pow", "crates/spm-proto", "crates/spm-fee", "crates/spm-gpu"]
+members = [
+    "crates/spm-pow",
+    "crates/spm-proto",
+    "crates/spm-fee",
+    "crates/spm-gpu",
+    "crates/spm-work",
+    "crates/spm-ipc",
+    "crates/spm-mockpool",
+]
 
 [workspace.package]
 version = "0.0.1"
@@ -23,6 +31,23 @@ serde_json = "1"
 hex = "0.4"
 base64 = "0.22"
 bech32 = "0.11"
+# Host core (M4): async I/O, TLS with the ring provider only (no cmake/aws-lc build), proof encoders.
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-pki-types = { version = "1", features = ["std"] }
+webpki-roots = "1"
+zstd = "0.13"
+flate2 = "1"
+sha2 = "0.10"
+tracing = "0.1"
+rand = "0.9"
+rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
+# Workspace-internal crates.
+spm-pow = { path = "crates/spm-pow" }
+spm-proto = { path = "crates/spm-proto" }
+spm-work = { path = "crates/spm-work" }
+spm-ipc = { path = "crates/spm-ipc" }
 
 [profile.release]
 codegen-units = 1

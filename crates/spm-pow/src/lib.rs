@@ -68,7 +68,7 @@ pub use zk_pow::api::sanity_checks::{check_rank_penalty, extract_difficulty_boun
 /// Encode a 256-bit target as compact nbits (Bitcoin `BigToCompact`).
 pub fn compact_from_target(target: U256) -> u32 {
     if target.is_zero() { return 0; }
-    let mut size = (target.bits() + 7) / 8; // bytes needed
+    let mut size = target.bits().div_ceil(8); // bytes needed
     let mut mantissa: u32 = if size <= 3 {
         (target.low_u64() << (8 * (3 - size))) as u32
     } else {

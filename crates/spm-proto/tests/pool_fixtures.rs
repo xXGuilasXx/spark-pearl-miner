@@ -4,14 +4,14 @@ use primitive_types::U256;
 use serde_json::Value;
 use spm_proto::*;
 
-struct Capture { name: &'static str, dialect: Dialect, text: &'static str, expect_diff: Option<u64> }
+struct Capture { name: &'static str, dialect: Dialect, text: &'static str, expect_diff: Option<u64>, jsonrpc: bool }
 
 const CAPTURES: &[Capture] = &[
-    Capture { name: "herominers-br", dialect: Dialect::Object, expect_diff: Some(2_097_152),
+    Capture { name: "herominers-br", dialect: Dialect::Object, expect_diff: Some(2_097_152), jsonrpc: false,
               text: include_str!("../../../tests/fixtures/capture-herominers-br-authorize.jsonl") },
-    Capture { name: "luckypool-br", dialect: Dialect::Object, expect_diff: None, // vardiff
+    Capture { name: "luckypool-br", dialect: Dialect::Object, expect_diff: None, jsonrpc: true, // vardiff
               text: include_str!("../../../tests/fixtures/capture-luckypool-br-authorize.jsonl") },
-    Capture { name: "kryptex-8048", dialect: Dialect::Kryptex, expect_diff: Some(2_097_152),
+    Capture { name: "kryptex-8048", dialect: Dialect::Kryptex, expect_diff: Some(2_097_152), jsonrpc: true,
               text: include_str!("../../../tests/fixtures/capture-kryptex-8048-authorize.jsonl") },
 ];
 
@@ -36,7 +36,7 @@ fn every_capture_replays() {
                 assert_eq!(last_ours["params"]["wallet"], last_sent["params"]["wallet"], "{}: wallet", c.name);
                 assert_eq!(last_ours["params"]["worker"], last_sent["params"]["worker"], "{}: worker", c.name);
             }
-            Dialect::Kryptex => assert_eq!(last_ours["params"][0], last_sent["params"][0], "{}: login", c.name),
+            Dialect::Kryptex | Dialect::KryptexV2 => assert_eq!(last_ours["params"][0], last_sent["params"][0], "{}: login", c.name),
         }
         // The authorize was accepted.
         let auth_id = last_sent["id"].as_u64().unwrap();
@@ -54,12 +54,64 @@ fn every_capture_replays() {
                 // HeroMiners/LuckyPool: Bitcoin pdiff, target = floor(0xFFFF * 2^208 / diff).
                 Dialect::Object => assert_eq!(job.target, Job::target_for_diff(diff), "{}: pdiff target", c.name),
                 // Kryptex: target = 2^224 / diff - 1 (ratio 65535/65536 vs pdiff). Always use notify.target as sent.
-                Dialect::Kryptex => assert_eq!(job.target, (U256::one() << 224) / U256::from(diff) - U256::one(), "{}: 2^224/diff-1 target", c.name),
+                Dialect::Kryptex | Dialect::KryptexV2 => assert_eq!(job.target, (U256::one() << 224) / U256::from(diff) - U256::one(), "{}: 2^224/diff-1 target", c.name),
             }
             assert_eq!(job.header[0..4], 0x2000_0000u32.to_le_bytes(), "{}: header version", c.name);
             jobs += 1;
         }
         assert!(jobs >= 1, "{}: at least one job", c.name);
         eprintln!("{}: {} jobs replayed", c.name, jobs);
+    }
+}
+
+/// Python's `json.dumps` default separators (", " and ": "), inserted outside strings. The probe
+/// sent exactly `json.dumps(msg)`, so this turns our compact frame into the captured wire bytes.
+fn python_separators(compact: &str) -> String {
+    let mut out = String::with_capacity(compact.len() + 32);
+    let (mut in_str, mut esc) = (false, false);
+    for c in compact.chars() {
+        out.push(c);
+        if in_str {
+            if esc {
+                esc = false;
+            } else if c == '\\' {
+                esc = true;
+            } else if c == '"' {
+                in_str = false;
+            }
+        } else if c == '"' {
+            in_str = true;
+        } else if c == ',' || c == ':' {
+            out.push(' ');
+        }
+    }
+    out
+}
+
+/// The raw `msg` text of a capture line (the probe logged it with the same `json.dumps`).
+fn raw_msg(line: &str) -> &str {
+    let key = "\"msg\": ";
+    let start = line.find(key).expect("msg") + key.len();
+    let end = line.rfind(", \"t\": ").expect("t");
+    &line[start..end]
+}
+
+#[test]
+fn handshake_frames_match_captures_byte_for_byte() {
+    const PROBE_AGENT: &str = "spark-pearl-miner-probe/0.0.1";
+    for c in CAPTURES {
+        let sent: Vec<&str> = c.text.lines().filter(|l| l.contains("\"ev\": \"send\"")).map(raw_msg).collect();
+        let opts = FrameOpts { jsonrpc: c.jsonrpc, agent: PROBE_AGENT };
+        let ours: Vec<String> = authorize_lines(c.dialect, 1, "<WALLET>", "spm-probe", "x", &opts)
+            .unwrap()
+            .iter()
+            .map(|l| python_separators(l))
+            .collect();
+        assert_eq!(ours, sent, "{}: handshake bytes", c.name);
+        // The dialect default matches what the pool accepted, except LuckyPool (object + jsonrpc,
+        // set by its preset).
+        if c.name != "luckypool-br" {
+            assert_eq!(c.dialect.default_jsonrpc(), c.jsonrpc, "{}: default jsonrpc", c.name);
+        }
     }
 }

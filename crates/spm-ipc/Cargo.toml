@@ -1,0 +1,19 @@
+[package]
+name = "spm-ipc"
+description = "Versioned, length-prefixed bincode frames between the daemon and the GPU worker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+spm-work.workspace = true
+serde.workspace = true
+bincode.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+spm-proto.workspace = true
+primitive-types.workspace = true

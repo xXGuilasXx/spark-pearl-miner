@@ -1,6 +1,6 @@
 [package]
 name = "spm-proto"
-description = "Pearl stratum dialects (object/HeroMiners+LuckyPool, kryptex) — message types, NDJSON codec, job parsing"
+description = "Pearl stratum dialects (object/HeroMiners+LuckyPool, kryptex) — message types, NDJSON codec, TLS modes, proof encoders and an observable async pool session"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -15,3 +15,15 @@ serde_json.workspace = true
 hex.workspace = true
 base64.workspace = true
 primitive-types.workspace = true
+tokio.workspace = true
+tokio-rustls.workspace = true
+rustls.workspace = true
+rustls-pki-types.workspace = true
+webpki-roots.workspace = true
+zstd.workspace = true
+flate2.workspace = true
+sha2.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+rcgen.workspace = true
