@@ -8,9 +8,26 @@ repository.workspace = true
 rust-version.workspace = true
 build = "build.rs"
 
+[features]
+# Enables the GPU integration tests (tests/g0.rs) and the bench example. They still only touch the
+# GPU when SPM_GPU_TESTS=1 (tests) or when run explicitly (bench).
+gpu = []
+
 [dependencies]
 anyhow.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+spm-cpuref = { path = "../spm-cpuref" }
+spm-pow.workspace = true
+
 [build-dependencies]
 cc = "1"
+
+[[test]]
+name = "g0"
+required-features = ["gpu"]
+
+[[example]]
+name = "bench"
+required-features = ["gpu"]

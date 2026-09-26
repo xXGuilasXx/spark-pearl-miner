@@ -1,24 +1,16 @@
 //! Safe wrapper over libspm_cuda (see cuda/include/spm_cuda.h). Only the gpu-worker process links this.
-use std::ffi::CStr;
+//!
+//! `unsafe` lives in the private `ffi` module only; every other module forbids it.
+#![deny(unsafe_code)]
 
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct DeviceInfoRaw {
-    pub name: [u8; 64],
-    pub sm_count: i32,
-    pub cc_major: i32,
-    pub cc_minor: i32,
-    pub max_smem_optin_bytes: i32,
-    pub regs_per_sm: i32,
-    pub sm_clock_khz: i32,
-    pub total_mem_bytes: i64,
-}
+#[allow(unsafe_code)]
+mod ffi;
+mod job;
 
-extern "C" {
-    fn spm_cuda_device_info(out: *mut DeviceInfoRaw) -> i32;
-    fn spm_cuda_imma_peak(seconds: f64) -> f64;
-    fn spm_cuda_version() -> *const std::os::raw::c_char;
-}
+pub use job::{
+    job_device_bytes, AbortHandle, AttemptStats, Buffer, Chunk, ChunkStatus, GpuError, Hit, Job,
+    JobConfig, JobInfo, Operands, TileRecord, DEFAULT_MEM_BUDGET, DUMP_RECORD_LEN,
+};
 
 #[derive(Debug, Clone)]
 pub struct DeviceInfo {
@@ -27,36 +19,41 @@ pub struct DeviceInfo {
     pub compute_capability: (u32, u32),
     pub max_smem_optin_bytes: u32,
     pub regs_per_sm: u32,
+    /// `cudaDevAttrClockRate` (the rated clock, not the live one; use NVML for that).
     pub sm_clock_mhz: u32,
     pub total_mem_bytes: u64,
 }
 
 pub fn version() -> String {
-    // SAFETY: the C side returns a pointer to a static NUL-terminated string.
-    unsafe { CStr::from_ptr(spm_cuda_version()) }.to_string_lossy().into_owned()
+    ffi::version()
 }
 
 pub fn device_info() -> anyhow::Result<DeviceInfo> {
-    let mut raw = DeviceInfoRaw { name: [0; 64], sm_count: 0, cc_major: 0, cc_minor: 0, max_smem_optin_bytes: 0, regs_per_sm: 0, sm_clock_khz: 0, total_mem_bytes: 0 };
-    // SAFETY: `raw` is a valid, writable struct of the layout the C side expects.
-    let rc = unsafe { spm_cuda_device_info(&mut raw) };
-    anyhow::ensure!(rc == 0, "cudaGetDeviceProperties failed with CUDA error {rc}");
-    let end = raw.name.iter().position(|&b| b == 0).unwrap_or(raw.name.len());
+    let (rc, raw) = ffi::device_info();
+    anyhow::ensure!(
+        rc == 0,
+        "cudaGetDeviceProperties failed with CUDA error {rc}"
+    );
+    let end = raw
+        .name
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(raw.name.len());
+    let nonneg = |x: i32| u32::try_from(x).unwrap_or(0);
     Ok(DeviceInfo {
         name: String::from_utf8_lossy(&raw.name[..end]).into_owned(),
-        sm_count: raw.sm_count.max(0) as u32,
-        compute_capability: (raw.cc_major.max(0) as u32, raw.cc_minor.max(0) as u32),
-        max_smem_optin_bytes: raw.max_smem_optin_bytes.max(0) as u32,
-        regs_per_sm: raw.regs_per_sm.max(0) as u32,
-        sm_clock_mhz: (raw.sm_clock_khz.max(0) as u32) / 1000,
-        total_mem_bytes: raw.total_mem_bytes.max(0) as u64,
+        sm_count: nonneg(raw.sm_count),
+        compute_capability: (nonneg(raw.cc_major), nonneg(raw.cc_minor)),
+        max_smem_optin_bytes: nonneg(raw.max_smem_optin_bytes),
+        regs_per_sm: nonneg(raw.regs_per_sm),
+        sm_clock_mhz: nonneg(raw.sm_clock_khz) / 1000,
+        total_mem_bytes: u64::try_from(raw.total_mem_bytes).unwrap_or(0),
     })
 }
 
 /// Register-only INT8 tensor-core peak, in T-MAC/s. Runs a kernel on the GPU for ~`seconds`.
 pub fn imma_peak_tmacs(seconds: f64) -> f64 {
-    // SAFETY: plain FFI call with a scalar argument.
-    unsafe { spm_cuda_imma_peak(seconds) }
+    ffi::imma_peak(seconds)
 }
 
 #[cfg(test)]
@@ -70,10 +67,16 @@ mod tests {
     /// resident CUDA process blocks the owner's vLLM orchestration (spark-recurso require_idle_cuda).
     #[test]
     fn device_info_reads_gb10() {
-        if std::env::var("SPM_GPU_TESTS").ok().as_deref() != Some("1") { eprintln!("skipped (set SPM_GPU_TESTS=1)"); return; }
+        if std::env::var("SPM_GPU_TESTS").ok().as_deref() != Some("1") {
+            eprintln!("skipped (set SPM_GPU_TESTS=1)");
+            return;
+        }
         let d = device_info().expect("device info");
         assert!(d.sm_count > 0);
-        assert!(d.max_smem_optin_bytes >= 99 * 1024, "GB10 exposes ~99 KB opt-in smem per block");
+        assert!(
+            d.max_smem_optin_bytes >= 99 * 1024,
+            "GB10 exposes ~99 KB opt-in smem per block"
+        );
         eprintln!("{d:?}");
     }
 }
