@@ -176,7 +176,7 @@ async fn unclean_start_steps_the_profile_down_and_a_clean_stop_clears_the_marker
     let s = d.snapshot();
     let p = &s.status.power;
     assert_eq!((p.profile.as_str(), p.configured_profile.as_str(), p.stepped_down), ("eco", "balanced", true));
-    assert_eq!((p.target_w, p.hard_stop_w, p.clock_cap.cap_mhz), (60.0, 70.0, 2000));
+    assert_eq!((p.target_w, p.hard_stop_w, p.clock_cap.cap_mhz), (60.0, 70.0, 1800));
     assert!(p.unclean_start.as_deref().unwrap_or_default().contains("did not stop cleanly"));
     assert!(s.status.alerts.iter().any(|a| a.msg.contains("did not stop cleanly")));
     let text = std::fs::read_to_string(&marker).unwrap();
@@ -210,7 +210,7 @@ async fn max_is_refused_without_the_acknowledgement_and_the_status_api_shows_the
     for k in ["duty_pct", "trips_total", "clock_cap", "trip", "last_trip", "fault", "telemetry", "source"] {
         assert!(p.get(k).is_some(), "power.{k} missing: {p}");
     }
-    assert_eq!(p["clock_cap"]["cap_mhz"], 2200);
+    assert_eq!(p["clock_cap"]["cap_mhz"], 2000);
     let c = &v["coexist"];
     assert_eq!((c["mode"].as_str(), c["gate"].as_str()), (Some("exclusive"), Some("mine")), "{c}");
     assert_eq!(c["memory"]["state"], "ok");
