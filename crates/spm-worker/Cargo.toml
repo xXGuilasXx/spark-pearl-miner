@@ -1,0 +1,36 @@
+[package]
+name = "spm-worker"
+description = "The GPU worker process: job preparation on the host (fills, Merkle layer caches, seed chain), the attempt loop over libspm_cuda, canary tiles, locally verified proofs and the worker side of the daemon IPC"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "spm_worker"
+path = "src/lib.rs"
+
+[[bin]]
+name = "spark-pearl-gpu-worker"
+path = "src/bin/spark-pearl-gpu-worker.rs"
+
+[dependencies]
+spm-gpu = { path = "../spm-gpu" }
+spm-cpuref = { path = "../spm-cpuref" }
+spm-coexist.workspace = true
+spm-ipc.workspace = true
+spm-work.workspace = true
+spm-pow.workspace = true
+spm-proto.workspace = true
+pearl-blake3.workspace = true
+anyhow.workspace = true
+bincode.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+getrandom.workspace = true
+tokio = { workspace = true, features = ["signal"] }
+rayon = "1.12"
+# SM clock and board power for the Stats frames; libnvidia-ml.so is loaded at runtime.
+nvml-wrapper = "0.13"

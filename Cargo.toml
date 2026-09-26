@@ -13,6 +13,7 @@ members = [
     "crates/spm-governor",
     "crates/spm-coexist",
     "crates/spm-api",
+    "crates/spm-worker",
     "crates/spm",
 ]
 
@@ -69,6 +70,7 @@ spm-api = { path = "crates/spm-api" }
 spm-mockpool = { path = "crates/spm-mockpool" }
 spm-governor = { path = "crates/spm-governor" }
 spm-coexist = { path = "crates/spm-coexist" }
+spm-worker = { path = "crates/spm-worker" }
 
 [profile.release]
 codegen-units = 1
