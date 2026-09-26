@@ -142,8 +142,8 @@ miner gets). Peak references from MB1 (`docs/en/BENCHMARKS.md`): 919 MAC/clk/SM,
 2424 MHz, 96.0 T-MAC/s at 2200 MHz.
 
 Runs of 2026-09-26 with nothing else on the GPU but the resident vLLM (stock clocks, driver
-580.178.04, CUDA 13.0). The first row is the final code (commit with the device abort word); the
-others are the same kernel one commit earlier (208 registers, host-side abort only):
+580.178.04, CUDA 13.0). The first row is the final code; the others are the same kernel before the
+device abort word was added (208 registers, host-side abort between chunks only):
 
 | Run (UTC) | SM clock | Power mean / max | Chunk GPU time mean / max | Kernel only mean / median / best | Sustained (fused kernel) | Incl. A prep | Abort latency |
 |---|---|---|---|---|---|---|---|
