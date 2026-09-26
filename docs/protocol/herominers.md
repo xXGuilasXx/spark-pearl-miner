@@ -32,4 +32,4 @@ Jobs start immediately after the ack. (`solo:` prefix on the wallet selects solo
 Expected object form (LuckyPool-style): `{"wallet":..,"worker":..,"job_id":..,"plain_proof":"<base64(bincode(PlainProof))>"}`. 6block's miner uses the field **`plain_proof_zst`** for HeroMiners (base64 of zstd-compressed bincode). Which of `plain_proof` / `plain_proof_zst` (or both) is accepted is decided in milestone M6 with a real share; the encoder learns the working field per pool (≤ 3 format rejects).
 
 ## Pool facts (API `/api/stats`, 2026-09-26)
-Fee 0 %, scheme `prop`, min payout 1 PRL (1e8 units), payments hourly, `solo:` prefix, stale-share penalty tiers: ≤ 2 % → 0, ≤ 5 % → 50 %, > 30 % → 100 % + 3600 s ban (after 1000 shares). Merge-mining of MDL is paid from the same shares.
+Fee 0 %, scheme `prop`, min payout 1 PRL (1e8 units), payments hourly, `solo:` prefix, stale-share penalty tiers: ≤ 2 % → 0, ≤ 5 % → 50 %, > 30 % → 100 % + 3600 s ban (after 1000 shares). Merge mining of MDL was advertised in June 2026 but is dead as of 2026-09-26 (notices commented out, `modelos.herominers.com` does not resolve); see `docs/en/DUAL-MINING.md`.

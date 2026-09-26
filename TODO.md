@@ -116,6 +116,7 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 - [ ] spark-pearl-miner fee-test on HeroMiners: worker devfee visible under the dev address, zero stale at switches, the user session never dropped.
 
 ### M9
+- [ ] Optional "NOCK address" field applied only to LuckyPool slots (login `PRL+NOCK[.worker]`), default empty; see docs/en/DUAL-MINING.md.
 - [ ] Fee wallet and fee constants are read-only everywhere in the GUI and API (no edit control, PUT /api/v1/config rejects any fee field); a test asserts the config schema has no fee keys.
 
 - [ ] API on 127.0.0.1:4078 uses token-file to cookie, CSRF header, Host/Origin allowlist and strict CSP; tests show no cookie gives 401, a foreign Host 403 and a missing CSRF header 403.
@@ -132,6 +133,7 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 - [ ] Kernel-only throughput reaches at least 85% of the measured IMMA peak at 2200 MHz, or the reason is documented; credited TH/s and GPU W published (goal: at least 76 TH/s at 85 W or less).
 
 ### M11
+- [ ] After the 24 h soak passes at 2200 MHz, evaluate a 2300 and a 2400 MHz step with soak-log evidence (worth +5–10 % PRL; see docs/en/DUAL-MINING.md). CPU dual mining stays disabled by design (X925 load reaches 84–87 °C in a minute).
 
 - [ ] The governor holds within ±3 W of target for 30 min in each profile, and trips fire on synthetic thresholds.
 - [ ] The fault-signature detector and the running.marker step-down are demonstrated with SIGKILL plus restart.
