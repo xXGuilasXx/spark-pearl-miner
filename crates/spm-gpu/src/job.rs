@@ -559,5 +559,46 @@ pub fn job_device_bytes(
             0
         }
         + hits * 40
-        + 16
+        + 32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_job_fits_the_budget() {
+        // 131072^2 x 4096 with generated operands: A' + B'ᵀ + factors + pairs + prefix + hit ring
+        // + counters, exactly what spm_job_create allocates.
+        let bytes = job_device_bytes(131_072, 131_072, 4096, false, false, 0);
+        assert_eq!(bytes, 1_107_480_608);
+        assert!(bytes < DEFAULT_MEM_BUDGET);
+        assert!(job_device_bytes(131_072, 131_072, 4096, true, false, 0) < DEFAULT_MEM_BUDGET);
+    }
+
+    #[test]
+    fn tile_record_parses_little_endian_fields() {
+        let mut b = [0u8; DUMP_RECORD_LEN];
+        b[0..4].copy_from_slice(&7u32.to_le_bytes());
+        b[4..8].copy_from_slice(&66u32.to_le_bytes());
+        for i in 0..16u32 {
+            let at = 8 + 4 * i as usize;
+            b[at..at + 4].copy_from_slice(&(0x0101_0101 * i).to_le_bytes());
+        }
+        for (i, x) in b[72..].iter_mut().enumerate() {
+            *x = i as u8;
+        }
+        let r = TileRecord::from_bytes(&b);
+        assert_eq!((r.t_rows, r.t_cols), (7, 66));
+        assert_eq!(r.transcript[15], 0x0f0f_0f0f);
+        assert_eq!(r.digest[31], 31);
+    }
+
+    #[test]
+    fn host_operands_are_size_checked_before_touching_the_gpu() {
+        let a = vec![0i8; 64 * 2048];
+        let bt = vec![0i8; 64 * 2048 - 1];
+        let cfg = JobConfig::new(64, 64, 2048, Operands::Host { a: &a, bt: &bt }, [0; 32]);
+        assert_eq!(Job::new(&cfg).unwrap_err(), GpuError::Size);
+    }
 }

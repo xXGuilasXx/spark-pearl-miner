@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <new>
 
@@ -289,6 +290,9 @@ int32_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
   if ((p.a_host == nullptr) != (p.bt_host == nullptr)) return SPM_E_INVALID;
 
   const uint64_t m = p.m, n = p.n, k = p.k;
+  // CTA tile ids travel as int32 (-1 is the stop command).
+  const uint64_t cta_tiles = ((m + spm::gemm::BM - 1) / spm::gemm::BM) * ((n + spm::gemm::BN - 1) / spm::gemm::BN);
+  if (cta_tiles > (uint64_t)INT32_MAX) return SPM_E_SHAPE;
   const bool generated = p.a_host == nullptr;
   const uint64_t hit_capacity = p.hit_capacity ? p.hit_capacity : kDefaultHitCapacity;
   const uint64_t dump_bytes = p.dump_mode ? m * n / 128 * 104 : 0;
