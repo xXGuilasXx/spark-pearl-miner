@@ -91,12 +91,13 @@ if [ -z "$BINARY" ]; then
 fi
 [ -x "$BINARY" ] || die "no executable at $BINARY"
 
-REPORTED=$("$BINARY" --version | head -n1)
+REPORTED=$("$BINARY" --version | awk 'NR == 1')
 case "$REPORTED" in
   "$APP $VERSION "*) ;;
   *) die "the binary reports \"$REPORTED\", expected version $VERSION" ;;
 esac
-if command -v ldd >/dev/null 2>&1 && ldd "$BINARY" 2>/dev/null | grep -q 'not found'; then
+# Captured first: `ldd | grep -q` can fail under pipefail when grep exits early (SIGPIPE).
+if command -v ldd >/dev/null 2>&1 && grep -q 'not found' <<<"$(ldd "$BINARY" 2>/dev/null || true)"; then
   ldd "$BINARY" >&2
   die "the binary has unresolved libraries"
 fi

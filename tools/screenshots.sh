@@ -127,7 +127,7 @@ api_post() { # port token path
 }
 
 token_of() { # demo name
-  grep -o 'token=[0-9a-f]*' "$T/$1.log" | head -1 | cut -d= -f2
+  grep -m1 -o 'token=[0-9a-f]*' "$T/$1.log" | cut -d= -f2
 }
 
 wait_status() { # port python-expression-on-s (the status JSON)

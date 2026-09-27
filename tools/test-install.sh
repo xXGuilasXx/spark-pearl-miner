@@ -97,6 +97,24 @@ echo "== dry run"
 check "dry run prints the install" grep -q "\[dry-run\] install -Dm0755 .*$APP.new" "$T/dry.log"
 check "dry run changes nothing" test ! -e "$PREFIX" -a ! -e "$UNIT" -a ! -e "$DESKTOP"
 
+echo "== preflight is not flaky under pipefail"
+# A loader cache much larger than a pipe buffer, with the CUDA runtime on the first line: a
+# `ldconfig -p | grep -q` would let grep exit at once and ldconfig die of SIGPIPE, and pipefail
+# would then report the runtime as missing (it used to fail ~6 % of real runs on the Spark).
+mkdir -p "$T/bigldconfig"
+cat >"$T/bigldconfig/ldconfig" <<'EOF2'
+#!/usr/bin/env bash
+echo "	libcudart.so.13 (libc6,AArch64) => /usr/local/cuda/lib64/libcudart.so.13"
+for i in $(seq 1 20000); do echo "	libfiller$i.so.1 (libc6,AArch64) => /usr/lib/aarch64-linux-gnu/libfiller$i.so.1"; done
+EOF2
+chmod 0755 "$T/bigldconfig/ldconfig"
+PATH="$T/bigldconfig:$PATH" "${INSTALL[@]}" --tarball "$TARBALL" --prefix "$PREFIX" --dry-run >"$T/bigld.log" 2>&1 ||
+  { cat "$T/bigld.log"; fail "dry run with a large loader cache"; }
+check "a large loader cache still finds libcudart.so.13" grep -q "CUDA 13 runtime (libcudart.so.13)" "$T/bigld.log"
+# No early-exit reader at the end of a pipe in the installer (it runs under pipefail).
+check "install.sh has no '| head' or '| grep -q' pipelines" \
+  bash -c "! grep -nE '\\|[[:space:]]*(head|grep[[:space:]]+(-[a-zA-Z]*q|-m|--quiet))' '$ROOT/packaging/install.sh' | grep -v '^[0-9]*:[[:space:]]*#' | grep -v 'check with:'"
+
 echo "== piped like curl | bash (dry run)"
 bash -s -- --tarball "$TARBALL" --prefix "$PREFIX" --no-start --no-open --dry-run <"$ROOT/packaging/install.sh" >"$T/pipe.log" 2>&1 ||
   { cat "$T/pipe.log"; fail "piped dry run"; }
@@ -154,7 +172,7 @@ check "nothing under ~/.local/bin" test ! -e "$HOME/.local/bin"
 check "summary shows the GUI URL" grep -q "http://127.0.0.1:4078/" "$T/i1.log"
 check "summary shows the clock-cap command" grep -q "sudo $SHARE/install-clockcap.sh --apply" "$T/i1.log"
 # The clock-cap script from the share dir finds its unit (prints only, no root).
-check "installed install-clockcap.sh finds its unit" bash -c "'$SHARE/install-clockcap.sh' | grep -q 'enable --now spark-pearl-clockcap.service'"
+check "installed install-clockcap.sh finds its unit" grep -q 'enable --now spark-pearl-clockcap.service' <<<"$("$SHARE/install-clockcap.sh")"
 
 echo "== idempotent re-run"
 "${INSTALL[@]}" --tarball "$TARBALL" --prefix "$PREFIX" >"$T/i2.log" 2>&1 || { cat "$T/i2.log"; fail "re-run"; }

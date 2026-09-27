@@ -249,12 +249,16 @@ check_fail() {
 
 preflight() {
   step "Checking this machine"
-  local arch gpu driver major
+  local arch gpu driver major libs
   arch=$(uname -m)
   if [ "$arch" = aarch64 ]; then ok "CPU architecture: aarch64"; else
     check_fail "this is $arch; the miner is built for the NVIDIA DGX Spark (aarch64)"
   fi
-  if have nvidia-smi && gpu=$(nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>/dev/null | head -n1) && [ -n "$gpu" ]; then
+  # No `cmd | head` / `cmd | grep -q` under pipefail: the reader may exit before the writer is
+  # done, the writer then dies of SIGPIPE and the whole check fails on a healthy machine.
+  # Capture the output first, then look at it.
+  if have nvidia-smi && gpu=$(nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>/dev/null) &&
+    gpu=${gpu%%$'\n'*} && [ -n "$gpu" ]; then
     driver=${gpu##*, }
     major=${driver%%.*}
     case "$gpu" in
@@ -274,7 +278,9 @@ preflight() {
     check_fail "nvidia-smi does not answer: no NVIDIA GPU or driver found" \
       "The DGX Spark ships with the driver; check with: nvidia-smi"
   fi
-  if ldconfig -p 2>/dev/null | grep -q 'libcudart\.so\.13'; then ok "CUDA 13 runtime (libcudart.so.13)"; else
+  # `ldconfig -p` prints ~100 KB on DGX OS: more than a pipe holds (see above).
+  libs=$(ldconfig -p 2>/dev/null) || libs=""
+  if grep -q 'libcudart\.so\.13' <<<"$libs"; then ok "CUDA 13 runtime (libcudart.so.13)"; else
     check_fail "the CUDA 13 runtime (libcudart.so.13) is not in the loader path" \
       "DGX OS 7 ships it under /usr/local/cuda; check with: ldconfig -p | grep libcudart"
   fi
@@ -293,7 +299,7 @@ check_port() {
   body=$(curl -s -m 3 "http://127.0.0.1:$PORT/api/v1/about" 2>/dev/null) || rc=$?
   if [ "$rc" -eq 7 ]; then
     ok "port $PORT is free"
-  elif printf '%s' "$body" | grep -q "$APP"; then
+  elif grep -q "$APP" <<<"$body"; then
     ok "port $PORT: $APP is already running (it will be upgraded)"
   else
     check_fail "port $PORT is used by another program" \
@@ -315,7 +321,7 @@ extract_tarball() {
   local file=$1 dest="$TMP/payload" top
   mkdir -p "$dest"
   tar -xzf "$file" -C "$dest" --no-same-owner
-  top=$(find "$dest" -mindepth 1 -maxdepth 1 -type d | head -n1)
+  top=$(find "$dest" -mindepth 1 -maxdepth 1 -type d -print -quit)
   payload_ok "$top" || die "$file does not look like a $APP release tarball"
   PAYLOAD=$top
 }
@@ -324,7 +330,7 @@ extract_tarball() {
 verify_sum() {
   local file=$1 sums=$2 name line
   name=$(basename "$file")
-  line=$(grep -E "^[0-9a-f]{64} [ *]$name\$" "$sums" | head -n1) || true
+  line=$(grep -m1 -E "^[0-9a-f]{64} [ *]$name\$" "$sums") || true
   [ -n "$line" ] || die "$name is not listed in $(basename "$sums")"
   (cd "$(dirname "$file")" && printf '%s\n' "$line" | sha256sum -c --quiet -) >/dev/null ||
     die "SHA256 mismatch for $name: the download is corrupt or was tampered with; nothing was installed"
@@ -471,7 +477,7 @@ from_source() {
     [ -f "$SRC/$f" ] && install -Dm0644 "$SRC/$f" "$p/$f"
   done
   if [ -d "$SRC/docs/images" ]; then mkdir -p "$p/docs/images" && cp -R "$SRC/docs/images/." "$p/docs/images/"; fi
-  "$p/bin/$APP" --version | head -n1 | awk '{print $2}' >"$p/VERSION"
+  "$p/bin/$APP" --version | awk 'NR == 1 {print $2}' >"$p/VERSION"
   PAYLOAD=$p
 }
 
@@ -500,7 +506,7 @@ get_payload() {
 }
 
 version_of() {
-  "$1" --version 2>/dev/null | head -n1 | awk '{print $2, $3, $4}' || true
+  "$1" --version 2>/dev/null | awk 'NR == 1 {print $2, $3, $4}' || true
 }
 
 # ---------------------------------------------------------------------------------------------
