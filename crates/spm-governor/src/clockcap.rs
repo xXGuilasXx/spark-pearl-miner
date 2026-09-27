@@ -12,9 +12,10 @@ pub const CAP_TOLERANCE_MHZ: u32 = 30;
 pub const CAP_CONFIRM_LOADED: Duration = Duration::from_secs(30);
 /// "Loaded" means our worker computes at least at this duty.
 pub const CAP_LOADED_MIN_DUTY_PCT: u8 = 90;
-/// Consecutive samples above the cap before the cap counts as absent: one reading can be a boost
-/// caught in the instant between `nvidia-smi -lgc` and the first sample after a restart.
-pub const CAP_EXCEED_SAMPLES: u8 = 3;
+/// How long the clock must stay above the cap, without a break, before the cap counts as absent.
+/// Right after a restart the GPU can sit at its idle boost (~2400 MHz on the GB10) for a moment
+/// after `nvidia-smi -lgc` and until the worker loads it; an uncapped GPU stays there for good.
+pub const CAP_EXCEED_FOR: Duration = Duration::from_secs(3);
 /// How long an exceedance keeps the verdict at "uncapped". Once the clock has stayed under the cap
 /// for this long (the cap was installed meanwhile, or the reading was a transient), the verdict
 /// goes back to the loaded-time evidence, so the dashboard banner clears without a restart.
@@ -49,9 +50,9 @@ pub struct ClockCapDetector {
     max_seen_mhz: u32,
     loaded_for: Duration,
     last_loaded_ts: Option<Duration>,
-    /// Consecutive samples above the cap (with tolerance).
-    exceed_streak: u8,
-    /// Timestamp of the last confirmed exceedance ([`CAP_EXCEED_SAMPLES`] in a row).
+    /// Start of the current unbroken run of samples above the cap (with tolerance).
+    exceed_since: Option<Duration>,
+    /// Timestamp of the last confirmed exceedance (a run of at least [`CAP_EXCEED_FOR`]).
     last_exceeded_ts: Option<Duration>,
     /// Timestamp of the last sample, to age the exceedance.
     last_ts: Option<Duration>,
@@ -66,7 +67,7 @@ impl ClockCapDetector {
             max_seen_mhz: 0,
             loaded_for: Duration::ZERO,
             last_loaded_ts: None,
-            exceed_streak: 0,
+            exceed_since: None,
             last_exceeded_ts: None,
             last_ts: None,
         }
@@ -82,12 +83,12 @@ impl ClockCapDetector {
         self.max_seen_mhz = self.max_seen_mhz.max(s.sm_mhz);
         self.last_ts = Some(s.ts);
         if s.sm_mhz > self.cap_mhz + CAP_TOLERANCE_MHZ {
-            self.exceed_streak = self.exceed_streak.saturating_add(1);
-            if self.exceed_streak >= CAP_EXCEED_SAMPLES {
+            let since = *self.exceed_since.get_or_insert(s.ts);
+            if s.ts.saturating_sub(since) >= CAP_EXCEED_FOR {
                 self.last_exceeded_ts = Some(s.ts);
             }
         } else {
-            self.exceed_streak = 0;
+            self.exceed_since = None;
         }
         let loaded = s.worker_active && duty_pct >= CAP_LOADED_MIN_DUTY_PCT;
         if loaded {
@@ -140,28 +141,30 @@ mod tests {
     #[test]
     fn sustained_readings_above_the_cap_mean_uncapped_until_it_stays_under_for_a_while() {
         let mut d = ClockCapDetector::new(2000);
-        for t in 0..3 {
+        for t in 0..=3 {
             d.observe(&sample(t, 2400), 100);
         }
         assert!(matches!(d.status(), CapStatus::Uncapped { max_seen_mhz: 2400 }));
         // Under the cap again (the cap unit was installed): still "uncapped" for CAP_FORGET…
-        for t in 3..(3 + CAP_FORGET.as_secs() - 1) {
+        for t in 4..(4 + CAP_FORGET.as_secs() - 1) {
             d.observe(&sample(t, 1990), 100);
         }
         assert!(matches!(d.status(), CapStatus::Uncapped { .. }));
         // …then the verdict follows the loaded-time evidence again.
-        d.observe(&sample(3 + CAP_FORGET.as_secs() + 1, 1990), 100);
+        d.observe(&sample(4 + CAP_FORGET.as_secs() + 1, 1990), 100);
         assert!(matches!(d.status(), CapStatus::Capped { .. }), "{:?}", d.status());
     }
 
     #[test]
-    fn two_readings_above_then_under_do_not_count() {
+    fn short_runs_above_the_cap_do_not_count() {
         let mut d = ClockCapDetector::new(2000);
         d.observe(&sample(0, 2400), 100);
-        d.observe(&sample(1, 2400), 100);
-        d.observe(&sample(2, 1990), 100);
-        d.observe(&sample(3, 2400), 100);
+        d.observe(&sample(2, 2400), 100); // 2 s above, then under: the run is broken
+        d.observe(&sample(3, 1990), 100);
         d.observe(&sample(4, 2400), 100);
+        d.observe(&sample(6, 2400), 100);
         assert!(!matches!(d.status(), CapStatus::Uncapped { .. }));
+        d.observe(&sample(7, 2400), 100); // 3 s without a break
+        assert!(matches!(d.status(), CapStatus::Uncapped { .. }));
     }
 }

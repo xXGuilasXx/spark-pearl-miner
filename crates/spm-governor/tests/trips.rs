@@ -273,11 +273,11 @@ fn clock_cap_is_confirmed_after_30_s_of_load_at_or_below_the_cap() {
 #[test]
 fn clock_above_the_cap_means_uncapped_even_at_idle() {
     let mut det = ClockCapDetector::new(2200);
-    // One reading can be a transient caught right after a restart; three in a row are not.
+    // A short run can be the idle boost caught right after a restart; 3 s without a break is not.
     det.observe(&Sample { sm_mhz: 2424, worker_active: false, ..s(0) }, DUTY_MIN_PCT);
+    det.observe(&Sample { sm_mhz: 2424, worker_active: false, ..s(2_000) }, DUTY_MIN_PCT);
     assert_ne!(det.status(), CapStatus::Uncapped { max_seen_mhz: 2424 });
-    det.observe(&Sample { sm_mhz: 2424, worker_active: false, ..s(100) }, DUTY_MIN_PCT);
-    det.observe(&Sample { sm_mhz: 2424, worker_active: false, ..s(200) }, DUTY_MIN_PCT);
+    det.observe(&Sample { sm_mhz: 2424, worker_active: false, ..s(3_000) }, DUTY_MIN_PCT);
     assert_eq!(det.status(), CapStatus::Uncapped { max_seen_mhz: 2424 });
 }
 
