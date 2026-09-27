@@ -40,7 +40,7 @@
 
 ## Portões
 - **G0** kernel INT8 bit-idêntico ao `zk-pow`; provas passam em `check_cert_version_eligible(3)` + `verify_plain_proof(Salted)`.
-- **G1** soaks de 60 min e 24 h a 2000 MHz sem power-off, zero divergências, ≥ ~70 TH/s creditados.
+- **G1** soaks de 60 min e 24 h a 2000 MHz sem power-off, zero divergências, ≥ ~70 TH/s creditados. 60 min ✅ 2026-09-27 (74,5 T-MAC/s, 65 W, placa máx 89 °C, 29/29 shares, sem disparo); 24 h pendente.
 - **G2** shares aceitas em LuckyPool BR e HeroMiners BR com o nosso minerador.
 - **G3** `QMMA` FP8 do GB10 bit-exato contra a referência `fp8-scheme`.
 - **G4** dono assina o endereço da fee (BIP-322 simples, oystercli) antes do release público.

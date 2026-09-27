@@ -1,0 +1,21 @@
+G1 soak #2 — mining mode, 60 min, 2026-09-27 02:29–03:29 UTC
+Real miner (spark-pearl-miner 0.1.0-alpha.1, commit 53cfebc) under the owner's local 'mineracao' mode: GPU 100 % dedicated,
+spark-miner.service with ExecStartPre nvidia-smi -lgc 300,2000, profile Balanced (75 W target, 85 W stop), coexistence exclusive,
+pool Kryptex (prl-br.kryptex.network:8048, TLS, diff 2 097 152). No other load on the box during the hour.
+
+GPU log (bench/soak-log.sh, 10 s): g1-20260927T022908Z-mining-soak.csv
+rows 359 over 1.0 h (1 session(s))
+max power 70.87 W at 2026/09/27 02:30:38.947; mean 64.89 W
+min SM clock 1976 MHz at 2026/09/27 02:29:08.417; min under load (>= 30 W) 1976 MHz
+max GPU temperature 80 C; max acpitz 89.0 C
+rows with active clock event reasons: 0
+no gap > 20 s
+last session ended cleanly: yes
+
+Miner log (API, 30 s): g1-20260927T022908Z-mining-miner.csv
+rows 120 (2026-09-27T02:29:16Z .. 2026-09-27T03:28:49Z)
+power mean 65.0 W, max 69.5 W; GPU max 79 C; acpitz max 88.7 C, mean 84.2 C
+SM clock 1976-1976 MHz (cap 2000, status capped throughout); duty min 98 %; governor trips 1 -> 1 (none during the hour)
+credited rate: 74.5 T-MAC/s averaged over 3572 s of mining; 60 s window 70.4-80.9
+shares in the hour: 29 accepted, 0 rejected, 0 stale
+state: mining the whole hour; no power-off, no compute mismatch
