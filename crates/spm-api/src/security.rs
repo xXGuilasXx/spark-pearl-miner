@@ -97,6 +97,8 @@ struct Session {
     csrf: String,
     last_seen: Instant,
     created: Instant,
+    /// Opened for the trusted local user (no token). Evicted before token sessions when full.
+    local: bool,
 }
 
 /// In-memory security state of one API server.
@@ -155,6 +157,7 @@ impl Security {
     }
 
     /// Replace the peer-UID lookup (default: `/proc/net/tcp*`). For tests.
+    #[doc(hidden)]
     pub fn peer_uid_resolver(mut self, f: PeerUidResolver) -> Self {
         self.peer_uid = f;
         self
@@ -206,24 +209,31 @@ impl Security {
         if let Ok(mut g) = self.failures.lock() {
             *g = (0, None);
         }
-        self.open_session()
+        self.open_session(false)
     }
 
-    /// A new session without the token: only for a connection [`Security::is_local_user`] trusts.
-    pub(crate) fn open_session(&self) -> Option<(String, String)> {
+    /// A new session. `local` marks one opened without the token (only for a connection
+    /// [`Security::is_local_user`] trusts); when the table is full, local sessions go first.
+    pub(crate) fn open_session(&self, local: bool) -> Option<(String, String)> {
         let id = random_hex(32).ok()?;
         let csrf = random_hex(32).ok()?;
         let now = Instant::now();
         let mut s = self.sessions.lock().ok()?;
         s.retain(|_, v| now.duration_since(v.last_seen) < SESSION_IDLE);
         while s.len() >= MAX_SESSIONS {
-            let oldest = s.iter().min_by_key(|(_, v)| v.created).map(|(k, _)| k.clone());
-            match oldest {
+            // A page that keeps opening local sessions must not push out a token login.
+            let victim = s
+                .iter()
+                .filter(|(_, v)| v.local)
+                .min_by_key(|(_, v)| v.created)
+                .or_else(|| s.iter().min_by_key(|(_, v)| v.created))
+                .map(|(k, _)| k.clone());
+            match victim {
                 Some(k) => s.remove(&k),
                 None => break,
             };
         }
-        s.insert(id.clone(), Session { csrf: csrf.clone(), last_seen: now, created: now });
+        s.insert(id.clone(), Session { csrf: csrf.clone(), last_seen: now, created: now, local });
         Some((id, csrf))
     }
 
@@ -274,6 +284,26 @@ mod tests {
         assert!(warned.get());
         assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn local_sessions_are_evicted_before_token_logins() {
+        let tok = "ab".repeat(32);
+        let s = Security::new(tok.clone(), 4078);
+        let logins: Vec<String> = (0..MAX_SESSIONS - 1).map(|_| s.login(&tok).unwrap().0).collect();
+        let (local1, _) = s.open_session(true).unwrap();
+        // Table full: the next local session pushes out the oldest LOCAL one, never a token login.
+        let (local2, _) = s.open_session(true).unwrap();
+        assert!(s.session_csrf(&local1).is_none());
+        assert!(s.session_csrf(&local2).is_some());
+        assert!(logins.iter().all(|c| s.session_csrf(c).is_some()));
+        // With no local session left to evict, the oldest token login goes, as before.
+        let (local3, _) = s.open_session(true).unwrap();
+        assert!(s.session_csrf(&local2).is_none());
+        assert!(s.session_csrf(&local3).is_some());
+        let (extra, _) = s.login(&tok).unwrap();
+        assert!(s.session_csrf(&local3).is_none(), "a token login evicts the local session first");
+        assert!(s.session_csrf(&extra).is_some());
     }
 
     #[test]

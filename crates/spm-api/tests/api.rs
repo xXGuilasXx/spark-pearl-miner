@@ -580,7 +580,13 @@ fn session_cookie(r: &Response<Body>) -> Option<String> {
 async fn trusted_local_get_session_logs_in() {
     let fake = Fake::new();
     let app = local_app(&fake, true, Some(own_uid()));
+    // Without Fetch Metadata (curl, or a browser without it) no session is opened: reads work
+    // without one, and a cross-site GET from an old browser must not create sessions.
     let r = app.clone().oneshot(req("GET", "/api/v1/session").extension(peer()).body(Body::empty()).unwrap()).await.unwrap();
+    assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
+    assert!(r.headers().get(header::SET_COOKIE).is_none());
+    // The GUI's own fetch says `same-origin`.
+    let r = app.clone().oneshot(req("GET", "/api/v1/session").extension(peer()).header("sec-fetch-site", "same-origin").body(Body::empty()).unwrap()).await.unwrap();
     assert_eq!(r.status(), StatusCode::OK);
     let cookie = session_cookie(&r).expect("a session cookie");
     let csrf = body_json(r).await["csrf"].as_str().unwrap().to_string();
@@ -597,7 +603,7 @@ async fn trusted_local_get_session_logs_in() {
     assert!(r.headers().get(header::SET_COOKIE).is_none());
     assert_eq!(body_json(r).await["csrf"], csrf.as_str());
     // A stale cookie (daemon restarted) gets a fresh session.
-    let r = app.clone().oneshot(req("GET", "/api/v1/session").extension(peer()).header(header::COOKIE, "spm_session=stale").body(Body::empty()).unwrap()).await.unwrap();
+    let r = app.clone().oneshot(req("GET", "/api/v1/session").extension(peer()).header("sec-fetch-site", "same-origin").header(header::COOKIE, "spm_session=stale").body(Body::empty()).unwrap()).await.unwrap();
     assert_eq!(r.status(), StatusCode::OK);
     assert_ne!(session_cookie(&r).unwrap(), cookie);
 }
@@ -627,7 +633,7 @@ async fn trusted_local_mutations_still_need_cookie_and_csrf() {
         assert_eq!(r.status(), StatusCode::UNAUTHORIZED, "{m} {path}");
     }
     // A session but no CSRF header: 403, as for everyone.
-    let r = app.clone().oneshot(req("GET", "/api/v1/session").extension(peer()).body(Body::empty()).unwrap()).await.unwrap();
+    let r = app.clone().oneshot(req("GET", "/api/v1/session").extension(peer()).header("sec-fetch-site", "same-origin").body(Body::empty()).unwrap()).await.unwrap();
     let cookie = session_cookie(&r).unwrap();
     let r = app.clone().oneshot(req("POST", "/api/v1/mining/start").extension(peer()).header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await.unwrap();
     assert_eq!(r.status(), StatusCode::FORBIDDEN);
@@ -711,7 +717,7 @@ async fn real_tcp_same_user_gets_a_session_from_proc() {
             let _ = stopped.await;
         }));
         // The real /proc/net/tcp lookup: this test process is the same UID as the "daemon".
-        for extra in ["", "X-Test: 1\r\n"] {
+        for extra in ["Sec-Fetch-Site: same-origin\r\n", "Sec-Fetch-Site: same-origin\r\nX-Test: 1\r\n"] {
             let (status, head, body) = raw_http(port, extra).await;
             if trust {
                 assert!(status.contains(" 200 "), "{status}\n{head}");
@@ -722,10 +728,13 @@ async fn real_tcp_same_user_gets_a_session_from_proc() {
                 assert!(!head.contains("set-cookie"), "{head}");
             }
         }
-        // Another site in the same user's browser is refused even over a real connection.
-        let (status, head, _) = raw_http(port, "Sec-Fetch-Site: cross-site\r\n").await;
-        assert!(status.contains(" 401 "), "{status}");
-        assert!(!head.contains("set-cookie"), "{head}");
+        // Another site in the same user's browser is refused even over a real connection, and a
+        // bare client without Fetch Metadata (curl) gets no session either.
+        for extra in ["Sec-Fetch-Site: cross-site\r\n", ""] {
+            let (status, head, _) = raw_http(port, extra).await;
+            assert!(status.contains(" 401 "), "{extra:?}: {status}");
+            assert!(!head.contains("set-cookie"), "{head}");
+        }
         let _ = stop.send(());
         server.await.unwrap().unwrap();
     }

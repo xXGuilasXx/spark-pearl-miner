@@ -66,8 +66,11 @@ e compara o UID dono dele com o seu. Só quando bate:
   `HttpOnly; SameSite=Strict` mais um valor CSRF), então a GUI começa sem tela de login;
 * os outros `GET` respondem sem cookie (prático para `curl` na própria máquina);
 * `POST`/`PUT`/`DELETE` continuam exigindo o cookie de sessão **e** o `X-SPM-CSRF`. Uma página
-  maliciosa aberta no seu próprio navegador também roda com o seu UID, então a checagem de UID só
-  libera leitura.
+  maliciosa aberta no seu próprio navegador também roda com o seu UID, e por isso a checagem de
+  UID sozinha nunca autoriza uma mudança. A própria abertura da sessão só é respondida ao fetch da
+  GUI (`Sec-Fetch-Site: same-origin`). Já um *programa* rodando com a sua conta consegue abrir uma
+  sessão assim e depois mudar qualquer coisa, exatamente como conseguiria lendo o seu arquivo de
+  token.
 
 É recusado quando o navegador diz que o pedido vem de outra página (`Sec-Fetch-Site` diferente de
 `same-origin` ou `none`), quando o pedido traz `Forwarded`, `X-Forwarded-For` ou `X-Real-IP` (um

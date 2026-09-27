@@ -218,8 +218,11 @@ async fn session_csrf<B: Backend>(State(st): State<Arc<AppState<B>>>, req: Reque
     if let Some(csrf) = request_cookie(req.headers()).and_then(|c| st.sec.session_csrf(&c)) {
         return Json(json!({ "csrf": csrf })).into_response();
     }
-    if req.extensions().get::<LocalUser>().is_some() {
-        if let Some((cookie, csrf)) = st.sec.open_session() {
+    // Only the GUI's own fetch carries `Sec-Fetch-Site: same-origin`; a browser without Fetch
+    // Metadata, or a bare `curl`, gets no session (reads work without one anyway).
+    let same_origin = header_str(&req, "sec-fetch-site").is_some_and(|v| v.trim() == "same-origin");
+    if same_origin && req.extensions().get::<LocalUser>().is_some() {
+        if let Some((cookie, csrf)) = st.sec.open_session(true) {
             tracing::info!("API: browser session opened for the local user (same UID, no token)");
             return session_opened(&cookie, &csrf);
         }

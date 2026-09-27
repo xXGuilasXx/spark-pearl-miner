@@ -66,7 +66,10 @@ On the machine that runs the daemon, the same user account is let in without the
   cookie plus a CSRF value), so the GUI starts without a login screen;
 * other `GET` calls answer without a cookie (handy for `curl` on the box);
 * `POST`/`PUT`/`DELETE` still need the session cookie **and** `X-SPM-CSRF`. A hostile web page
-  open in your own browser runs under your UID too, so reading is all the UID check grants.
+  open in your own browser runs under your UID too, which is why the UID check alone never
+  authorizes a change. The session bootstrap itself is only answered to the GUI's own fetch
+  (`Sec-Fetch-Site: same-origin`). Any *program* running as your account, though, can open a
+  session this way and then change anything, exactly as it could by reading your token file.
 
 It is refused when the browser says the request comes from another page (`Sec-Fetch-Site` other
 than `same-origin` or `none`), when it carries `Forwarded`, `X-Forwarded-For` or `X-Real-IP` (a

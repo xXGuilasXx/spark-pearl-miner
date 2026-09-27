@@ -69,6 +69,10 @@ pub fn parse_proc_row(line: &str) -> Option<(SocketAddr, SocketAddr, &str, u32)>
         return None;
     }
     let uid = t[7].parse().ok()?;
+    // Timewait and orphan mini-sockets (also seen as FIN_WAIT2) carry inode 0 and uid 0.
+    if t.get(9).is_some_and(|inode| *inode == "0") {
+        return None;
+    }
     Some((local, remote, st, uid))
 }
 
@@ -125,6 +129,7 @@ mod tests {
    5: 0100007F:D434 0100007F:0FEF 01 00000000:00000000 00:00000000 00000000  1002        0 75255514 1 0000000000000000 20 4 30 10 -1
    6: garbage line with 0100007F:D435 0100007F:0FEE 01 x y z 1003
    7: 0100007F:D436 0100007F:0FEE 01 00000000:00000000 00:00000000 00000000  notanumber 0 1
+   8: 0100007F:D437 0100007F:0FEE 05 00000000:00000000 00:00000000 00000000     0        0 0 3 0000000000000000
 ";
 
     const V6: &str = "\
@@ -170,6 +175,12 @@ mod tests {
     #[test]
     fn time_wait_is_ignored() {
         assert_eq!(find_peer_uid(V4, sa("127.0.0.1:54323"), sa("127.0.0.1:4078")), None);
+    }
+
+    #[test]
+    fn orphan_rows_with_inode_zero_are_ignored() {
+        // Row 8: FIN_WAIT2 mini-socket, uid 0, inode 0 (a closed client whose port could be reused).
+        assert_eq!(find_peer_uid(V4, sa("127.0.0.1:54327"), sa("127.0.0.1:4078")), None);
     }
 
     #[test]
