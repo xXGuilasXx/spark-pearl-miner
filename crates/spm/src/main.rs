@@ -78,8 +78,26 @@ enum Cmd {
     },
     /// Print the version, the commit and the fee constants hash.
     Version,
-    /// Print the sudo commands that install the boot-time GPU clock cap (changes nothing).
+    /// Print the sudo command that installs the boot-time GPU clock cap (changes nothing).
     InstallClockCap,
+    /// Check or locate the settings file (config.toml).
+    Config {
+        #[command(subcommand)]
+        cmd: ConfigCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConfigCmd {
+    /// Validate config.toml the way the daemon does at start; prints `OK: <path>` or one
+    /// `field: problem` line per error (exit status 1).
+    Check {
+        /// Check this file instead of $XDG_CONFIG_HOME/spark-pearl-miner/config.toml.
+        #[arg(long)]
+        file: Option<PathBuf>,
+    },
+    /// Print the absolute path of config.toml.
+    Path,
 }
 
 fn main() -> ExitCode {
@@ -110,6 +128,11 @@ fn main() -> ExitCode {
         Cmd::Pause => runtime().block_on(ctl(ControlOp::Pause)),
         Cmd::Resume => runtime().block_on(ctl(ControlOp::Resume)),
         Cmd::Gui { print_url } => runtime().block_on(gui(print_url)),
+        Cmd::Config { cmd: ConfigCmd::Check { file } } => config_check(file),
+        Cmd::Config { cmd: ConfigCmd::Path } => {
+            println!("{}", absolute(&Paths::from_env().config_file()).display());
+            ExitCode::SUCCESS
+        }
     }
 }
 
@@ -238,7 +261,8 @@ async fn send(req: Request) -> Result<Value, String> {
     let path = Paths::from_env().control_sock();
     control::request(&path, &req).await.map_err(|e| {
         format!(
-            "the daemon is not reachable at {} ({e}).\nStart it with: systemctl --user start spark-pearl-miner",
+            "the daemon is not reachable at {} ({e}).\nStart it with: systemctl --user start spark-pearl-miner\n\
+             (not installed yet? run packaging/install.sh from the repository)",
             path.display()
         )
     })
@@ -265,7 +289,16 @@ async fn status(json: bool) -> ExitCode {
     let st = match send(Request::Status).await {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("{e}");
+            eprintln!("The miner is not running: {e}");
+            // A config.toml the daemon refuses is the usual reason it does not come back up.
+            let file = Paths::from_env().config_file();
+            if let Some(Err(errors)) = check_config_file(&file) {
+                eprintln!("\nconfig.toml has errors, so the daemon refuses to start ({}):", file.display());
+                for line in errors {
+                    eprintln!("  {line}");
+                }
+                eprintln!("Fix them (or restore config.toml.bak), then: systemctl --user restart spark-pearl-miner");
+            }
             return ExitCode::FAILURE;
         }
     };
@@ -361,17 +394,75 @@ async fn gui(print_url: bool) -> ExitCode {
     }
 }
 
+/// The clock-cap installer: the copy next to an installed binary
+/// (`<prefix>/share/spark-pearl-miner/install-clockcap.sh`, written by packaging/install.sh),
+/// else the one in the source tree.
+fn clock_cap_script() -> String {
+    let installed = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().and_then(|bin| bin.parent()).map(|p| p.join("share/spark-pearl-miner/install-clockcap.sh")))
+        .filter(|p| p.is_file());
+    match installed {
+        Some(p) => p.display().to_string(),
+        None => "packaging/install-clockcap.sh".to_string(),
+    }
+}
+
 fn print_clock_cap() {
+    let script = clock_cap_script();
     println!(
-        "The boot-time GPU clock cap (nvidia-smi -lgc 300,2200) needs root once. Nothing was changed:\n\
-         this command only prints. Review the files, then run:\n\n\
-         \x20 sudo install -m 0644 packaging/systemd/system/spark-pearl-clockcap.service /etc/systemd/system/\n\
-         \x20 sudo systemctl daemon-reload\n\
-         \x20 sudo systemctl enable --now spark-pearl-clockcap.service\n\n\
-         or run the reviewed installer from the source tree:\n\n\
-         \x20 sudo packaging/install-clockcap.sh\n\n\
+        "The boot-time GPU clock cap (nvidia-smi -lgc 300,2000, what the Balanced profile expects)\n\
+         needs root once. Nothing was changed: this command only prints. Review the script, then run:\n\n\
+         \x20 sudo {script} --apply\n\n\
+         It installs /etc/systemd/system/spark-pearl-clockcap.service and enables it at boot.\n\
          Undo:\n\n\
          \x20 sudo systemctl disable --now spark-pearl-clockcap.service\n\
-         \x20 sudo nvidia-smi -rgc\n"
+         \x20 sudo rm -f /etc/systemd/system/spark-pearl-clockcap.service\n\
+         \x20 sudo systemctl daemon-reload\n"
     );
+}
+
+fn absolute(p: &std::path::Path) -> PathBuf {
+    std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf())
+}
+
+/// Validate a config file exactly as the daemon does at start (`ConfigService::load_or_init`).
+/// None when the file does not exist (the daemon writes the defaults on its first start).
+fn check_config_file(file: &std::path::Path) -> Option<Result<(), Vec<String>>> {
+    let text = match std::fs::read_to_string(file) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(e) => return Some(Err(vec![format!("cannot read the file: {e}")])),
+    };
+    let lines = |e: spm_api::config::ConfigError| {
+        e.fields()
+            .into_iter()
+            .map(|f| if f.path.is_empty() { f.message } else { format!("{}: {}", f.path, f.message) })
+            .collect::<Vec<_>>()
+    };
+    Some(match spm_api::Config::from_toml(&text) {
+        Ok(cfg) => cfg.validate(spm_api::config::Strictness::File).map_err(lines),
+        Err(e) => Err(lines(e)),
+    })
+}
+
+fn config_check(file: Option<PathBuf>) -> ExitCode {
+    let file = absolute(&file.unwrap_or_else(|| Paths::from_env().config_file()));
+    match check_config_file(&file) {
+        None => {
+            println!("OK: {} does not exist yet; the daemon writes the Spark defaults on its first start.", file.display());
+            ExitCode::SUCCESS
+        }
+        Some(Ok(())) => {
+            println!("OK: {}", file.display());
+            ExitCode::SUCCESS
+        }
+        Some(Err(errors)) => {
+            eprintln!("{} is invalid; the daemon keeps the previous settings while running and refuses to start with it:", file.display());
+            for line in errors {
+                println!("{line}");
+            }
+            ExitCode::FAILURE
+        }
+    }
 }

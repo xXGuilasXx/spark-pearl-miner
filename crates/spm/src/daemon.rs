@@ -671,6 +671,7 @@ pub async fn start(opts: DaemonOptions) -> anyhow::Result<DaemonHandle> {
         fee_constants_hash: spm_fee::constants_hash(),
         license: "Apache-2.0".into(),
         repository: "https://github.com/xXGuilasXx/spark-pearl-miner".into(),
+        config_path: std::path::absolute(paths.config_file()).unwrap_or_else(|_| paths.config_file()).display().to_string(),
     };
     let fsm = spm_pool::State::new(failover_config(&cfg.failover), pool_configs(&cfg), seed64());
     let placeholder = Snapshot {
@@ -2291,6 +2292,6 @@ mod tests {
         let b = pool_configs(&c);
         assert_ne!(a[0], b[0]);
         assert_eq!(a[1], b[1]);
-        assert_eq!(b[1].tls, spm_pool::TlsMode::On, "pinned TLS is TLS for the reducer");
+        assert_eq!(b[2].tls, spm_pool::TlsMode::On, "pinned TLS is TLS for the reducer");
     }
 }

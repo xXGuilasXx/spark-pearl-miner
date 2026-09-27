@@ -25,8 +25,8 @@ Reply:
 ```
 Same fields as HeroMiners plus `diff` (the vardiff level; a fresh worker starts at 888,888). `job_id = <8 hex>_<diff>`.
 
-## Share (`mining.submit`) — to be confirmed in M6
-`{"wallet":..,"worker":..,"job_id":..,"plain_proof":"<base64(bincode)>"}` (accepted shares confirmed by other open miners; CPPminer adds `"hs"`).
+## Share (`mining.submit`) — confirmed live in M6 (2026-09-26)
+`{"wallet":..,"worker":..,"job_id":..,"plain_proof":"<base64(bincode)>"}` (CPPminer adds `"hs"`). Our miner: 5 accepted, 0 rejected with `plain_proof` (plain encoding); see `docs/benchmarks/m6-20260926T222707Z-first-shares.md`.
 
 ## Pool facts
 Fee 1 %, PROP, min payout 1 PRL (default 5). CPU test port `pearl-cpu-eu1.luckypool.io:3370` (diff ~26,000) for fast end-to-end checks.

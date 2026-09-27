@@ -18,3 +18,6 @@
 
 # Claude Code worktrees and local session files
 /.claude/
+
+# Release tarballs from packaging/make-release.sh
+/dist/

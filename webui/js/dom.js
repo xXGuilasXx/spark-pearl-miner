@@ -34,15 +34,18 @@ export function replace(el, ...children) {
   return append(el, children);
 }
 
+/** Rebuild `el` only when `sig` changed: live data redraws once per second, and a button that
+ * is replaced between mousedown and mouseup never receives its click. */
+export function keyed(el, sig, build) {
+  if (el.dataset.sig === sig) return el;
+  el.dataset.sig = sig;
+  return replace(el, build());
+}
+
 export function fmtTime(ms) {
   if (!ms) return '';
   const d = new Date(ms);
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
-
-export function fmtDateTime(ms) {
-  if (!ms) return '';
-  return new Date(ms).toLocaleString();
 }
 
 export function fmtDuration(s) {
@@ -56,7 +59,7 @@ export function fmtDuration(s) {
 
 export function fmtNum(x, digits = 2) {
   if (x === null || x === undefined || Number.isNaN(x)) return '—';
-  return Number(x).toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
+  return Number(x).toLocaleString(document.documentElement.lang || undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
 }
 
 /** Credited MAC/s given in tera, with a unit that keeps three significant digits. */
@@ -69,9 +72,10 @@ export function fmtRate(tmacs) {
   return `${fmtNum(0, 2)} T-MAC/s`;
 }
 
+/** `prl1pxxxx…yyyy`: the first 9 and the last 4 characters, to compare with the wallet app. */
 export function abbrev(w) {
   if (!w || w.length <= 16) return w || '';
-  return `${w.slice(0, 8)}…${w.slice(-4)}`;
+  return `${w.slice(0, 9)}…${w.slice(-4)}`;
 }
 
 export function download(name, text) {
@@ -82,4 +86,62 @@ export function download(name, text) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Copy `text` to the clipboard (the async API, or a hidden textarea on plain http origins). */
+export async function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (_) { /* fall back below */ }
+  const ta = h('textarea', { class: 'offscreen', readonly: true });
+  ta.value = text;
+  document.body.append(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+  ta.remove();
+  return ok;
+}
+
+/**
+ * A modal dialog. `build(close)` returns the dialog's children. Escape and a click on the
+ * backdrop close it (unless `sticky`). Returns { el, close }.
+ */
+export function modal(label, build, { sticky = false, onClose } = {}) {
+  const prev = document.activeElement;
+  const box = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': label });
+  const backdrop = h('div', { class: 'backdrop' }, box);
+  let open = true;
+  const close = () => {
+    if (!open) return;
+    open = false;
+    backdrop.remove();
+    document.removeEventListener('keydown', onKey);
+    if (onClose) onClose();
+    if (prev && prev.focus) prev.focus();
+  };
+  const onKey = (ev) => { if (ev.key === 'Escape' && !sticky) close(); };
+  backdrop.addEventListener('mousedown', (ev) => { if (ev.target === backdrop && !sticky) close(); });
+  document.addEventListener('keydown', onKey);
+  append(box, build(close));
+  document.body.append(backdrop);
+  const first = box.querySelector('input, select, button.primary, button');
+  if (first) first.focus();
+  return { el: box, close };
+}
+
+/** Ask a yes/no question in a modal; resolves true on the confirm button. */
+export function confirmBox(text, yesLabel, noLabel, { danger = false } = {}) {
+  return new Promise((resolve) => {
+    let answer = false;
+    modal(text, (close) => [
+      h('p', { class: 'confirm-text' }, text),
+      h('div', { class: 'row end' },
+        h('button', { type: 'button', onclick: () => close() }, noLabel),
+        h('button', { type: 'button', class: danger ? 'danger solid' : 'primary', onclick: () => { answer = true; close(); } }, yesLabel)),
+    ], { onClose: () => resolve(answer) });
+  });
 }

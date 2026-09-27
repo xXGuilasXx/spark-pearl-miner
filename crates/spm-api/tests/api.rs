@@ -318,6 +318,37 @@ async fn config_validation_through_the_api() {
     assert_eq!(body_json(r).await["pools"][0]["tls"], "off");
 }
 
+/// What the Settings dialog does: GET a fresh config, change the wallet, the worker, the language
+/// and one pool row, PUT the result. The hidden settings of the rows the user did not touch
+/// (Kryptex's dialect and explicit TLS, LuckyPool's pinned key) must survive, in JSON and in the
+/// file.
+#[tokio::test]
+async fn a_settings_save_keeps_the_hidden_pool_settings() {
+    let fake = Fake::new();
+    let app = app(&fake);
+    let (cookie, csrf) = login(&app).await;
+    let r = app.clone().oneshot(req("GET", "/api/v1/config").header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await.unwrap();
+    let mut cfg = body_json(r).await;
+    cfg["miner"]["disclosure_accepted"] = json!(true);
+    cfg["miner"]["worker"] = json!("rig-2");
+    cfg["gui"]["language"] = json!("pt-BR");
+    // Backup 1 retyped as a custom host:port (poolrows.js: custom defaults).
+    cfg["pools"][1] = json!({
+        "name": "pool.example.com", "host": "pool.example.com", "port": 3333, "tls": "auto", "spki_pin": "",
+        "dialect": "auto", "jsonrpc": "auto", "proof": "auto", "password": "x", "pattern": "auto", "enabled": true
+    });
+    let (st, out) = put_config(&app, &cookie, &csrf, cfg).await;
+    assert_eq!(st, StatusCode::OK, "{out}");
+    let now = fake.config();
+    let (k, custom, lucky) = (&now.pools[0], &now.pools[1], &now.pools[2]);
+    assert_eq!((k.host.as_str(), k.tls, k.dialect), ("prl-br.kryptex.network", TlsSetting::On, spm_api::config::DialectSetting::Kryptex));
+    assert_eq!((custom.host.as_str(), custom.port, custom.tls), ("pool.example.com", 3333, TlsSetting::Auto));
+    assert_eq!((lucky.tls, lucky.spki_pin.as_str()), (TlsSetting::Pinned, "d0ehDQxaU5IUv4UHWXItQKqdJ8anqZclQXcoIjwF/mk="));
+    assert_eq!(lucky.jsonrpc, spm_api::config::JsonRpcSetting::On);
+    assert_eq!((now.miner.worker.as_str(), now.gui.language.as_str()), ("rig-2", "pt-BR"));
+    assert_eq!(Config::from_toml(&now.to_toml()).unwrap(), now, "the commented file keeps them too");
+}
+
 #[test]
 fn the_config_schema_has_no_fee_keys() {
     let v = serde_json::to_value(Config::default()).unwrap();
@@ -511,30 +542,7 @@ fn every_key_the_gui_uses_is_translated() {
         }
     }
     // Codes the daemon sends, translated through dynamic keys.
-    let dynamic: &[(&str, &[&str])] = &[
-        ("state", &["setup_required", "stopped", "starting", "mining", "failing_over", "all_down", "paused", "offline"]),
-        ("slot", &["disabled", "idle", "resolving", "connecting", "tls_handshake", "authorizing", "awaiting_job", "active", "standby", "draining", "backoff", "config_error", "quarantined"]),
-        ("worker", &["absent", "starting", "ready", "hashing", "paused", "backoff", "waiting_external", "faulted", "unavailable"]),
-        ("pause", &["hardware_fault", "user", "user_stop", "yield", "update_required", "reject_everywhere", "health"]),
-        ("target", &["user", "dev", "idle"]),
-        ("feephase", &["waiting", "prewarm", "slice", "suspended", "disabled"]),
-        ("launch", &["spawn", "external"]),
-        ("source", &["api", "file", "cli"]),
-        ("wallet.err", &["empty", "mixed_case", "too_long", "format", "charset", "checksum", "hrp", "version", "length"]),
-        ("pools.test.step", &["dns", "tcp", "tls", "authorize", "job"]),
-        ("pools.tls", &["auto", "on", "off", "pinned"]),
-        ("power", &["eco", "balanced", "max", "eco.desc", "balanced.desc", "max.desc"]),
-        ("coex", &["spark-modo", "yield", "yield-release", "exclusive", "spark-modo.desc", "yield.desc", "yield-release.desc", "exclusive.desc"]),
-        ("logs.level", &["info", "warn", "error"]),
-        ("nav", &["dashboard", "pools", "failover", "power", "fee", "logs", "about", "setup"]),
-        ("err", &[
-            "dns_failed", "dns_timeout", "connect_refused", "connect_failed", "connect_timeout", "tls_certificate", "tls_pin_mismatch",
-            "tls_protocol", "tls_timeout", "tls_config", "auth_rejected", "auth_timeout", "no_job", "eof", "io", "line_too_long",
-            "protocol", "closed", "reject_storm", "stale_shares", "ack_timeouts", "banned", "stall", "update_required", "host_invalid",
-            "wallet_invalid",
-        ]),
-    ];
-    for (prefix, codes) in dynamic {
+    for (prefix, codes) in DYNAMIC {
         for c in *codes {
             let k = format!("{prefix}.{c}");
             if !en.contains_key(&k) {
@@ -542,15 +550,82 @@ fn every_key_the_gui_uses_is_translated() {
             }
         }
     }
-    let fo = serde_json::to_value(spm_api::config::FailoverSettings::default()).unwrap();
-    for k in fo.as_object().unwrap().keys() {
-        for key in [format!("fo.{k}"), format!("fo.{k}.hint")] {
-            if !en.contains_key(&key) {
-                missing.push(key);
-            }
+    assert!(missing.is_empty(), "untranslated keys: {missing:#?}");
+}
+
+/// Keys built at run time (`t(`${prefix}.${code}`)`) from codes the daemon sends.
+const DYNAMIC: &[(&str, &[&str])] = &[
+    ("state", &["setup_required", "stopped", "starting", "mining", "failing_over", "all_down", "paused", "offline"]),
+    ("worker", &["absent", "starting", "ready", "hashing", "paused", "backoff", "waiting_external", "faulted", "unavailable"]),
+    ("pause", &[
+        "hardware_fault", "power_fault", "power_trip", "no_telemetry", "memory", "user", "user_stop", "yield", "update_required",
+        "reject_everywhere", "health",
+    ]),
+    ("mgr", &["starting", "mining", "failing_over", "reconnecting", "all_down", "paused"]),
+    ("trip", &["over_power", "gpu_over_temp", "acpitz_over_temp", "fault"]),
+    ("mem", &["refused", "exit_low_memory", "exit_pressure", "unreadable"]),
+    ("fault", &["usb_pd", "safety_mode", "thermal_cap_100w"]),
+    ("pwrstate", &["off", "no_telemetry", "idle", "running", "tripped", "fault"]),
+    ("pwr.profile", &["eco", "balanced", "max"]),
+    ("wallet.err", &["empty", "mixed_case", "too_long", "format", "charset", "checksum", "hrp", "version", "length"]),
+    ("set.row", &["0", "1", "2"]),
+    ("wizard.presets", &["pools", "power", "power_nocap", "gpu", "later"]),
+    ("cfgerr", &[
+        "wallet_required", "wallet_invalid", "worker_invalid", "pools_empty", "too_many_pools", "host_invalid", "port_invalid",
+        "pin_invalid", "pin_unused", "password_invalid", "name_invalid", "out_of_range", "max_not_acknowledged",
+        "metrics_url_invalid", "bind_not_loopback", "bind_invalid", "lan_requires_tls", "language_invalid", "schema_version",
+        "parse", "fee_not_configurable",
+    ]),
+    ("err", &[
+        "dns_failed", "dns_timeout", "connect_refused", "connect_failed", "connect_timeout", "tls_certificate", "tls_pin_mismatch",
+        "tls_protocol", "tls_timeout", "tls_config", "auth_rejected", "auth_timeout", "no_job", "eof", "io", "line_too_long",
+        "protocol", "closed", "reject_storm", "stale_shares", "ack_timeouts", "banned", "stall", "update_required", "host_invalid",
+        "wallet_invalid",
+    ]),
+];
+
+/// The GUI was cut down to the wizard, the dashboard and the Settings dialog: a key that no
+/// script uses any more must go from both language files.
+#[test]
+fn every_translated_key_is_used() {
+    let en = i18n("en");
+    let mut src = String::new();
+    for f in WEBUI.get_dir("js").unwrap().files() {
+        src.push_str(&String::from_utf8_lossy(f.contents()));
+    }
+    let unused: Vec<&String> = en
+        .keys()
+        .filter(|k| !src.contains(&format!("'{k}'")))
+        .filter(|k| !DYNAMIC.iter().any(|(prefix, codes)| codes.iter().any(|c| **k == format!("{prefix}.{c}"))))
+        .collect();
+    assert!(unused.is_empty(), "keys no script uses: {unused:#?}");
+}
+
+/// The clock cap is an optional root step of the installer: the wizard may say "capped at
+/// 2000 MHz" only when the miner has seen the cap in force, and warns when it saw the GPU above it.
+#[test]
+fn the_wizard_claims_the_clock_cap_only_when_seen() {
+    let wizard = String::from_utf8_lossy(WEBUI.get_file("js/wizard.js").unwrap().contents()).into_owned();
+    assert!(wizard.contains("cap === 'capped' ? 'power' : 'power_nocap'"), "the power preset line must depend on the cap status");
+    assert!(wizard.contains("cap === 'uncapped'") && wizard.contains("CLOCKCAP_CMD"), "the wizard must show the clock-cap command when uncapped");
+    for lang in ["en", "pt-BR"] {
+        let keys = i18n(lang);
+        let nocap = keys.get("wizard.presets.power_nocap").and_then(|v| v.as_str()).unwrap();
+        assert!(nocap.contains("2000 MHz") && nocap.contains("85 W"), "{lang}: {nocap}");
+    }
+}
+
+#[test]
+fn the_removed_screens_are_gone() {
+    for gone in ["js/pooleditor.js", "js/screens.js"] {
+        assert!(WEBUI.get_file(gone).is_none(), "{gone} is still embedded");
+    }
+    for f in WEBUI.get_dir("js").unwrap().files() {
+        let src = String::from_utf8_lossy(f.contents());
+        for route in ["#/pools", "#/failover", "#/power", "#/fee", "#/logs", "#/about", "#/setup", "FAILOVER_DEFAULTS"] {
+            assert!(!src.contains(route), "{}: {route}", f.path().display());
         }
     }
-    assert!(missing.is_empty(), "untranslated keys: {missing:#?}");
 }
 
 // ---- Trusted local user (api.trust_local_user) ----

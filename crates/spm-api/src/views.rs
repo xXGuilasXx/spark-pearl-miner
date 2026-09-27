@@ -36,7 +36,7 @@ pub struct StatusView {
     pub uptime_s: u64,
     pub mining_s: u64,
     pub worker: WorkerView,
-    /// Fee phase (`waiting`, `pre_warm`, `slice`, `suspended`, `disabled`).
+    /// Fee phase (`waiting`, `prewarm`, `slice`, `suspended`, `disabled`).
     pub fee_phase: String,
     pub alerts: Vec<AlertView>,
     pub wallet: String,
@@ -343,6 +343,9 @@ pub struct AboutView {
     pub fee_constants_hash: String,
     pub license: String,
     pub repository: String,
+    /// Absolute path of `config.toml` (shown by the GUI: the advanced settings live there).
+    #[serde(default)]
+    pub config_path: String,
 }
 
 /// One log line (`GET /api/v1/logs`, `log` SSE events).

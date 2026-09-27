@@ -23,25 +23,28 @@ Para ter escala: o pico dos tensor cores só em registradores (MB1, [BENCHMARKS]
 | Perfil | Alvo | Corte | Cap de clock recomendado | Observações |
 |---|---|---|---|---|
 | Eco | 60 W | 70 W | 1800 MHz | Silencioso e frio, longe da faixa. |
-| **Balanced** (padrão) | **75 W** | **85 W** | **2000 MHz** | O padrão em todo lugar. |
+| **Balanced** (padrão) | **75 W** | **85 W** | **2000 MHz** | O padrão em todo lugar. A 2200 MHz o kernel real mediu 83–87 W (soak G1 abaixo), então 2000 MHz é o cap que cabe no alvo de 75 W. Medido a 2000 MHz: 73,9 T-MAC/s creditados com ~63 W na GPU e GPU a 72 °C. |
 | Max | 88 W | 92 W | 2200 MHz | Dentro da faixa de desligamento. Recusado sem `power.max_acknowledged = true`. |
 
 O alvo é para onde o controlador leva a potência. O corte pausa a mineração (seção 4). O cap de clock é o valor da unit de boot.
 
 ## 3. Cap de clock (opcional, root uma vez)
 
-Travar o clock do SM em 2200 MHz custa ~9 % do pico (96,0 contra 108,6 T-MAC/s no MB1) e é a principal rede de proteção: mesmo que o governor falhe, a GPU não sobe para a faixa. O minerador funciona sem ele, mas num DGX Spark eu recomendo.
+Travar o clock do SM em 2000 MHz custa ~22 % do pico stock (85,0 contra 108,6 T-MAC/s no MB1; 2200 MHz custaria ~12 %, mas roda acima do alvo do Balanced) e é a principal rede de proteção: mesmo que o governor falhe, a GPU não sobe para a faixa. O minerador funciona sem ele, mas num DGX Spark eu recomendo.
 
 ```bash
 packaging/install-clockcap.sh                 # imprime os comandos sudo exatos, não muda nada
 sudo packaging/install-clockcap.sh --apply    # executa (instala a unit, daemon-reload, enable --now)
-sudo packaging/install-clockcap.sh --apply --mhz 2000   # Eco
+sudo packaging/install-clockcap.sh --apply --mhz 1800   # Eco
+sudo packaging/install-clockcap.sh --apply --mhz 2200   # Max (confirmado)
 sudo packaging/uninstall-clockcap.sh --apply  # desativa, remove e restaura os clocks padrão (nvidia-smi -rgc)
 ```
 
+Depois do `packaging/install.sh` os mesmos scripts ficam em `~/.local/share/spark-pearl-miner/`: `sudo ~/.local/share/spark-pearl-miner/install-clockcap.sh --apply` (é o comando que o painel mostra quando o cap falta). O `packaging/install.sh` pergunta se deve executá-lo por você antes de iniciar o serviço (padrão Sim; `--yes` aceita, `--no-sudo` ou a falta de terminal pula e imprime o comando).
+
 A unit é `Type=oneshot` com `RemainAfterExit=yes`: `ExecStart=/usr/bin/nvidia-smi -lgc 300,2000` no boot (depois do `nvidia-persistenced`), `ExecStop=/usr/bin/nvidia-smi -rgc`. Ela de propósito não é ordenada depois do `multi-user.target`, porque esse target a puxa e a ordem viraria um ciclo.
 
-**Detecção.** O NVML não tem consulta para clock travado, mas o cap aparece nos clocks: com ele instalado o clock do SM nunca passa de 2200 MHz, ocioso ou em carga (sem cap, esta unidade fica em 2424 MHz ociosa). O governor informa *sem cap* assim que uma amostra passa do cap por mais de 30 MHz, e *com cap* depois de 30 s de carga com duty ≥ 90 % sem passar dele. O veredito aparece na API de status (`power.clock_cap`: `unknown`, `capped` ou `uncapped`, com o maior clock visto).
+**Detecção.** O NVML não tem consulta para clock travado, mas o cap aparece nos clocks: com ele instalado o clock do SM nunca passa de 2000 MHz, ocioso ou em carga (sem cap, esta unidade fica em 2424 MHz ociosa). O governor informa *sem cap* assim que uma amostra passa do cap por mais de 30 MHz, e *com cap* depois de 30 s de carga com duty ≥ 90 % sem passar dele. O veredito aparece na API de status (`power.clock_cap`: `unknown`, `capped` ou `uncapped`, com o maior clock visto).
 
 ## 4. Comportamento do governor
 
@@ -90,9 +93,8 @@ Estes padrões indicam problema de hardware ou firmware, não de carga. O govern
 
 `bench/soak-log.sh` registra a cada 10 s: `nvidia-smi --query-gpu=timestamp,power.draw,clocks.sm,temperature.gpu,clocks_event_reasons.active` mais o `acpitz` mais quente, em `docs/benchmarks/soak-<UTC>.csv`. Não precisa de root e não mexe na GPU. Ao sair, imprime potência máxima, clock mínimo, temperaturas máximas, os motivos de redução de clock vistos, todo intervalo maior que 20 s entre linhas e toda sessão que terminou sem a linha de fim limpo (os dois indicam suspeita de desligamento). Depois de um desligamento, no boot seguinte: `bench/soak-log.sh --summarize <arquivo>`.
 
-Plano, numa janela de GPU avisada e com o vLLM parado: escada de clock 1800–2200 MHz com 10 min por degrau, depois 60 min e 24 h no perfil padrão. Aprovação: nenhum desligamento, zero divergências de cálculo, ≥ ~70 TH/s creditados. Os resultados entram aqui quando existirem; **ainda não há** (o worker de GPU é o M5).
-
-Para ver rapidamente o que o governor enxerga: `cargo run --release -p spm-governor --features nvml --example telemetry -- 10`.
-
+Plano, numa janela de GPU avisada e com o vLLM parado: escada de clock 1800–2200 MHz com 10 min por degrau, depois 60 min e 24 h no perfil padrão. Aprovação: nenhum desligamento, zero divergências de cálculo, ≥ ~70 TH/s creditados.
 
 **Soak G1 nº 1 (2026-09-26 21:54–22:11 UTC, `bench/g1-soak.sh`, cap 2200 MHz, forma de produção, vLLM parado):** 16,9 min, 102 amostras, **sem desligamento**. Minerando: potência média 82,7 W, máxima 87 W, subindo ~1 W a cada 5 min com o aquecimento do SoC; clock médio 2162 MHz; GPU máx 83 °C; **`acpitz` máx 97,5 °C**. Interrompido manualmente a 87 W (acima do corte de 85 W do Balanced e dentro da faixa relatada de desligamento). Consequência: o cap do Balanced passou de 2200 para 2000 MHz; os soaks de 60 min e 24 h serão repetidos a 2000 MHz com o governor ativo. Log bruto: `docs/benchmarks/g1-20260926T215417Z-soak.csv`.
+
+Para ver rapidamente o que o governor enxerga: `cargo run --release -p spm-governor --features nvml --example telemetry -- 10`.
