@@ -18,7 +18,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/xXGuilasXx/spark-pearl-miner"
@@ -76,3 +76,10 @@ spm-worker = { path = "crates/spm-worker" }
 codegen-units = 1
 lto = "thin"
 debug = 1
+
+# Release tarballs (packaging/make-release.sh, packaging/install.sh --from-source): the release
+# profile without debug info, stripped.
+[profile.dist]
+inherits = "release"
+debug = 0
+strip = true
