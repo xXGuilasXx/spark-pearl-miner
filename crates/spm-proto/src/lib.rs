@@ -38,7 +38,8 @@ pub enum Dialect {
     /// stratum-v1 style: subscribe [agent], authorize ["wallet.worker", "x"]; notify/submit objects (Kryptex).
     Kryptex,
     /// Kryptex "v2" session: object authorize `{"wallet":"addr.worker","agent":..,"type":"v2"}`; when the
-    /// ack echoes `type:"v2"` every submit carries base64(gzip(bincode)). Not yet confirmed live.
+    /// ack echoes `type:"v2"` every submit carries base64(gzip(bincode)). Kryptex's own spec:
+    /// https://gist.github.com/maxmalysh/eaaf4332dbc5ca99d0a78f24a733fffe (gzip, wbits 15+16).
     KryptexV2,
 }
 
@@ -139,6 +140,7 @@ struct ObjectLogin<'a> {
 struct KryptexV2Login<'a> {
     wallet: String,
     agent: &'a str,
+    password: &'a str,
     #[serde(rename = "type")]
     kind: &'static str,
 }
@@ -195,7 +197,7 @@ pub fn authorize_lines(
             opts,
             id,
             "mining.authorize",
-            KryptexV2Login { wallet: format!("{wallet}.{worker}"), agent: opts.agent, kind: "v2" },
+            KryptexV2Login { wallet: format!("{wallet}.{worker}"), agent: opts.agent, password, kind: "v2" },
         )?],
     })
 }
@@ -411,7 +413,7 @@ mod tests {
         assert_eq!(l[0], r#"{"id":7,"method":"mining.subscribe","params":["a/1"]}"#);
         assert_eq!(l[1], r#"{"id":8,"method":"mining.authorize","params":["W.w","x"]}"#);
         let l = authorize_lines(Dialect::KryptexV2, 1, "W", "w", "x", &o).unwrap();
-        assert_eq!(l, vec![r#"{"id":1,"method":"mining.authorize","params":{"wallet":"W.w","agent":"a/1","type":"v2"}}"#]);
+        assert_eq!(l, vec![r#"{"id":1,"method":"mining.authorize","params":{"wallet":"W.w","agent":"a/1","password":"x","type":"v2"}}"#]);
         let s = submit_line(Dialect::Object, 3, "W", "w", "j_1", "plain_proof_zst", "QUJD", &o).unwrap();
         assert_eq!(s, r#"{"id":3,"method":"mining.submit","params":{"wallet":"W","worker":"w","job_id":"j_1","plain_proof_zst":"QUJD"}}"#);
         let s = submit_line(Dialect::Kryptex, 3, "W", "w", "j_1", "plain_proof", "QUJD", &o).unwrap();

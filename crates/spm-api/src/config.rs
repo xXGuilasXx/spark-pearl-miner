@@ -108,7 +108,7 @@ pub enum TlsSetting {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DialectSetting {
-    /// Chosen from the host name (HeroMiners/LuckyPool: object, Kryptex: kryptex; else object).
+    /// Chosen from the host name (HeroMiners/LuckyPool: object, Kryptex: kryptex-v2; else object).
     #[default]
     Auto,
     Object,
@@ -273,7 +273,9 @@ impl PoolEntry {
 pub fn dialect_for_host(host: &str) -> Dialect {
     let h = host.to_ascii_lowercase();
     if h.ends_with("kryptex.network") {
-        Dialect::Kryptex
+        // Kryptex asks miners for its gzip "v2" session; the pool answers without `type` when it
+        // does not offer it and the session falls back to plain proofs by itself.
+        Dialect::KryptexV2
     } else {
         Dialect::Object
     }
@@ -288,7 +290,7 @@ pub fn default_pools() -> Vec<PoolEntry> {
     lucky.dialect = DialectSetting::Object;
     lucky.jsonrpc = JsonRpcSetting::On;
     let mut kryptex = PoolEntry::new("Kryptex", "prl-br.kryptex.network", 8048, TlsSetting::On);
-    kryptex.dialect = DialectSetting::Kryptex;
+    kryptex.dialect = DialectSetting::KryptexV2;
     vec![kryptex, hero, lucky]
 }
 
@@ -882,11 +884,11 @@ mod tests {
     #[test]
     fn default_slots_match_the_architecture() {
         let p = default_pools();
-        assert_eq!((p[0].host.as_str(), p[0].port, p[0].tls, p[0].dialect), ("prl-br.kryptex.network", 8048, TlsSetting::On, DialectSetting::Kryptex));
+        assert_eq!((p[0].host.as_str(), p[0].port, p[0].tls, p[0].dialect), ("prl-br.kryptex.network", 8048, TlsSetting::On, DialectSetting::KryptexV2));
         assert_eq!((p[1].host.as_str(), p[1].port, p[1].tls, p[1].dialect), ("br.pearl.herominers.com", 1200, TlsSetting::Auto, DialectSetting::Auto));
         assert_eq!((p[2].host.as_str(), p[2].port, p[2].tls, p[2].dialect, p[2].jsonrpc), ("pearl-br.luckypool.io", 3360, TlsSetting::Pinned, DialectSetting::Object, JsonRpcSetting::On));
         assert_eq!(p[2].spki_pin, "d0ehDQxaU5IUv4UHWXItQKqdJ8anqZclQXcoIjwF/mk=");
-        assert_eq!(p[0].resolved_dialect(), Dialect::Kryptex);
+        assert_eq!(p[0].resolved_dialect(), Dialect::KryptexV2);
         assert_eq!(p[1].resolved_dialect(), Dialect::Object);
         assert_eq!(p[2].resolved_jsonrpc(), Some(true));
         assert_eq!(p[2].transport_mode(true), TlsMode::luckypool());

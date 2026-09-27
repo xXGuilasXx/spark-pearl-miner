@@ -242,6 +242,12 @@ impl State<'_> {
                         Some("plain") => self.plain_encoding = ProofEncoding::Plain,
                         _ => {}
                     }
+                    tracing::info!(
+                        login = %format!("{}.{}", self.cfg.wallet, self.cfg.worker),
+                        proof_type = proof_type.as_deref().unwrap_or("-"),
+                        encoding = ?self.plain_encoding,
+                        "pool authorized"
+                    );
                     self.emit(SessionEvent::Authorized { proof_type }).await;
                     Ok(())
                 }

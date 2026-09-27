@@ -651,7 +651,7 @@ spki_pin = "<SHA-256 em base64 da chave pública da pool>"
 | `pools.name` | nome da pool | um rótulo para a GUI e os logs (até 40 caracteres) |
 | `pools.tls` | Kryptex `on`, HeroMiners `auto`, LuckyPool `pinned` | só para uma pool própria (`on`, `off`, `auto`, `pinned`) |
 | `pools.spki_pin` | a chave da LuckyPool | só com `tls = "pinned"` |
-| `pools.dialect` | Kryptex `kryptex`, HeroMiners `auto`, LuckyPool `object` | só se uma pool própria precisar (`auto`, `object`, `kryptex`, `kryptex-v2`) |
+| `pools.dialect` | Kryptex `kryptex-v2` (provas em gzip, como a Kryptex pede; volta para plain sozinho), HeroMiners `auto`, LuckyPool `object` | só se uma pool própria precisar (`auto`, `object`, `kryptex`, `kryptex-v2`) |
 | `pools.jsonrpc` | `auto` (LuckyPool `on`) | só se uma pool precisar (`auto`, `on`, `off`) |
 | `pools.proof` | `auto` | nunca (o minerador aprende a codificação certa) |
 | `pools.password` | `"x"` | se a pool pedir (a Kryptex também aceita `d=<dificuldade>`) |
