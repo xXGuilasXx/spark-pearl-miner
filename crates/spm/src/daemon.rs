@@ -2291,6 +2291,6 @@ mod tests {
         let b = pool_configs(&c);
         assert_ne!(a[0], b[0]);
         assert_eq!(a[1], b[1]);
-        assert_eq!(b[1].tls, spm_pool::TlsMode::On, "pinned TLS is TLS for the reducer");
+        assert_eq!(b[2].tls, spm_pool::TlsMode::On, "pinned TLS is TLS for the reducer");
     }
 }

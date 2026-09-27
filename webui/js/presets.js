@@ -39,9 +39,9 @@ export function presetOf(pool) {
   return PRESETS.find((p) => p.host === (pool.host || '').trim().toLowerCase() && p.port === Number(pool.port)) || null;
 }
 
-/** The default three slots: HeroMiners BR → LuckyPool BR → Kryptex. */
+/** The default three slots: Kryptex → HeroMiners BR → LuckyPool BR (same as config.rs). */
 export function defaultPools() {
-  return ['hero-br', 'lucky-br', 'kryptex'].map((id) => fromPreset(PRESETS.find((p) => p.id === id)));
+  return ['kryptex', 'hero-br', 'lucky-br'].map((id) => fromPreset(PRESETS.find((p) => p.id === id)));
 }
 
 export function customPool() {

@@ -272,7 +272,8 @@ pub fn dialect_for_host(host: &str) -> Dialect {
     }
 }
 
-/// The three default slots: HeroMiners BR → LuckyPool BR → Kryptex.
+/// The three default slots: Kryptex → HeroMiners BR → LuckyPool BR (all three verified live on the
+/// DGX Spark with accepted shares and no rejects; Kryptex first: explicit TLS on 8048).
 pub fn default_pools() -> Vec<PoolEntry> {
     let hero = PoolEntry::new("HeroMiners BR", "br.pearl.herominers.com", 1200, TlsSetting::Auto);
     let mut lucky = PoolEntry::new("LuckyPool BR", "pearl-br.luckypool.io", 3360, TlsSetting::Pinned);
@@ -281,7 +282,7 @@ pub fn default_pools() -> Vec<PoolEntry> {
     lucky.jsonrpc = JsonRpcSetting::On;
     let mut kryptex = PoolEntry::new("Kryptex", "prl-br.kryptex.network", 8048, TlsSetting::On);
     kryptex.dialect = DialectSetting::Kryptex;
-    vec![hero, lucky, kryptex]
+    vec![kryptex, hero, lucky]
 }
 
 /// Failover thresholds (defaults = `docs/en/ARCHITECTURE.md`, "Failover").
@@ -797,15 +798,15 @@ mod tests {
     #[test]
     fn default_slots_match_the_architecture() {
         let p = default_pools();
-        assert_eq!((p[0].host.as_str(), p[0].port, p[0].tls, p[0].dialect), ("br.pearl.herominers.com", 1200, TlsSetting::Auto, DialectSetting::Auto));
-        assert_eq!((p[1].host.as_str(), p[1].port, p[1].tls, p[1].dialect, p[1].jsonrpc), ("pearl-br.luckypool.io", 3360, TlsSetting::Pinned, DialectSetting::Object, JsonRpcSetting::On));
-        assert_eq!(p[1].spki_pin, "d0ehDQxaU5IUv4UHWXItQKqdJ8anqZclQXcoIjwF/mk=");
-        assert_eq!((p[2].host.as_str(), p[2].port, p[2].tls, p[2].dialect), ("prl-br.kryptex.network", 8048, TlsSetting::On, DialectSetting::Kryptex));
-        assert_eq!(p[0].resolved_dialect(), Dialect::Object);
-        assert_eq!(p[1].resolved_jsonrpc(), Some(true));
-        assert_eq!(p[2].resolved_dialect(), Dialect::Kryptex);
-        assert_eq!(p[1].transport_mode(true), TlsMode::luckypool());
-        assert_eq!(p[0].transport_mode(false), TlsMode::Off);
+        assert_eq!((p[0].host.as_str(), p[0].port, p[0].tls, p[0].dialect), ("prl-br.kryptex.network", 8048, TlsSetting::On, DialectSetting::Kryptex));
+        assert_eq!((p[1].host.as_str(), p[1].port, p[1].tls, p[1].dialect), ("br.pearl.herominers.com", 1200, TlsSetting::Auto, DialectSetting::Auto));
+        assert_eq!((p[2].host.as_str(), p[2].port, p[2].tls, p[2].dialect, p[2].jsonrpc), ("pearl-br.luckypool.io", 3360, TlsSetting::Pinned, DialectSetting::Object, JsonRpcSetting::On));
+        assert_eq!(p[2].spki_pin, "d0ehDQxaU5IUv4UHWXItQKqdJ8anqZclQXcoIjwF/mk=");
+        assert_eq!(p[0].resolved_dialect(), Dialect::Kryptex);
+        assert_eq!(p[1].resolved_dialect(), Dialect::Object);
+        assert_eq!(p[2].resolved_jsonrpc(), Some(true));
+        assert_eq!(p[2].transport_mode(true), TlsMode::luckypool());
+        assert_eq!(p[1].transport_mode(false), TlsMode::Off);
     }
 
     #[test]
