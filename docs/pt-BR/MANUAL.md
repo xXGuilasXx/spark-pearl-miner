@@ -156,10 +156,19 @@ A caixa de valores prontos lista:
 - **Pools:** Kryptex → HeroMiners BR → LuckyPool BR, com failover automático (troca em cerca de
   1 s, volta após 60 s estável);
 - **Energia:** perfil Equilibrado, clock SM limitado a 2000 MHz, para acima de 85 W (medido: cerca
-  de 63 W, GPU a 72 °C);
+  de 63 W, GPU a 72 °C). Esse texto só aparece depois que o minerador viu o limite de clock em
+  vigor. Até lá ele diz "…clock SM limitado a 2000 MHz quando o limite de clock do boot estiver
+  instalado (o instalador oferece…)", porque o limite é um passo opcional do instalador (veja [as
+  duas perguntas do instalador](#installer-questions));
 - **Uso da GPU:** exclusivo enquanto minera; pausa se a memória livre cair abaixo de 16 GiB;
 - troque carteira, nome do worker, idioma e pools depois pelo ícone de engrenagem; todo o resto fica
   em `~/.config/spark-pearl-miner/config.toml`.
+
+Se o minerador já viu a GPU rodar acima de 2000 MHz, uma caixa amarela abaixo da caixa de valores
+prontos diz **O limite de segurança de clock de 2000 MHz não está instalado. Instale uma vez com:**
+`sudo ~/.local/share/spark-pearl-miner/install-clockcap.sh --apply`, com um botão **Copiar**.
+Execute-o num terminal antes de clicar em **Começar a minerar**; o governador de energia continua
+protegendo o Spark sem ele, mas o limite é a rede de segurança recomendada.
 
 **O que Começar a minerar faz.** Lê as configurações atuais do minerador, muda só três coisas (sua
 carteira, o aceite da taxa e o idioma), salva e começa a minerar. Enquanto isso o botão mostra
@@ -823,6 +832,19 @@ continua minerando nas outras.
 ## 10. Atualizar, voltar versão e desinstalar
 
 O instalador guarda uma cópia de si mesmo em `~/.local/share/spark-pearl-miner/`.
+
+<a id="installer-questions"></a>
+**As duas perguntas do instalador.** Antes de iniciar o serviço, o instalador faz duas perguntas
+que pedem a sua senha uma vez (`sudo`). Apertar Enter responde **Sim**:
+
+| Pergunta | O que Sim faz | Se você responder Não |
+|---|---|---|
+| Instalar o limite de clock da GPU de 2000 MHz (recomendado)? | executa `sudo ~/.local/share/spark-pearl-miner/install-clockcap.sh --apply`: o clock do SM fica em 2000 MHz ou menos agora e em todo boot (cerca de 63 W, longe do desligamento em ~88–92 W) | a GPU fica sem limite; só o governador de energia a protege. O resumo, o último passo da configuração e o painel mostram o comando até você executá-lo |
+| Continuar minerando depois que você sair da sessão e começar no boot, antes de você entrar? | executa `sudo loginctl enable-linger $USER` | o minerador só roda enquanto você está logado; execute o comando depois se mudar de ideia |
+
+`--yes` responde sim às duas, `--no-sudo` pula as duas, e quando não há terminal para perguntar
+(por exemplo `ssh` sem `-t`) as duas são puladas. O resumo no final sempre mostra o estado do
+limite de clock e do lingering. `--dry-run` imprime os comandos e não executa nenhum.
 
 | Tarefa | Comando | Observações |
 |---|---|---|

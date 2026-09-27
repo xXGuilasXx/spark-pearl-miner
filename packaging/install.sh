@@ -12,11 +12,14 @@
 #      needed, finds nvcc, builds with CARGO_TARGET_DIR outside paths with spaces);
 #   3. installs ~/.local/bin/spark-pearl-miner, the systemd --user unit, the app-menu entry and
 #      ~/.local/share/spark-pearl-miner/ (clock-cap scripts, this installer, docs);
-#   4. starts the service and prints the GUI address http://127.0.0.1:4078/.
+#   4. asks, once each and default Yes, for the two optional root steps: the 2000 MHz GPU clock
+#      cap (recommended safety net) and lingering (mining after logout and at boot); sudo asks
+#      for your password. --yes accepts both, --no-sudo skips both, and without a terminal to
+#      ask they are skipped; a skipped step is printed in the summary for later;
+#   5. starts the service and prints the GUI address http://127.0.0.1:4078/.
 # It never creates, rewrites or deletes ~/.config/spark-pearl-miner/config.toml or the API token
-# (the daemon writes the commented Spark defaults on its first start), never runs sudo and never
-# touches the developer fee. The only root step, the optional GPU clock cap, is printed for you
-# to run.
+# (the daemon writes the commented Spark defaults on its first start), runs sudo only for the two
+# steps above after you say yes, and never touches the developer fee.
 #
 # The service always runs, but a fresh install does not mine: open the GUI, paste your wallet,
 # accept the 2 % developer fee and press Start mining. Stop is remembered across reboots.
@@ -49,9 +52,12 @@ usage: install.sh [options]
   --prefix DIR     install under DIR (default ~/.local: DIR/bin, DIR/share/$APP)
   --no-start       do not enable, start or restart the service (no systemctl, no loginctl)
   --no-linger      do not try to enable lingering (mining after logout/reboot without login)
+  --no-sudo        never ask for sudo: skip the optional clock cap and lingering steps (their
+                   commands are printed in the summary)
   --no-open        do not open the browser at the end
-  --dry-run        print what would be done and change nothing
-  --yes            answer yes to the --purge confirmation
+  --dry-run        print what would be done and change nothing (never asks, never runs sudo)
+  --yes            answer yes to every question: the clock cap, lingering and the --purge
+                   confirmation
   --force          continue when a machine check fails (not the root check)
   -h, --help       this help
 
@@ -109,10 +115,15 @@ write_file() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# Whether there is a terminal to ask on (/dev/tty, not stdin, which is the script under curl|bash).
+have_tty() {
+  [ -r /dev/tty ] && { : </dev/tty; } 2>/dev/null
+}
+
 # Reads a yes/no answer from the terminal (never from stdin, which is the script under curl|bash).
 tty_read() {
   local prompt=$1 answer=""
-  if [ -r /dev/tty ] && { : </dev/tty; } 2>/dev/null; then
+  if have_tty; then
     printf '%s' "$prompt" >/dev/tty
     IFS= read -r answer </dev/tty || true
   fi
@@ -130,6 +141,7 @@ RELEASE_TAG=""
 PREFIX=""
 START=1
 LINGER=1
+SUDO=1
 OPEN=1
 DRY_RUN=0
 YES=0
@@ -151,6 +163,7 @@ parse_args() {
       --prefix=*) PREFIX=${1#*=} ;;
       --no-start) START=0 ;;
       --no-linger) LINGER=0 ;;
+      --no-sudo) SUDO=0 ;;
       --no-open) OPEN=0 ;;
       --dry-run) DRY_RUN=1 ;;
       --yes | -y) YES=1 ;;
@@ -622,7 +635,9 @@ start_service() {
   fi
   run systemctl --user daemon-reload
   run systemctl --user enable --quiet "$UNIT"
-  if [ "$STOPPED" -eq 1 ] || { [ "$UNIT_CHANGED" -eq 1 ] && service_active; }; then
+  # A new clock cap also restarts a running daemon: it reports "not capped" from the first
+  # reading above the cap until it restarts.
+  if [ "$STOPPED" -eq 1 ] || { { [ "$UNIT_CHANGED" -eq 1 ] || [ "$CAP_INSTALLED" -eq 1 ]; } && service_active; }; then
     run systemctl --user restart "$UNIT"
   else
     run systemctl --user start "$UNIT"
@@ -637,15 +652,97 @@ start_service() {
 }
 
 LINGER_STATE=unknown
-enable_linger() {
-  [ "$START" -eq 1 ] || return 0
-  LINGER_STATE=$(loginctl show-user "$USER_NAME" -p Linger --value 2>/dev/null || echo unknown)
-  [ "$LINGER_STATE" = yes ] && return 0
-  [ "$LINGER" -eq 1 ] || return 0
-  # Only if the system allows it without a password (polkit); never prompts.
-  if [ "$DRY_RUN" -eq 0 ] && loginctl --no-ask-password enable-linger "$USER_NAME" >/dev/null 2>&1; then
-    LINGER_STATE=yes
-    ok "lingering enabled: the miner keeps running after logout and starts at boot"
+linger_state() {
+  loginctl show-user "$USER_NAME" -p Linger --value 2>/dev/null || echo unknown
+}
+
+# A question with default Yes, asked on the terminal. --yes answers it; returns 1 for no.
+ask_yes() {
+  local answer
+  if [ "$YES" -eq 1 ]; then
+    say "  $1 [Y/n] yes (--yes)"
+    return 0
+  fi
+  answer=$(tty_read "  $1 [Y/n] ")
+  case "$answer" in
+    '' | [Yy] | [Yy][Ee][Ss] | [Ss] | [Ss][Ii][Mm]) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Runs one root command through sudo (sudo asks for the password on the terminal); stdin is
+# never the script, so nothing can read the rest of it under curl | bash.
+as_root() {
+  sudo "$@" </dev/null
+}
+
+# The two optional root steps, asked before the service (re)starts, so the daemon never runs
+# with the GPU uncapped when you accepted the cap:
+#   (a) the 2000 MHz GPU clock cap at every boot (the safety net under the power governor);
+#   (b) lingering: the service keeps running after logout and starts at boot before login.
+# Default Yes; --yes accepts both; --no-sudo, or no terminal to ask on, skips both; --dry-run
+# prints the commands. A skipped step is printed again in the summary.
+CAP_INSTALLED=0
+sudo_steps() {
+  local want_cap=0 want_linger=0
+  clock_cap_active || want_cap=1
+  [ "$START" -eq 1 ] && LINGER_STATE=$(linger_state)
+  if [ "$START" -eq 1 ] && [ "$LINGER" -eq 1 ]; then
+    # Without a password when the system allows it (polkit); never prompts.
+    if [ "$LINGER_STATE" != yes ] && [ "$DRY_RUN" -eq 0 ] &&
+      loginctl --no-ask-password enable-linger "$USER_NAME" >/dev/null 2>&1; then
+      LINGER_STATE=yes
+      ok "lingering enabled: the miner keeps running after logout and starts at boot"
+    fi
+    [ "$LINGER_STATE" = yes ] || want_linger=1
+  fi
+  [ "$want_cap" -eq 1 ] || [ "$want_linger" -eq 1 ] || return 0
+  step "Two optional steps that need sudo (your password, once)"
+  if [ "$SUDO" -eq 0 ]; then
+    say "  --no-sudo: skipped; the commands are in the summary below"
+    return 0
+  fi
+  if [ "$DRY_RUN" -eq 1 ]; then
+    if [ "$want_cap" -eq 1 ]; then
+      say "  would ask: install the 2000 MHz GPU clock cap? [Y/n]"
+      run sudo "$SHAREDIR/install-clockcap.sh" --apply
+    fi
+    if [ "$want_linger" -eq 1 ]; then
+      say "  would ask: keep mining after logout and at boot? [Y/n]"
+      run sudo loginctl enable-linger "$USER_NAME"
+    fi
+    return 0
+  fi
+  if [ "$YES" -eq 0 ] && ! have_tty; then
+    say "  no terminal to ask on: skipped; the commands are in the summary below"
+    return 0
+  fi
+  if [ "$want_cap" -eq 1 ]; then
+    say "  The GB10 has no software power limit and is known to power off at about 88–92 W. The"
+    say "  clock cap keeps the GPU at about 63 W (2000 MHz, measured); without it only the power"
+    say "  governor guards the Spark. It is reversible (uninstall-clockcap.sh)."
+    if ask_yes "Install the 2000 MHz GPU clock cap (recommended)?"; then
+      if as_root "$SHAREDIR/install-clockcap.sh" --apply && clock_cap_active; then
+        CAP_INSTALLED=1
+        ok "GPU clock cap installed: 2000 MHz now and at every boot"
+      else
+        warn "the clock cap was not installed; run later: sudo $SHAREDIR/install-clockcap.sh --apply"
+      fi
+    else
+      say "  skipped; the dashboard shows a reminder until you install it"
+    fi
+  fi
+  if [ "$want_linger" -eq 1 ]; then
+    if ask_yes "Keep mining after you log out and start at boot, before you log in?"; then
+      if as_root loginctl enable-linger "$USER_NAME"; then
+        LINGER_STATE=$(linger_state)
+        ok "lingering enabled: the miner keeps running after logout and starts at boot"
+      else
+        warn "lingering was not enabled; run later: sudo loginctl enable-linger $USER_NAME"
+      fi
+    else
+      say "  skipped; the miner runs while you are logged in"
+    fi
   fi
 }
 
@@ -674,6 +771,12 @@ summary() {
   say "  settings     $CONFIG_FILE (written by the daemon on its first start; never by this installer)"
   if [ "$START" -eq 1 ] && [ "$DRY_RUN" -eq 0 ]; then
     say "  service      $(systemctl --user is-active "$UNIT" 2>/dev/null || true), $(systemctl --user is-enabled "$UNIT" 2>/dev/null || true) at login"
+    say "  lingering    $([ "$LINGER_STATE" = yes ] && echo "on (mines after logout and at boot)" || echo "off (mines while you are logged in)")"
+  fi
+  if clock_cap_active; then
+    say "  clock cap    active (GPU SM clock capped at boot)"
+  else
+    say "  clock cap    ${Y}NOT installed${N} (the GPU is not capped at 2000 MHz)"
   fi
   say ""
   say "  ${B}Open the GUI:${N} $GUI_URL   (or \"Spark Pearl Miner\" in the app menu, or: $APP gui)"
@@ -687,8 +790,8 @@ summary() {
   fi
   if ! clock_cap_active; then
     say ""
-    say "  ${B}Optional, recommended:${N} cap the GPU clock at 2000 MHz at every boot (about 63 W, far from"
-    say "  the ~88–92 W at which the Spark powers off; reversible). The one sudo command:"
+    say "  ${B}Recommended, before you press Start mining:${N} cap the GPU clock at 2000 MHz at every boot"
+    say "  (about 63 W, far from the ~88–92 W at which the Spark powers off; reversible). One command:"
     say "    sudo $SHAREDIR/install-clockcap.sh --apply"
   fi
   say ""
@@ -722,8 +825,8 @@ do_install() {
   install_unit
   install_desktop
   if [ "$BINARY_CHANGED" -eq 1 ]; then check_config; fi
+  sudo_steps
   start_service
-  enable_linger
   open_gui
   summary
 }

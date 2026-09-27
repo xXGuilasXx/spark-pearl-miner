@@ -569,7 +569,7 @@ const DYNAMIC: &[(&str, &[&str])] = &[
     ("pwr.profile", &["eco", "balanced", "max"]),
     ("wallet.err", &["empty", "mixed_case", "too_long", "format", "charset", "checksum", "hrp", "version", "length"]),
     ("set.row", &["0", "1", "2"]),
-    ("wizard.presets", &["pools", "power", "gpu", "later"]),
+    ("wizard.presets", &["pools", "power", "power_nocap", "gpu", "later"]),
     ("cfgerr", &[
         "wallet_required", "wallet_invalid", "worker_invalid", "pools_empty", "too_many_pools", "host_invalid", "port_invalid",
         "pin_invalid", "pin_unused", "password_invalid", "name_invalid", "out_of_range", "max_not_acknowledged",
@@ -599,6 +599,20 @@ fn every_translated_key_is_used() {
         .filter(|k| !DYNAMIC.iter().any(|(prefix, codes)| codes.iter().any(|c| **k == format!("{prefix}.{c}"))))
         .collect();
     assert!(unused.is_empty(), "keys no script uses: {unused:#?}");
+}
+
+/// The clock cap is an optional root step of the installer: the wizard may say "capped at
+/// 2000 MHz" only when the miner has seen the cap in force, and warns when it saw the GPU above it.
+#[test]
+fn the_wizard_claims_the_clock_cap_only_when_seen() {
+    let wizard = String::from_utf8_lossy(WEBUI.get_file("js/wizard.js").unwrap().contents()).into_owned();
+    assert!(wizard.contains("cap === 'capped' ? 'power' : 'power_nocap'"), "the power preset line must depend on the cap status");
+    assert!(wizard.contains("cap === 'uncapped'") && wizard.contains("CLOCKCAP_CMD"), "the wizard must show the clock-cap command when uncapped");
+    for lang in ["en", "pt-BR"] {
+        let keys = i18n(lang);
+        let nocap = keys.get("wizard.presets.power_nocap").and_then(|v| v.as_str()).unwrap();
+        assert!(nocap.contains("2000 MHz") && nocap.contains("85 W"), "{lang}: {nocap}");
+    }
 }
 
 #[test]

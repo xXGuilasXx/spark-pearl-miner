@@ -40,7 +40,7 @@ sudo packaging/install-clockcap.sh --apply --mhz 2200   # Max (acknowledged)
 sudo packaging/uninstall-clockcap.sh --apply  # disable, remove, restore default clocks (nvidia-smi -rgc)
 ```
 
-After `packaging/install.sh` the same scripts are in `~/.local/share/spark-pearl-miner/`: `sudo ~/.local/share/spark-pearl-miner/install-clockcap.sh --apply` (the command the dashboard shows when the cap is missing).
+After `packaging/install.sh` the same scripts are in `~/.local/share/spark-pearl-miner/`: `sudo ~/.local/share/spark-pearl-miner/install-clockcap.sh --apply` (the command the dashboard shows when the cap is missing). `packaging/install.sh` asks to run it for you before it starts the service (default Yes; `--yes` accepts, `--no-sudo` or no terminal skips it and prints the command).
 
 The unit is a `Type=oneshot` with `RemainAfterExit=yes`: `ExecStart=/usr/bin/nvidia-smi -lgc 300,2000` at boot (after `nvidia-persistenced`), `ExecStop=/usr/bin/nvidia-smi -rgc`. It is deliberately not ordered after `multi-user.target`, because that target pulls it in and the ordering would be a cycle.
 

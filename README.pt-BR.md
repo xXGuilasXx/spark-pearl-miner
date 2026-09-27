@@ -42,8 +42,14 @@ curl -fsSL https://raw.githubusercontent.com/xXGuilasXx/spark-pearl-miner/main/p
 O instalador verifica a máquina (aarch64, GB10, driver NVIDIA ≥ 580, runtime CUDA 13), baixa o
 release mais novo e o confere com o `SHA256SUMS` dele (até o primeiro release ser publicado ele
 compila do código-fonte, 5–15 minutos), instala `~/.local/bin/spark-pearl-miner`, um serviço
-systemd do usuário e um atalho no menu de aplicativos, e inicia o serviço. Ele nunca executa `sudo`,
-nunca mexe nas suas configurações, e uma instalação nova ainda não minera.
+systemd do usuário e um atalho no menu de aplicativos, e inicia o serviço. Antes disso ele faz duas
+perguntas, ambas respondidas com **Sim** ao apertar Enter, que pedem a sua senha uma vez (`sudo`):
+
+- **Instalar o limite de clock da GPU de 2000 MHz?** Recomendado: a rede de segurança que mantém a
+  GPU em cerca de 63 W, longe dos ~88–92 W em que o Spark desliga (reversível).
+- **Continuar minerando depois que você sair da sessão e começar no boot?** (lingering)
+
+Ele nunca mexe nas suas configurações, e uma instalação nova ainda não minera.
 
 **2. Abra a GUI.** O instalador abre; senão use **Spark Pearl Miner** no menu de aplicativos, execute
 `spark-pearl-miner gui` ou abra **http://127.0.0.1:4078/**.
@@ -53,15 +59,17 @@ taxa de 2 % do desenvolvedor e clique em **Começar a minerar**.
 
 ![Passo 2 da configuração: sua carteira](docs/images/pt-BR/wizard-2-wallet.png)
 
-**4. Opcional, recomendado: o limite de clock da GPU.** Um comando `sudo` limita o clock do SM a
-2000 MHz em todo boot (a rede de segurança que mantém a GPU em cerca de 63 W; reversível):
+**Se você respondeu Não ao limite de clock** (ou o instalador não tinha um terminal para perguntar,
+ou você usou `--no-sudo`), a GPU fica sem limite até você executar isto uma vez, antes de clicar em
+**Começar a minerar**:
 
 ```bash
 sudo ~/.local/share/spark-pearl-miner/install-clockcap.sh --apply
 ```
 
-Para continuar minerando depois de você sair da sessão e começar no boot antes de alguém entrar, o
-instalador também imprime `sudo loginctl enable-linger $USER` quando é necessário.
+O resumo do instalador, o último passo da configuração e o painel mostram esse comando enquanto o
+limite faltar. Lingering depois: `sudo loginctl enable-linger $USER`. `--yes` responde sim às duas
+perguntas.
 
 - **Ele continua rodando.** O serviço sobe com a sua sessão (ou no boot, com lingering). Ele só
   minera depois da configuração e de **Começar**; **Parar** é lembrado entre reinícios.

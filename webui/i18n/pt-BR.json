@@ -243,6 +243,7 @@
   "wizard.presets.title": "O que já vem configurado para o seu Spark",
   "wizard.presets.pools": "Pools: Kryptex → HeroMiners BR → LuckyPool BR, com failover automático (troca em cerca de 1 s, volta após 60 s estável)",
   "wizard.presets.power": "Energia: perfil Equilibrado, clock SM limitado a 2000 MHz, para acima de 85 W (medido: cerca de 63 W, GPU a 72 °C)",
+  "wizard.presets.power_nocap": "Energia: perfil Equilibrado, para acima de 85 W; clock SM limitado a 2000 MHz quando o limite de clock do boot estiver instalado (o instalador oferece; medido: cerca de 63 W, GPU a 72 °C)",
   "wizard.presets.gpu": "Uso da GPU: exclusivo enquanto minera; pausa se a memória livre cair abaixo de 16 GiB",
   "wizard.presets.later": "Troque carteira, nome do worker, idioma e pools depois pelo ícone de engrenagem; todo o resto fica em ~/.config/spark-pearl-miner/config.toml",
   "wizard.fix": "Corrija isto antes de começar:",

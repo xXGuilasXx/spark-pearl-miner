@@ -5,6 +5,7 @@ import { h, replace, abbrev } from './dom.js';
 import { t, setLang, getLang } from './i18n.js';
 import * as api from './api.js';
 import { checkPearlAddress } from './bech32.js';
+import { cmdBox, CLOCKCAP_CMD } from './dashboard.js';
 
 /** A valid Pearl address nobody uses (the manual's screenshots never show a real wallet). */
 export const PLACEHOLDER_WALLET = 'prl1pg69hxg0gx3dhlqj0nvxt4w833px6vmx6v45esqw8vayn7ky8jxjswf035d';
@@ -12,6 +13,12 @@ export const PLACEHOLDER_WALLET = 'prl1pg69hxg0gx3dhlqj0nvxt4w833px6vmx6v45esqw8
 export const PLACEHOLDER_WALLET_2 = 'prl1ppznef6jlza9cxwjmzzx377p78yet48jcelzvcgpgdvpck2hm2u6qspdt85';
 /** The first address with one character changed: a checksum error. */
 export const PLACEHOLDER_BAD_WALLET = 'prl1pg69hxg0gx3dhlqj0nvxt4w833px6vmx6v45esqw8vayn7ky8jxjswf0q5d';
+
+/** `capped` | `uncapped` | `unknown`: what the miner has seen of the boot-time clock cap. */
+export function presetCapStatus(status) {
+  const cap = status && status.power && status.power.clock_cap;
+  return cap && (cap.status === 'capped' || cap.status === 'uncapped') ? cap.status : 'unknown';
+}
 
 /** The manual on the project's repository, in the page language, at `anchor`. */
 export function manualUrl(ctx, anchor) {
@@ -145,9 +152,15 @@ export async function renderWizard(main, ctx) {
     const errs = h('div');
     const start = h('button', { type: 'button', class: 'primary big', disabled: !d.accepted }, t('fee.start'));
     const box = h('input', { type: 'checkbox', id: 'fee-accept', checked: d.accepted, onchange: (ev) => { d.accepted = ev.target.checked; start.disabled = !d.accepted; } });
+    // The power line claims the 2000 MHz cap only when the miner has seen it in force; the cap is
+    // an optional root step of the installer, so it may be missing on this Spark.
+    const cap = presetCapStatus(ctx.status);
     const presets = h('details', { class: 'presets', open: d.presetsOpen, ontoggle: (ev) => { d.presetsOpen = ev.target.open; } },
       h('summary', null, t('wizard.presets.title')),
-      h('ul', null, ['pools', 'power', 'gpu', 'later'].map((k) => h('li', null, t(`wizard.presets.${k}`)))));
+      h('ul', null, ['pools', cap === 'capped' ? 'power' : 'power_nocap', 'gpu', 'later'].map((k) => h('li', null, t(`wizard.presets.${k}`)))));
+    const uncapped = cap === 'uncapped'
+      ? h('div', { class: 'banner warn' }, h('span', null, t('banner.uncapped', { mhz: ctx.status.power.clock_cap.cap_mhz || 2000 })), cmdBox(ctx, CLOCKCAP_CMD))
+      : null;
     start.addEventListener('click', async () => {
       start.disabled = true;
       start.classList.add('busy');
@@ -193,6 +206,7 @@ export async function renderWizard(main, ctx) {
         h('p', null, t('fee.disclosure.3'))),
       h('label', { class: 'check', for: 'fee-accept' }, box, h('span', null, t('fee.accept'))),
       presets,
+      uncapped,
       errs,
       buttons(start),
     ];

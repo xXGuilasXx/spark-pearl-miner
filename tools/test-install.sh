@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Smoke test of packaging/install.sh and packaging/make-release.sh, safe on a machine that is
 # mining: everything happens in a throwaway HOME under /tmp, with --no-start (no systemctl
-# --user, no loginctl), --no-open and never sudo; nothing binds a port and the GPU is not used.
+# --user, no loginctl), --no-open and --no-sudo; the optional sudo steps are exercised only with
+# --dry-run or with a fake sudo on PATH that records its arguments and runs nothing. Nothing
+# binds a port and the GPU is not used.
 #
 #   tools/test-install.sh          # with a stub binary (seconds)
 #   tools/test-install.sh --real   # package the real binary (cargo build --profile dist first)
@@ -32,7 +34,7 @@ SHARE="$PREFIX/share/$APP"
 UNIT="$XDG_CONFIG_HOME/systemd/user/$APP.service"
 DESKTOP="$XDG_DATA_HOME/applications/$APP.desktop"
 CFG="$XDG_CONFIG_HOME/$APP/config.toml"
-INSTALL=(bash "$ROOT/packaging/install.sh" --no-start --no-open --no-linger)
+INSTALL=(bash "$ROOT/packaging/install.sh" --no-start --no-open --no-linger --no-sudo)
 
 PASS=0
 pass() { PASS=$((PASS + 1)); printf '  ok   %s\n' "$*"; }
@@ -101,6 +103,42 @@ bash -s -- --tarball "$TARBALL" --prefix "$PREFIX" --no-start --no-open --dry-ru
 check "piped script runs and verifies the tarball" grep -q "SHA256 verified" "$T/pipe.log"
 check "piped dry run changes nothing" test ! -e "$PREFIX"
 
+echo "== the optional sudo steps (clock cap): asked, never run for real here"
+# A fake sudo that only records its arguments: nothing runs as root, whatever the installer does.
+mkdir -p "$T/fakebin"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"%s"\nexit 0\n' "$T/sudo.calls" >"$T/fakebin/sudo"
+chmod 0755 "$T/fakebin/sudo"
+NOSUDO_INSTALL=(bash "$ROOT/packaging/install.sh" --no-start --no-open --no-linger)
+SP="$T/prefix-sudo"
+if systemctl is-active --quiet spark-pearl-clockcap.service 2>/dev/null; then
+  echo "  (skipped: the clock cap is already active on this machine, so the installer does not ask)"
+else
+  PATH="$T/fakebin:$PATH" "${NOSUDO_INSTALL[@]}" --tarball "$TARBALL" --prefix "$SP" --dry-run >"$T/s1.log" 2>&1 ||
+    { cat "$T/s1.log"; fail "sudo steps dry run"; }
+  check "dry run shows the clock-cap question and command" grep -q "\[dry-run\] sudo $SP/share/$APP/install-clockcap.sh --apply" "$T/s1.log"
+  check "dry run never calls sudo" test ! -e "$T/sudo.calls"
+  PATH="$T/fakebin:$PATH" "${NOSUDO_INSTALL[@]}" --tarball "$TARBALL" --prefix "$SP" --dry-run --no-sudo >"$T/s2.log" 2>&1 ||
+    { cat "$T/s2.log"; fail "--no-sudo dry run"; }
+  check "--no-sudo skips the question" grep -q -- "--no-sudo: skipped" "$T/s2.log"
+  check "--no-sudo prints no sudo run" bash -c "! grep -q '\[dry-run\] sudo' '$T/s2.log'"
+  if command -v setsid >/dev/null 2>&1; then
+    # No controlling terminal (like a cron job or a pipe from ssh without -t): nothing is asked.
+    PATH="$T/fakebin:$PATH" setsid -w "${NOSUDO_INSTALL[@]}" --tarball "$TARBALL" --prefix "$SP" </dev/null >"$T/s3.log" 2>&1 ||
+      { cat "$T/s3.log"; fail "install without a terminal"; }
+    check "no terminal: the sudo steps are skipped" grep -q "no terminal to ask on: skipped" "$T/s3.log"
+    check "no terminal: sudo is never called" test ! -e "$T/sudo.calls"
+    check "no terminal: summary says the cap is not installed" grep -q "clock cap    .*NOT installed" "$T/s3.log"
+    check "no terminal: summary prints the clock-cap command" grep -q "sudo $SP/share/$APP/install-clockcap.sh --apply" "$T/s3.log"
+  fi
+  PATH="$T/fakebin:$PATH" "${NOSUDO_INSTALL[@]}" --tarball "$TARBALL" --prefix "$SP" --yes </dev/null >"$T/s4.log" 2>&1 ||
+    { cat "$T/s4.log"; fail "install --yes"; }
+  check "--yes runs the clock-cap script through sudo" grep -qx "$SP/share/$APP/install-clockcap.sh --apply" "$T/sudo.calls"
+  check "--yes with --no-start does not touch lingering" bash -c "! grep -q loginctl '$T/sudo.calls'"
+  # The fake sudo did nothing, so the cap is still missing: the installer must say so.
+  check "a cap that did not come up is reported" grep -q "the clock cap was not installed" "$T/s4.log"
+  rm -rf "$SP"
+fi
+
 echo "== fresh install from the tarball"
 "${INSTALL[@]}" --tarball "$TARBALL" --prefix "$PREFIX" >"$T/i1.log" 2>&1 || { cat "$T/i1.log"; fail "install"; }
 check "binary installed" test -x "$BIN"
@@ -137,7 +175,7 @@ tar xzf "$T/dist2/$APP-$VERSION-linux-aarch64.tar.gz" -C "$T/x2"
 mkdir -p "$(dirname "$CFG")"
 printf '# my settings\n[miner]\nwallet = ""\n' >"$CFG"
 SUM=$(sha256sum "$CFG")
-(cd "$T/x2/$APP-$VERSION-linux-aarch64" && ./install.sh --no-start --no-open --prefix "$PREFIX") >"$T/i3.log" 2>&1 ||
+(cd "$T/x2/$APP-$VERSION-linux-aarch64" && ./install.sh --no-start --no-open --no-sudo --prefix "$PREFIX") >"$T/i3.log" 2>&1 ||
   { cat "$T/i3.log"; fail "upgrade"; }
 check "upgrade used the files next to the script" grep -q "release files next to this script" "$T/i3.log"
 check "new binary installed" grep -q "stub two" "$BIN"

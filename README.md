@@ -42,8 +42,14 @@ curl -fsSL https://raw.githubusercontent.com/xXGuilasXx/spark-pearl-miner/main/p
 The installer checks the machine (aarch64, GB10, NVIDIA driver ≥ 580, the CUDA 13 runtime),
 downloads the newest release and checks it against its `SHA256SUMS` (until the first release is
 published it builds from source instead, 5–15 minutes), installs `~/.local/bin/spark-pearl-miner`,
-a systemd user service and an app-menu entry, and starts the service. It never runs `sudo`, never
-touches your settings, and a fresh install does not mine yet.
+a systemd user service and an app-menu entry, and starts the service. Before that it asks two
+questions, both answered **Yes** by pressing Enter, that need your password once (`sudo`):
+
+- **Install the 2000 MHz GPU clock cap?** Recommended: the safety net that keeps the GPU at about
+  63 W, far from the ~88–92 W at which the Spark powers off (reversible).
+- **Keep mining after you log out and start at boot?** (lingering)
+
+It never touches your settings, and a fresh install does not mine yet.
 
 **2. Open the GUI.** The installer opens it; otherwise use **Spark Pearl Miner** in the app menu, run
 `spark-pearl-miner gui`, or open **http://127.0.0.1:4078/**.
@@ -53,15 +59,16 @@ touches your settings, and a fresh install does not mine yet.
 
 ![Setup step 2: your wallet](docs/images/en/wizard-2-wallet.png)
 
-**4. Optional, recommended: the GPU clock cap.** One `sudo` command caps the SM clock at 2000 MHz
-at every boot (the safety net that keeps the GPU at about 63 W; reversible):
+**If you answered No to the clock cap** (or the installer had no terminal to ask on, or you used
+`--no-sudo`), the GPU is not capped until you run this once, before you press **Start mining**:
 
 ```bash
 sudo ~/.local/share/spark-pearl-miner/install-clockcap.sh --apply
 ```
 
-To keep mining after you log out and start at boot before anyone logs in, the installer also prints
-`sudo loginctl enable-linger $USER` when it is needed.
+The installer's summary, the last setup step and the dashboard show this command while the cap is
+missing. Lingering later: `sudo loginctl enable-linger $USER`. `--yes` answers both questions with
+yes.
 
 - **It keeps running.** The service starts with your session (or at boot with lingering). It mines
   only after the setup and **Start**; **Stop** is remembered across reboots.

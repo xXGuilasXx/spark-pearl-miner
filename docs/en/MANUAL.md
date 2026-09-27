@@ -153,10 +153,19 @@ The preconfigured box lists:
 - **Pools:** Kryptex → HeroMiners BR → LuckyPool BR, with automatic failover (switch in about 1 s,
   return after 60 s stable);
 - **Power:** Balanced profile, SM clock capped at 2000 MHz, stops above 85 W (measured about 63 W,
-  GPU 72 °C);
+  GPU 72 °C). This wording appears only once the miner has seen the clock cap in force. Until then
+  it reads "…SM clock capped at 2000 MHz once the boot clock cap is installed (the installer offers
+  it…)", because the cap is an optional step of the installer (see [the installer's two
+  questions](#installer-questions));
 - **GPU use:** exclusive while mining; pauses if free memory drops below 16 GiB;
 - change wallet, worker name, language and pools later with the gear icon; everything else is in
   `~/.config/spark-pearl-miner/config.toml`.
+
+If the miner has already seen the GPU run above 2000 MHz, a yellow box under the preconfigured box
+reads **The 2000 MHz safety clock cap is not installed. Install it once with:**
+`sudo ~/.local/share/spark-pearl-miner/install-clockcap.sh --apply`, with a **Copy** button. Run
+it in a terminal before you press **Start mining**; the power governor still protects the Spark
+without it, but the cap is the recommended safety net.
 
 **What Start mining does.** It reads the current settings from the miner, changes only three
 things (your wallet, the fee acceptance and the language), saves them and starts mining. The
@@ -807,6 +816,19 @@ mining on the others.
 ## 10. Update, rollback and uninstall
 
 The installer keeps a copy of itself in `~/.local/share/spark-pearl-miner/`.
+
+<a id="installer-questions"></a>
+**The installer's two questions.** Before it starts the service, the installer asks two questions
+that need your password once (`sudo`). Pressing Enter answers **Yes**:
+
+| Question | What Yes does | If you answer No |
+|---|---|---|
+| Install the 2000 MHz GPU clock cap (recommended)? | runs `sudo ~/.local/share/spark-pearl-miner/install-clockcap.sh --apply`: the SM clock stays at or below 2000 MHz now and at every boot (about 63 W, far from the ~88–92 W power-off) | the GPU is not capped; only the power governor guards it. The summary, the last setup step and the dashboard show the command until you run it |
+| Keep mining after you log out and start at boot, before you log in? | runs `sudo loginctl enable-linger $USER` | the miner runs only while you are logged in; run the command later if you change your mind |
+
+`--yes` answers both with yes, `--no-sudo` skips both, and when there is no terminal to ask on
+(for example `ssh` without `-t`) both are skipped. The summary at the end always shows the state of
+the clock cap and of lingering. `--dry-run` prints the commands and runs none of them.
 
 | Task | Command | Notes |
 |---|---|---|
