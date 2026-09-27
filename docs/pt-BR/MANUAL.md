@@ -655,6 +655,7 @@ spki_pin = "<SHA-256 em base64 da chave pública da pool>"
 | `pools.jsonrpc` | `auto` (LuckyPool `on`) | só se uma pool precisar (`auto`, `on`, `off`) |
 | `pools.proof` | `auto` | nunca (o minerador aprende a codificação certa) |
 | `pools.password` | `"x"` | se a pool pedir (a Kryptex também aceita `d=<dificuldade>`) |
+| `pools.login` | não definido | para entrar só nessa pool com uma conta em vez da carteira, por exemplo o seu ID da Kryptex (`krx…`) para a Kryptex pagar em BTC. O nome do worker continua sendo acrescentado; as outras pools seguem com a carteira, e a taxa do desenvolvedor não muda |
 | `pools.pattern` | `"auto"` | nunca, a não ser que uma pool rejeite todas as shares (`official`) |
 | `pools.enabled` | `true` | `false` mantém a entrada sem usá-la |
 

@@ -120,6 +120,7 @@ fn key_comment(section: &str, key: &str, pool_index: usize) -> Option<&'static [
         ("pools", "jsonrpc") => &["# The \"jsonrpc\":\"2.0\" member on requests: auto | on | off."],
         ("pools", "proof") => &["# Proof encoding on submit: auto (learned per pool) | plain | zstd."],
         ("pools", "password") => &["# Stratum password: x (Kryptex also takes d=<difficulty>); up to 64 printable characters."],
+        ("pools", "login") => &["# Advanced: sign in to this pool with an account instead of the wallet (e.g. a Kryptex ID, so", "# that pool pays out in BTC). The worker name is appended; the other pools keep the wallet."],
         ("pools", "pattern") => &["# Hash-tile pattern: auto (fastest) | official."],
         ("pools", "enabled") => &["# false keeps the entry but never connects to it."],
         ("failover", "connect_timeout_s") => &["# seconds for DNS and for the TCP connect, each (1–120); tested: 10"],
