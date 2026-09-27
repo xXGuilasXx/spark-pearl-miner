@@ -797,15 +797,15 @@ mod tests {
         c.miner.wallet = "prl1pkqprrek7pemaxyvl4deusyz2hrkywnkhl86w7yqv53x0qyvsd5fs57s90n".into();
         c.miner.disclosure_accepted = true;
         assert!(c.pools.iter().all(|p| p.login.is_none()));
-        assert!(!c.to_toml().contains("login"), "absent by default");
+        assert!(!c.to_toml().lines().any(|l| l.starts_with("login")), "absent by default");
         c.pools[0].login = Some("krxabc123".into());
-        c.validate(Strictness::Strict).expect("a plain account is valid");
+        c.validate(Strictness::Submit).expect("a plain account is valid");
         let back: Config = toml::from_str(&c.to_toml()).unwrap();
         assert_eq!(back.pools[0].login.as_deref(), Some("krxabc123"));
         assert!(back.pools[1].login.is_none());
         for bad in ["", "krx.rig", "krx/rig", "has space", &"x".repeat(65)] {
             c.pools[0].login = Some(bad.to_string());
-            let err = c.validate(Strictness::Strict).expect_err(bad);
+            let err = c.validate(Strictness::Submit).expect_err(bad);
             assert!(format!("{err:?}").contains("login_invalid"), "{bad:?}: {err:?}");
         }
     }
