@@ -156,6 +156,7 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress. Milestone ids (M0�
 - [ ] QMMA f32 throughput relative to IMMA measured; go/no-go memo in docs/KERNEL.md; MmaPolicy template merged.
 
 ### M13
+- [~] One-command install and release tarball (2026-09-27, version 0.1.0-alpha.1). Done: `packaging/install.sh` (as the user, no root; `curl -fsSL …/packaging/install.sh | bash` or from a clone or an extracted tarball; checks aarch64/GB10/driver ≥ 580/libcudart.so.13; installs the newest GitHub release verified against SHA256SUMS, else builds from source with rustup + nvcc; installs `~/.local/bin`, the user unit with `ExecStartPre=config check`, the menu entry and `~/.local/share/spark-pearl-miner/`; never touches config.toml; `--upgrade` keeps the previous binary and rolls back if the new one refuses config.toml, `--rollback`, `--uninstall [--purge]`, `--dry-run`), `packaging/make-release.sh` (deterministic `spark-pearl-miner-<ver>-linux-aarch64.tar.gz` + SHA256SUMS, prints the `gh release create` command), `spark-pearl-miner config check|path`, `tools/test-install.sh` (40 checks in a throwaway HOME with stub binaries; `--real` packages and installs the real one). Open: the first `gh release create` by the owner; a real `enable --now` on a fresh account.
 - [ ] Release page explains how to verify the binary (SHA256SUMS + `gh attestation verify`) so users can confirm the fee wallet compiled in is the official one.
 
 - [ ] README, README.pt-BR and docs/{en,pt-BR} complete, with facts.toml; parity, link and fee-constant checks green.

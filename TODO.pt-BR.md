@@ -26,6 +26,9 @@
 | M14 | Piloto de 72 h + relatório (EN/PT-BR) + v0.1.1 | 3 | M13 | |
 | M15 | Contingência: padrão oficial 2×64 no mesmo mainloop (só se uma pool rejeitar o 8×16) | 2 | M6 | |
 
+## Instalação em um comando (2026-09-27, versão 0.1.0-alpha.1)
+- 🟡 `packaging/install.sh` (como usuário, sem root; `curl -fsSL …/packaging/install.sh | bash`, de um clone ou do tarball extraído): baixa o release mais novo verificado pelo SHA256SUMS ou compila do fonte (rustup + nvcc), instala binário, unit `--user` com `ExecStartPre=config check`, atalho no menu e `~/.local/share/spark-pearl-miner/`; nunca mexe no config.toml; `--upgrade` (com volta automática se o binário novo recusar o config.toml), `--rollback`, `--uninstall [--purge]`, `--dry-run`. `packaging/make-release.sh` gera o tarball determinístico + SHA256SUMS e só imprime o `gh release create`. Teste: `tools/test-install.sh` (40 verificações num HOME descartável com binários falsos; `--real` empacota e instala o binário de verdade). Pendente: o primeiro release publicado por mim.
+
 ## Alerta registrado em 2026-09-26
 - ✅ **Carteira da taxa trocada em 2026-09-26 por carteira própria `oyster` (prl1pkqp…s90n).** Ainda pendente: Antes do v0.1.0: criar carteira própria (desktop wallet/oystercli) para `DEV_WALLET`; ajustar o limite de pagamento na HeroMiners para ≥ o depósito mínimo de PRL da SafeTrade (pagamentos de 1 PRL podem ser perdidos); a prova de controle (G4) só é possível com carteira própria.
 
