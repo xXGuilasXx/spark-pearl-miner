@@ -2156,7 +2156,7 @@ checksum = "238653bedf881fede50103cb7838b029e2b73d3d3d8e70d36f0a96be32a65c7b"
 
 [[package]]
 name = "spark-pearl-miner"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "anyhow",
  "bincode",
@@ -2187,7 +2187,7 @@ dependencies = [
 
 [[package]]
 name = "spm-api"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -2211,14 +2211,14 @@ dependencies = [
 
 [[package]]
 name = "spm-coexist"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "tokio",
 ]
 
 [[package]]
 name = "spm-cpuref"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "anyhow",
  "bincode",
@@ -2236,7 +2236,7 @@ dependencies = [
 
 [[package]]
 name = "spm-fee"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "bech32",
  "blake3",
@@ -2246,14 +2246,14 @@ dependencies = [
 
 [[package]]
 name = "spm-governor"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "nvml-wrapper",
 ]
 
 [[package]]
 name = "spm-gpu"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "anyhow",
  "cc",
@@ -2264,7 +2264,7 @@ dependencies = [
 
 [[package]]
 name = "spm-ipc"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "bincode",
  "primitive-types 0.12.2",
@@ -2277,7 +2277,7 @@ dependencies = [
 
 [[package]]
 name = "spm-mockpool"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "bincode",
  "hex",
@@ -2296,7 +2296,7 @@ dependencies = [
 
 [[package]]
 name = "spm-pool"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "proptest",
  "spm-proto",
@@ -2304,7 +2304,7 @@ dependencies = [
 
 [[package]]
 name = "spm-pow"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "anyhow",
  "bincode",
@@ -2319,7 +2319,7 @@ dependencies = [
 
 [[package]]
 name = "spm-proto"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2342,7 +2342,7 @@ dependencies = [
 
 [[package]]
 name = "spm-work"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "bincode",
  "blake3",
@@ -2356,7 +2356,7 @@ dependencies = [
 
 [[package]]
 name = "spm-worker"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "anyhow",
  "bincode",

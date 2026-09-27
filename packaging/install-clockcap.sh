@@ -5,14 +5,16 @@
 # with --apply AND when it is already running as root:
 #   packaging/install-clockcap.sh                 # print the commands
 #   sudo packaging/install-clockcap.sh --apply    # run them
+# packaging/install.sh copies it, with the unit, to ~/.local/share/spark-pearl-miner/:
+#   sudo ~/.local/share/spark-pearl-miner/install-clockcap.sh --apply
 # See docs/en/POWER-THERMAL.md for why the cap exists.
 set -euo pipefail
 
 usage() {
   cat <<'EOF'
 usage: install-clockcap.sh [--mhz N] [--apply]
-  --mhz N   SM clock cap in MHz (default 2000, what the Balanced profile expects; Max expect;
-            the Eco profile recommends 2000)
+  --mhz N   SM clock cap in MHz (default 2000 = Balanced; 1800 = Eco; 2200 = Max, not
+            recommended on the Spark)
   --apply   run the commands (must run as root); without it they are only printed
 EOF
 }

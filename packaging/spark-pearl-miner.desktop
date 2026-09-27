@@ -1,14 +1,16 @@
+# packaging/install.sh rewrites Exec and TryExec to the absolute path of the installed binary
+# (.desktop files do not expand ~ or %h) and installs the icon from webui/favicon.svg.
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=Pearl Miner
-Name[pt_BR]=Minerador Pearl
+Name=Spark Pearl Miner
+Name[pt_BR]=Spark Pearl Miner
 GenericName=spark-pearl-miner
 Comment=Open the miner's control panel (local web GUI)
 Comment[pt_BR]=Abre o painel do minerador (GUI web local)
 Exec=spark-pearl-miner gui
 TryExec=spark-pearl-miner
-Icon=utilities-system-monitor
+Icon=spark-pearl-miner
 Terminal=false
 Categories=System;Monitor;
 Keywords=pearl;prl;miner;mining;minerador;
