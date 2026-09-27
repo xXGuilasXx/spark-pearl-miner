@@ -25,7 +25,8 @@ engineering contract for the sm_121a implementation and how it is judged.
     because the GEMM's register footprint leaves the prep kernels only the idle tails of the chunks.
 
 ### Left for v1 (M10)
-- Measure with the vLLM stopped and the clock locked at 2200 MHz (every number so far is from a shared, unlocked
+- Measure with the vLLM stopped and the clock locked at the 2000 MHz Balanced cap (sustained end to end there:
+  73.9 T-MAC/s at ~63 W, `docs/benchmarks/20260926-2000mhz-sustained.md`; the earlier numbers are from a shared, unlocked
   machine: 81–85 % of the MB1 peak at the measured clock end-to-end, 85–89 % kernel-only).
 - The stream time outside the chunks' event windows: 1.7 % of an attempt with 5.7 ms chunks, 4.4 % with 4.2 ms
   (~0.1–0.2 ms per chunk boundary). Find where it goes (launch of the 99 KB-smem kernel, the per-chunk memset and
@@ -42,7 +43,7 @@ engineering contract for the sm_121a implementation and how it is judged.
   reference tile order (`t_rows` ascending outer, `t_cols` ascending inner). Compare with
   `spm_cpuref::first_mismatch` / `tiles_digest`.
 - **Throughput:** measured in credited MACs per second (`m·n·k` per full pass). Ceilings measured on this unit
-  (`docs/en/BENCHMARKS.md`): 108.6 T-MAC/s at stock, 96.0 at the 2200 MHz cap. Planning target ≥ 80 % of the peak at the
+  (`docs/en/BENCHMARKS.md`): 108.6 T-MAC/s at stock, 85.0 at the 2000 MHz Balanced cap (96.0 at 2200 MHz, the opt-in Max cap). Planning target ≥ 80 % of the peak at the
   clock in use; publish numbers only with the SM clock they were measured at.
 - **Resource limits:** ≤ 101,376 B shared memory per block, ≤ 232 registers/thread with **0 spills** (`-Xptxas -v`),
   SASS must contain `IMMA.16832.S8.S8` and `LDSM`, never `HMMA` (enforced by `tools/check-sass.py` in

@@ -23,7 +23,7 @@ For scale: the register-only tensor-core peak (MB1, [BENCHMARKS](BENCHMARKS.md))
 | Profile | Target | Hard stop | Recommended clock cap | Notes |
 |---|---|---|---|---|
 | Eco | 60 W | 70 W | 1800 MHz | Quiet and cool, far from the band. |
-| **Balanced** (default) | **75 W** | **85 W** | **2000 MHz** | The default everywhere. At 2200 MHz the real kernel measured 83–87 W (G1 soak below), so 2000 MHz is the cap that fits the 75 W target. |
+| **Balanced** (default) | **75 W** | **85 W** | **2000 MHz** | The default everywhere. At 2200 MHz the real kernel measured 83–87 W (G1 soak below), so 2000 MHz is the cap that fits the 75 W target. Measured at 2000 MHz: 73.9 T-MAC/s credited at ~63 W on the GPU, GPU 72 °C. |
 | Max | 88 W | 92 W | 2200 MHz | Inside the power-off band. Refused unless `power.max_acknowledged = true`. |
 
 The target is what the controller steers to. The hard stop pauses mining (section 4). The clock cap is the boot unit's value.
@@ -39,6 +39,8 @@ sudo packaging/install-clockcap.sh --apply --mhz 1800   # Eco
 sudo packaging/install-clockcap.sh --apply --mhz 2200   # Max (acknowledged)
 sudo packaging/uninstall-clockcap.sh --apply  # disable, remove, restore default clocks (nvidia-smi -rgc)
 ```
+
+After `packaging/install.sh` the same scripts are in `~/.local/share/spark-pearl-miner/`: `sudo ~/.local/share/spark-pearl-miner/install-clockcap.sh --apply` (the command the dashboard shows when the cap is missing).
 
 The unit is a `Type=oneshot` with `RemainAfterExit=yes`: `ExecStart=/usr/bin/nvidia-smi -lgc 300,2000` at boot (after `nvidia-persistenced`), `ExecStop=/usr/bin/nvidia-smi -rgc`. It is deliberately not ordered after `multi-user.target`, because that target pulls it in and the ordering would be a cycle.
 

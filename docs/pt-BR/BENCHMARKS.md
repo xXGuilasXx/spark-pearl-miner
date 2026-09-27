@@ -13,8 +13,17 @@ Todos os números foram medidos no DGX Spark do autor (GB10, 48 SMs, CC 12.1, dr
 | 1800 MHz | 75,7 T-MAC/s | 75,8 T-MAC/s | 890 | 21 W |
 
 O que isso significa para o PearlHash (1 TH/s de pool = 10¹² MAC int8/s):
-- O teto é **~108 TH/s em clock stock e ~96 TH/s no cap de 2200 MHz** que recomendamos por causa do desligamento conhecido.
+- O teto é **~108 TH/s em clock stock e ~85 TH/s no cap de 2000 MHz** que o padrão Balanced usa por causa do desligamento conhecido (~96 TH/s a 2200 MHz, o cap opcional do Max).
 - FP8 roda na **mesma taxa** que INT8, então o fork de certificado v4 (FP8) não reduziria o teto no GB10.
 - ~919 MAC/clk/SM é ~90 % da taxa teórica de 1024; os 10 % restantes são overhead de emissão do loop só em registradores.
-- Sem tráfego de memória a potência é baixa (51 W); um kernel real adiciona tráfego de shared memory e L2, então o alvo Balanced de 75 W tem folga.
-- Meta de planejamento para o kernel v1: 80–90 % do pico com cap ⇒ **77–86 TH/s a 2200 MHz**.
+- Sem tráfego de memória a potência é baixa (51 W), mas um kernel real adiciona tráfego de shared memory e L2: a 2200 MHz o kernel de produção consumiu 83–87 W (soak G1 nº 1), por isso o cap do Balanced é 2000 MHz.
+- A meta de planejamento do kernel v1 era 80–90 % do pico com cap; medido a 2000 MHz dá ~87 % (abaixo).
+
+## Mineração sustentada no cap de 2000 MHz (`docs/benchmarks/20260926-2000mhz-sustained.md`)
+
+| Perfil / cap | Taxa creditada | Potência da GPU | Temperatura da GPU | Duty |
+|---|---|---|---|---|
+| Balanced / 2000 MHz (padrão) | **73,9 T-MAC/s** | ~63 W | 72 °C | 100 % |
+| Max / 2200 MHz (soak G1 nº 1, 16,9 min) | — | 83–87 W | até 83 °C, placa a 97,5 °C | — |
+
+A taxa creditada anda em degraus de uma tentativa (7,04e13 MACs).

@@ -28,8 +28,8 @@ Jobs start immediately after the ack. (`solo:` prefix on the wallet selects solo
 - A new job arrived every **~21–35 s** during the capture (template refresh), each with a new `job_id` counter; block changes also produce a new job.
 - `cert_version` is present (3 = V3 salted seeds since mainnet height 99,000). Treat `≥ 4` as "update required".
 
-## Share (`mining.submit`) — NOT yet captured
-Expected object form (LuckyPool-style): `{"wallet":..,"worker":..,"job_id":..,"plain_proof":"<base64(bincode(PlainProof))>"}`. 6block's miner uses the field **`plain_proof_zst`** for HeroMiners (base64 of zstd-compressed bincode). Which of `plain_proof` / `plain_proof_zst` (or both) is accepted is decided in milestone M6 with a real share; the encoder learns the working field per pool (≤ 3 format rejects).
+## Share (`mining.submit`) — confirmed live in M6 (2026-09-26)
+Object form (LuckyPool-style): `{"wallet":..,"worker":..,"job_id":..,"plain_proof":"<base64(bincode(PlainProof))>"}`. Our miner had 4 accepted, 0 rejected with **`plain_proof`** (plain encoding) at diff 2,097,152 (`docs/benchmarks/m6-20260926T222707Z-first-shares.md`). 6block's miner uses the field `plain_proof_zst` (base64 of zstd-compressed bincode) for HeroMiners; the encoder still learns the working field per pool (≤ 3 format rejects).
 
 ## Pool facts (API `/api/stats`, 2026-09-26)
 Fee 0 %, scheme `prop`, min payout 1 PRL (1e8 units), payments hourly, `solo:` prefix, stale-share penalty tiers: ≤ 2 % → 0, ≤ 5 % → 50 %, > 30 % → 100 % + 3600 s ban (after 1000 shares). Merge mining of MDL was advertised in June 2026 but is dead as of 2026-09-26 (notices commented out, `modelos.herominers.com` does not resolve); see `docs/en/DUAL-MINING.md`.

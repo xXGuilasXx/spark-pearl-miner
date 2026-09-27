@@ -15,7 +15,7 @@ Reply to the authorize: `{"id":2,"result":true,"error":null}`, immediately follo
 ```
 Same object layout as HeroMiners/LuckyPool (`job_id = <8 hex>_<diff>`, `cert_version: 3` present). **Target convention differs:** Kryptex sends `target = 2^224 / diff − 1` (e.g. `0x07ff…ff`, 203 bits for diff 2,097,152), not the Bitcoin pdiff `0xFFFF·2^208/diff` used by HeroMiners and LuckyPool (ratio 65535/65536). The miner always uses `notify.target` as sent and never recomputes it from `diff`.
 
-## Share (`mining.submit`) — from open-source clients (ascend_prl, pearl-metal-miner), to be confirmed in M6
+## Share (`mining.submit`) — from open-source clients (ascend_prl, pearl-metal-miner); accepted live with our miner (first share 2026-09-27 00:24 UTC, 0 rejects)
 `{"worker":"<prl1...>.<worker>","job_id":..,"plain_proof":"<base64(bincode)>"}`. Optional "v2" session: authorize with an object `{"wallet":"<addr>.<worker>","agent":..,"type":"v2"}`; if the ack echoes `type:"v2"`, every submit carries `base64(gzip(bincode))` in the same field.
 
 ## Pool facts

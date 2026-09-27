@@ -1,6 +1,10 @@
-# GUI, local API and command line
+# API and security reference
 
 _Português: [../pt-BR/GUI.md](../pt-BR/GUI.md)_
+
+> **Looking for how to use the GUI?** The illustrated [user manual](MANUAL.md) covers every screen,
+> button and message. This page is the technical reference: how the GUI is served and secured, the
+> REST + SSE API, the command line and the service.
 
 The daemon serves a small web GUI and a REST + SSE API on **`http://127.0.0.1:4078`**, loopback
 only. The GUI is plain HTML, CSS and ES modules embedded in the binary (no build step, no CDN,
@@ -30,11 +34,8 @@ spark-pearl-miner gui --print-url   # on the Spark
 
 The port must stay 4078 on both ends: the daemon checks the `Host` header (see below).
 
-The launcher `packaging/spark-pearl-miner.desktop` runs `spark-pearl-miner gui`:
-
-```
-install -Dm0644 packaging/spark-pearl-miner.desktop ~/.local/share/applications/spark-pearl-miner.desktop
-```
+The app-menu entry **Spark Pearl Miner** (`packaging/spark-pearl-miner.desktop`, installed by
+`packaging/install.sh` with the absolute path of the binary) runs `spark-pearl-miner gui`.
 
 ## Security of the local API
 
@@ -85,43 +86,45 @@ more than your SSH login already gives; do not expose such a proxy to other peop
 To require the token everywhere, set `trust_local_user = false` under `[api]` in
 `~/.config/spark-pearl-miner/config.toml` and restart the daemon.
 
-## Screens
+## Screens (overview)
 
-**Setup wizard** (first start, or *Setup* in the menu): language → wallet (checked live as a
-bech32m `prl1p…` address) → worker name (`[A-Za-z0-9_-]{1,32}`) → pools → fee disclosure and
-consent → power profile (Max needs a typed acknowledgement) → GPU sharing mode → summary →
-**Save and start mining**.
+The GUI has a single route, `#/dashboard`; any other hash redirects to it. What it shows depends on
+the state (each is described, with pictures, in the [manual](MANUAL.md)):
 
-The pool editor (wizard and *Pools*) has three slots in priority order, each with a preset
-(HeroMiners BR/US/US2/DE/FR, LuckyPool BR with the pinned key, LuckyPool EU, Kryptex 8048 TLS, or
-custom), host, port, TLS (`auto`, `on`, `off`, `pinned`) and an *Advanced* section (label,
-dialect, `jsonrpc` member, proof encoding, password, hash-tile pattern). Slots can be reordered,
-added (up to three) and removed. **Test connection** checks DNS, TCP and TLS only; ticking
-*also test the login* asks for confirmation and then logs in once with your wallet and waits for
-a job (nothing is submitted).
+| View | When | Manual |
+|---|---|---|
+| Setup (3 steps: language → wallet → developer fee + **Start mining**) | `status.setup_required` (no wallet, or the fee not accepted) | [First run](MANUAL.md#first-run) |
+| Dashboard (one sentence + one button, cards for rate, shares, power and this Spark, the failover line, alerts, footer) | after the setup | [Dashboard](MANUAL.md#dashboard) |
+| Settings dialog (gear: wallet, worker, language, three `host:port` pool rows) | on demand | [Settings](MANUAL.md#settings) |
+| Sign-in | a session that is not trusted (another account, a foreign tunnel, `trust_local_user = false`) | [Sign-in](MANUAL.md#login) |
 
-| Screen | Contents |
-|---|---|
-| Dashboard | state, active pool, credited hashrate (10 s), shares accepted/rejected/stale/discarded, GPU worker state, what the GPU works for (your pool, a fee slice, idle), uptime, wallet, alerts; Start / Pause / Resume / Stop |
-| Pools | a status chip per slot (ACTIVE, standby, waiting to retry, login refused…), the last error in plain language with the raw pool text, counters, learned TLS and proof field, **Switch now** / **Pin** / **Unpin**, the failover timeline, and the pool editor with **Save & Apply** |
-| Failover | every threshold of the failover manager with its default; *Restore defaults* |
-| Performance & Power | power profile, the clock-cap instructions (`spark-pearl-miner install-clock-cap`), GPU sharing mode, worker launch mode, CPU simulation switch, GPU telemetry from `nvidia-smi` |
-| Fee | the fee line, every compiled-in constant (read-only), the constants hash, and what was measured: fee so far, last 24 h, time mined for the developer, debt, next slice, dev shares |
-| Logs | live log (SSE), level filter, **Export diagnostics** (logs, status, pools and settings as JSON with wallet addresses redacted) |
-| About | version, commit, SHA-256 of the running binary, fee constants hash, licenses, how to verify a release, the non-affiliation statement |
+The setup and the Settings dialog read a fresh `GET /config`, change only their own fields and
+`PUT` it back, so every other key (and the hidden keys of an unchanged pool row) is kept. Live data:
+the `stats` SSE event once a second, plus `GET /pools` every 2 s and on `fsm`/`timeline` events.
+
+Display flags (client side only, never saved): `?lang=en|pt-BR` picks the page language for that
+load. `?shot=…` (`wizard-2`, `wallet-error`, `wizard-3`, `wizard-3-presets`, `settings`,
+`settings-error`, `settings-wallet-confirm`, `stop-confirm`, `timeline`, `alerts`) opens a dialog or
+a section for `tools/screenshots.sh`; it works only while `status.worker.simulated` is true and
+never writes anything.
+
+Pause, pool switch/pin, the pool login test, the logs and the fee measurements are no longer
+screens; they stay in the API below and the command line ([manual §7](MANUAL.md#cli)).
 
 ## The failover demo
 
 On any machine, without a pool or a GPU:
 
 ```
-cargo run --release -p spark-pearl-miner --example failover_demo -- --port 4078
+cargo run --release -p spark-pearl-miner --example failover_demo -- --port <free port> \
+    [--dir DIR] [--wallet prl1p…] [--pool1-down-s 30] [--all-down]
 ```
 
-It starts two mock pools on localhost (pool 1 refuses connections for 30 s), the daemon with the
-simulated CPU worker, and prints the GUI URL. The Pools screen shows pool 2 ACTIVE within
-seconds, shares accepted, and the return to pool 1 after the probe cadence (shortened in the
-demo to 20 s + 10 s; the defaults are 300 s + 60 s). The same scenario runs in CI as
+`--port` is required and cannot be 4078 (the port of a real miner). It starts three mock pools on
+localhost (pool 1 refuses connections for `--pool1-down-s` seconds), the daemon with the simulated
+CPU worker and a placeholder wallet, and prints the GUI URL. The failover line shows pool 2 in use
+within seconds, shares accepted, and the return to pool 1 after the probe cadence (shortened in the
+demo to 20 s + 10 s; the defaults are 300 s + 60 s). `--all-down` keeps every pool refusing. The same scenario runs in CI as
 `crates/spm/tests/failover.rs`.
 
 ## API reference
@@ -159,18 +162,24 @@ StartSlice, EndSlice, Abort), `alert`, `log`, `config` (a configuration change a
 | Command | What |
 |---|---|
 | `daemon [--no-api]` | run the daemon (the user service does this) |
-| `gpu-worker --attach <sock> [--sim]` | the GPU worker; this build only has the CPU simulation (`--sim`); the CUDA worker is milestone M5 |
+| `gpu-worker --attach <sock> [--sim]` | the GPU worker (the CUDA worker; `--sim` runs the CPU simulation instead); the daemon starts it |
 | `status [--json]` | what the daemon is doing (control socket) |
 | `start`, `stop`, `pause`, `resume` | controls (control socket) |
 | `gui [--print-url]` | open the GUI (see above) |
 | `fee-test [--connect] [--pace-ms N]` | one developer-fee cycle through the real scheduler with compressed time: PreWarm → StartSlice → EndSlice and the measured fee. Offline by default; `--connect` really logs in to the first reachable dev pool at PreWarm (never submits) |
 | `version`, `--version` | version, commit, fee constants hash and the fee line |
-| `install-clock-cap` | prints the `sudo` commands for the boot-time 2200 MHz clock cap; changes nothing |
+| `install-clock-cap` | prints the `sudo` command for the boot-time 2000 MHz clock cap; changes nothing |
+| `config check [--file PATH]` | validates `config.toml` as the daemon does at start: `OK: <path>`, or one `key: problem` line per error (exit status 1) |
+| `config path` | prints the absolute path of `config.toml` |
 
 The CLI talks to the daemon over `$XDG_RUNTIME_DIR/spark-pearl-miner/control.sock` (0600 in a
 0700 directory; connections from other users are refused after an `SO_PEERCRED` check).
 
 ## Running it as a service
+
+`packaging/install.sh` installs everything (see the [README](../../README.md#install)): the binary
+in `~/.local/bin`, `packaging/systemd/user/spark-pearl-miner.service` in `~/.config/systemd/user/`,
+the app-menu entry, and `systemctl --user enable --now spark-pearl-miner`. By hand:
 
 ```
 install -Dm0755 target/release/spark-pearl-miner ~/.local/bin/spark-pearl-miner
@@ -180,7 +189,9 @@ systemctl --user enable --now spark-pearl-miner
 sudo loginctl enable-linger "$USER"   # keep it running without a desktop session
 ```
 
-The unit restarts the daemon on failure. **Stop** in the GUI makes the worker exit, which frees
+The unit runs `spark-pearl-miner config check` before the daemon (`ExecStartPre`), so an invalid
+`config.toml` shows its reason in `journalctl --user -u spark-pearl-miner`; after 5 failed starts in
+120 s systemd stops retrying. The unit restarts the daemon on failure. **Stop** in the GUI makes the worker exit, which frees
 its CUDA context; a worker left paused for a minute is released the same way. On a DGX Spark with
 `spark-modo`, the worker runs only as the `miner` runtime: see
 [`contrib/spark-modo/README.pt-BR.md`](../../contrib/spark-modo/README.pt-BR.md).

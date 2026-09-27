@@ -15,15 +15,16 @@
 
 **Unit:** in Pearl, 1 "hash" = 1 int7×int7 multiply-accumulate of the noised GEMM, normalized to noise rank 128. `1 TH/s = 10¹² MAC/s = 2 INT8 TOPS` of useful GEMM. Pools credit `diff × 2³²` MACs per accepted share.
 
-**GB10 expectation (unmeasured on this unit yet):** the INT8 tensor peak **measured on this unit** (MB1, `docs/en/BENCHMARKS.md`) is 217 TOPS at stock and 192 TOPS at the 2200 MHz cap, so the hard ceiling is ~108 TH/s (~96 TH/s capped). Best sm_120-class kernels reach 85–94 % of peak. Inside a *safe* 75–85 W envelope (see the power-off risk) we plan on **65–85 TH/s credited**. A closed-source DGX Spark miner claims ~76 TH/s at ~99 W.
+**GB10, measured on this unit:** with the default Balanced profile and the 2000 MHz clock cap this miner sustains **73.9 TH/s credited (T-MAC/s) at ~63 W of GPU power, GPU 72 °C** (`docs/benchmarks/20260926-2000mhz-sustained.md`). The INT8 tensor peak (MB1, `docs/en/BENCHMARKS.md`) is 217 TOPS at stock clocks and 170 TOPS at 2000 MHz, so the hard ceiling is ~108 TH/s (~85 TH/s at the cap): the miner runs at ~87 % of the capped peak. A closed-source DGX Spark miner claims ~76 TH/s at ~99 W.
 
 | Hashrate | PRL/day gross | US$/day @ 1.30 | US$/day @ 0.70 | US$/day @ 0.30 |
 |---|---|---|---|---|
 | 60 TH/s | 1.45 | 1.88 | 1.01 | 0.43 |
+| **73.9 TH/s (measured, 2000 MHz)** | **1.78** | **2.32** | **1.25** | **0.53** |
 | 75 TH/s | 1.81 | 2.35 | 1.27 | 0.54 |
 | 90 TH/s | 2.17 | 2.82 | 1.52 | 0.65 |
 
-Costs: 100–130 W at the wall while mining → 2.4–3.1 kWh/day → R$1.9–3.4/day (R$0.80–1.10/kWh) ≈ US$0.37–0.66/day. Pool fee 0–1 %, developer fee 2 %.
+Costs (wall power not measured yet; the GPU itself draws ~63 W at the default cap, the rest is the SoC, memory, SSD and fans): an estimated 100–130 W at the wall while mining → 2.4–3.1 kWh/day → R$1.9–3.4/day (R$0.80–1.10/kWh) ≈ US$0.37–0.66/day. Pool fee 0–1 %, developer fee 2 %.
 **Net at 75 TH/s and US$1.30: ≈ US$1.4–1.9/day (≈ US$45–55/month). Break-even price: ≈ US$0.18–0.43/PRL.** PRL traded at US$0.14 in July 2026.
 
 On a Spark that also serves LLMs (like the author's), mining only happens while the GPU is otherwise idle, so real numbers are lower.
@@ -41,7 +42,7 @@ On a Spark that also serves LLMs (like the author's), mining only happens while 
 
 ## 4. Two risks that can end the product with days of notice
 1. **FP8 / certificate-v4 hard fork.** Official branch `fp8-scheme`, PR #311 (open, no mainnet height yet). After `Fp8ForkHeight`, every int8/v3 miner produces invalid shares. Past fork heights were set hours to days before activation. GB10's FP8 `mma.sync` (`QMMA.16832`) is *probably* bit-exact with the B200-pinned arithmetic (measured only on an RTX PRO 6000 so far). Gate **G3** tests this early; the mainloop is templated so an FP8 backend can follow. ~70 % of the code (pools, failover, fee, GUI, power, packaging) survives the fork.
-2. **Hard power-off of the DGX Spark under sustained GPU load** (~88–92 W GPU draw). NVIDIA acknowledged it as a known issue (2026-07-27) and has shipped no fix; this unit already runs the newest firmware. Mitigation: clock cap at 2200 MHz (boot-time unit, root once), a non-root power governor with a **Balanced** default (75 W target, 85 W hard stop), staged soaks. Cost: ~9 % hashrate.
+2. **Hard power-off of the DGX Spark under sustained GPU load** (~88–92 W GPU draw). NVIDIA acknowledged it as a known issue (2026-07-27) and has shipped no fix; this unit already runs the newest firmware. Mitigation: clock cap at 2000 MHz (boot-time unit, root once), a non-root power governor with a **Balanced** default (75 W target, 85 W hard stop), staged soaks. Cost: ~22 % of the stock peak (85.0 vs 108.6 T-MAC/s in MB1); the first soak at 2200 MHz reached 87 W and a 97.5 °C board, which is why the cap is 2000 MHz.
 
 ## 5. Stop / re-scope criteria
 - G0 (bit-exactness) fails, or the Balanced soak powers the unit off.

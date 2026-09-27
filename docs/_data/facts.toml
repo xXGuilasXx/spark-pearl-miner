@@ -23,10 +23,15 @@ safetrade_share_pct = 87
 sms = 48
 int8_peak_measured_tops = 217   # MB1 on this unit, stock 2462 MHz (192 TOPS at the 2200 MHz cap)
 ceiling_th_s = 108   # 96 at 2200 MHz
-planning_th_s_low = 65
-planning_th_s_high = 85
-power_w_low = 100
-power_w_high = 130
+# Measured, sustained, Balanced default (2000 MHz cap): docs/benchmarks/20260926-2000mhz-sustained.md
+rate_tmacs_2000mhz = 73.9
+gpu_power_w_2000mhz = 63
+gpu_temp_c_2000mhz = 72
+duty_pct = 100
+credit_quantum_macs = 7.04e13   # credited per attempt: the rate moves in steps
+# Max profile (2200 MHz), G1 soak #1: above the 95 °C board trip, not recommended
+max_2200mhz_power_w = "83-87"
+max_2200mhz_acpitz_c = 97.5
 competitor_claim_th_s = 76
 competitor_claim_w = 99
 [fee]

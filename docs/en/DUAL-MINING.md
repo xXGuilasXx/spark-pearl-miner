@@ -20,6 +20,6 @@ Moving the *primary* pool to LuckyPool to get NOCK loses money: its 1 % PRL fee 
 No GPU coin beats PRL on this chip (scaled from RTX 5090: Quantus ≈ US$1.5–1.9/day at 100 % of the GPU; every memory-bound coin ≤ US$0.40/day given 273 GB/s). Time-slicing only splits GPU time (net ≈ −US$0.25 to −US$1.10/day at 50/50); true co-running is blocked because the PRL CTA uses ~90 % of the SM register file and ~72 KB of shared memory; the 75 W governor would take any extra watts away from PRL; and no closed dual miner ships for aarch64. **No.**
 
 ## 4. What to do with spare power instead
-After the soak tests (M11), a PRL clock step from 2200 to 2300–2400 MHz is worth about +5–10 % (≈ +US$0.12–0.27/day) — more than every dual option combined. Treat as an estimate; only with the power-off soak evidence.
+A higher PRL clock would be worth about +5–10 % per 100–200 MHz (≈ +US$0.12–0.27/day), more than every dual option combined, but it is on hold: G1 soak #1 at 2200 MHz already reached 87 W and a 97.5 °C board, so the Balanced default is 2000 MHz and 2300–2400 MHz would sit inside the power-off band. Treat as an estimate; revisit only with new power-off evidence.
 
 Energy assumptions: R$0.80–1.10/kWh ≈ US$0.15–0.21; 1 W sustained ≈ R$0.019–0.026/day.
