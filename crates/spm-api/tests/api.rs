@@ -341,7 +341,7 @@ async fn a_settings_save_keeps_the_hidden_pool_settings() {
     assert_eq!(st, StatusCode::OK, "{out}");
     let now = fake.config();
     let (k, custom, lucky) = (&now.pools[0], &now.pools[1], &now.pools[2]);
-    assert_eq!((k.host.as_str(), k.tls, k.dialect), ("prl-br.kryptex.network", TlsSetting::On, spm_api::config::DialectSetting::Kryptex));
+    assert_eq!((k.host.as_str(), k.tls, k.dialect), ("prl-br.kryptex.network", TlsSetting::On, spm_api::config::DialectSetting::KryptexV2));
     assert_eq!((custom.host.as_str(), custom.port, custom.tls), ("pool.example.com", 3333, TlsSetting::Auto));
     assert_eq!((lucky.tls, lucky.spki_pin.as_str()), (TlsSetting::Pinned, "d0ehDQxaU5IUv4UHWXItQKqdJ8anqZclQXcoIjwF/mk="));
     assert_eq!(lucky.jsonrpc, spm_api::config::JsonRpcSetting::On);

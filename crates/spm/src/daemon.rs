@@ -329,7 +329,15 @@ fn pool_configs(cfg: &Config) -> Vec<spm_pool::PoolConfig> {
             enabled: p.enabled,
             login: format!(
                 "{}.{}|{:?}|{:?}|{:?}|{:?}|{}|{}|{:?}",
-                cfg.miner.wallet, cfg.miner.worker, p.tls, p.dialect, p.jsonrpc, p.proof, p.password, p.spki_pin, p.pattern
+                p.login.as_deref().unwrap_or(&cfg.miner.wallet),
+                cfg.miner.worker,
+                p.tls,
+                p.dialect,
+                p.jsonrpc,
+                p.proof,
+                p.password,
+                p.spki_pin,
+                p.pattern
             ),
         })
         .collect()
@@ -2280,7 +2288,7 @@ mod tests {
         assert_eq!(c.tls, TlsMode::luckypool());
         assert_eq!(c.jsonrpc, Some(true));
         let c = dev_session_config("prl-br.kryptex.network", 8048, None);
-        assert_eq!(c.dialect, Dialect::Kryptex);
+        assert_eq!(c.dialect, Dialect::KryptexV2);
         assert_eq!(c.tls, TlsMode::On);
         let c = dev_session_config("br.pearl.herominers.com", 1200, Some(ProofField::PlainProofZst));
         assert_eq!((c.dialect, c.proof_field), (Dialect::Object, ProofField::PlainProofZst));

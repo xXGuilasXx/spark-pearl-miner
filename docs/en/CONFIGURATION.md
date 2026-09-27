@@ -83,7 +83,7 @@ port = 8048
 # after a certificate error) | pinned (TLS checked against spki_pin only, for self-signed pools).
 tls = "on"
 # Wire dialect: auto (from the host name) | object (HeroMiners, LuckyPool) | kryptex | kryptex-v2.
-dialect = "kryptex"
+dialect = "kryptex-v2"
 # The "jsonrpc":"2.0" member on requests: auto | on | off.
 jsonrpc = "auto"
 # Proof encoding on submit: auto (learned per pool) | plain | zstd.
