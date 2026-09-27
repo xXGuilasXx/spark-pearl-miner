@@ -97,6 +97,9 @@ jsonrpc = "auto"
 proof = "auto"
 # Stratum password: x (Kryptex also takes d=<difficulty>); up to 64 printable characters.
 password = "x"
+# Avançado, opcional: entrar nesta pool com uma conta em vez da carteira (por exemplo um ID da
+# Kryptex, para essa pool pagar em BTC). O nome do worker é acrescentado; as outras pools
+# continuam com a carteira. Exemplo: login = "krxabc123"
 # Hash-tile pattern: auto (fastest) | official.
 pattern = "auto"
 # false keeps the entry but never connects to it.

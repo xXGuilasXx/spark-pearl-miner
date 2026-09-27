@@ -171,6 +171,11 @@ pub struct PoolEntry {
     /// Stratum password (`x`; Kryptex also takes `d=<N>`).
     #[serde(default = "default_password")]
     pub password: String,
+    /// Advanced: sign in to this pool with an account instead of the wallet (for example a
+    /// Kryptex ID, so that pool pays out in another coin). The worker name is appended as usual;
+    /// the other pools keep using the wallet. Never shown in the GUI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub login: Option<String>,
     #[serde(default)]
     pub pattern: PatternSetting,
     #[serde(default = "yes")]
@@ -198,6 +203,7 @@ impl PoolEntry {
             jsonrpc: JsonRpcSetting::Auto,
             proof: ProofSetting::Auto,
             password: default_password(),
+            login: None,
             pattern: PatternSetting::Auto,
             enabled: true,
         }
@@ -594,6 +600,12 @@ fn is_valid_password(p: &str) -> bool {
     p.len() <= 64 && p.bytes().all(|b| b.is_ascii_graphic())
 }
 
+/// A pool login override: an account name, never empty, no separators the pools use for the
+/// worker name (`.` and `/`), no spaces.
+fn is_valid_login(l: &str) -> bool {
+    !l.is_empty() && l.len() <= 64 && l.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'@')
+}
+
 /// How strict [`Config::validate`] is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Strictness {
@@ -689,6 +701,9 @@ impl Config {
             if !is_valid_password(&p.password) {
                 e.push(FieldError::new(at("password"), "password_invalid", "up to 64 printable characters without spaces"));
             }
+            if p.login.as_deref().is_some_and(|l| !is_valid_login(l)) {
+                e.push(FieldError::new(at("login"), "login_invalid", "1–64 letters, digits, _ - or @ (no worker name: it is appended)"));
+            }
             if p.name.chars().count() > 40 || p.name.chars().any(char::is_control) {
                 e.push(FieldError::new(at("name"), "name_invalid", "up to 40 characters"));
             }
@@ -775,6 +790,25 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pool_login_override_is_optional_validated_and_not_written_by_default() {
+        let mut c = Config::default();
+        c.miner.wallet = "prl1pkqprrek7pemaxyvl4deusyz2hrkywnkhl86w7yqv53x0qyvsd5fs57s90n".into();
+        c.miner.disclosure_accepted = true;
+        assert!(c.pools.iter().all(|p| p.login.is_none()));
+        assert!(!c.to_toml().contains("login"), "absent by default");
+        c.pools[0].login = Some("krxabc123".into());
+        c.validate(Strictness::Strict).expect("a plain account is valid");
+        let back: Config = toml::from_str(&c.to_toml()).unwrap();
+        assert_eq!(back.pools[0].login.as_deref(), Some("krxabc123"));
+        assert!(back.pools[1].login.is_none());
+        for bad in ["", "krx.rig", "krx/rig", "has space", &"x".repeat(65)] {
+            c.pools[0].login = Some(bad.to_string());
+            let err = c.validate(Strictness::Strict).expect_err(bad);
+            assert!(format!("{err:?}").contains("login_invalid"), "{bad:?}: {err:?}");
+        }
+    }
 
     const WALLET: &str = "prl1pxtue3pmxcxjplpe6gsc57ctwv6z8t4lawq2l80wm88rqkyyc6eaqrveydh";
 

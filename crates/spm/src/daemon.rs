@@ -965,7 +965,10 @@ impl Daemon {
         }
         let cfg = self.cfg().clone();
         let learned = self.store.state.proof_field(&endpoint);
-        let mut sc = SessionConfig::new(p.host.clone(), p.port, p.resolved_dialect(), cfg.miner.wallet.clone(), cfg.miner.worker.clone());
+        // A per-pool login override (an account such as a Kryptex ID) replaces the wallet on that
+        // pool only; the worker name is appended by the dialect as usual.
+        let login = p.login.clone().unwrap_or_else(|| cfg.miner.wallet.clone());
+        let mut sc = SessionConfig::new(p.host.clone(), p.port, p.resolved_dialect(), login, cfg.miner.worker.clone());
         sc.tls = p.transport_mode(tls);
         sc.jsonrpc = p.resolved_jsonrpc();
         sc.password = p.password.clone();
