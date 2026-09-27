@@ -10,14 +10,22 @@
 //!   `X-SPM-CSRF`; a cross-site page can neither read it nor set the header without CORS.
 //! * The Host header must name the loopback listener (defeats DNS rebinding) and an Origin header, if
 //!   present, must be the same origin.
+//! * Trusted local user (`api.trust_local_user`, on by default): a loopback connection whose peer
+//!   socket belongs to the daemon's own UID (see [`crate::peer`]) may read without a cookie and gets
+//!   a session from `GET /api/v1/session` without the token. Mutations still need the cookie and the
+//!   CSRF header. Other accounts on the machine, and everything not on loopback, need the token.
 
 use std::collections::HashMap;
+use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
+use std::net::{Ipv4Addr, SocketAddr};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+
+use crate::peer::{self, PeerUidResolver};
 
 /// Cookie name.
 pub const COOKIE: &str = "spm_session";
@@ -89,24 +97,85 @@ struct Session {
     csrf: String,
     last_seen: Instant,
     created: Instant,
+    /// Opened for the trusted local user (no token). Evicted before token sessions when full.
+    local: bool,
 }
 
 /// In-memory security state of one API server.
-#[derive(Debug)]
 pub struct Security {
     token: String,
     sessions: Mutex<HashMap<String, Session>>,
     hosts: Vec<String>,
     origins: Vec<String>,
     failures: Mutex<(u32, Option<Instant>)>,
+    trust_local_user: bool,
+    listener: SocketAddr,
+    own_uid: Option<u32>,
+    peer_uid: PeerUidResolver,
+}
+
+impl fmt::Debug for Security {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Security")
+            .field("hosts", &self.hosts)
+            .field("trust_local_user", &self.trust_local_user)
+            .field("listener", &self.listener)
+            .field("own_uid", &self.own_uid)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Security {
-    /// `port` is the port the listener really bound (the Host allowlist uses it).
+    /// `port` is the port the listener really bound (the Host allowlist uses it). The trusted local
+    /// user is off until [`Security::trust_local_user`] turns it on.
     pub fn new(token: String, port: u16) -> Self {
         let hosts = vec![format!("127.0.0.1:{port}"), format!("localhost:{port}"), format!("[::1]:{port}")];
         let origins = hosts.iter().map(|h| format!("http://{h}")).collect();
-        Security { token, sessions: Mutex::new(HashMap::new()), hosts, origins, failures: Mutex::new((0, None)) }
+        Security {
+            token,
+            sessions: Mutex::new(HashMap::new()),
+            hosts,
+            origins,
+            failures: Mutex::new((0, None)),
+            trust_local_user: false,
+            listener: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port),
+            own_uid: peer::effective_uid(),
+            peer_uid: Box::new(peer::proc_peer_uid),
+        }
+    }
+
+    /// `api.trust_local_user`: let the same user account on this machine in without the token.
+    pub fn trust_local_user(mut self, on: bool) -> Self {
+        self.trust_local_user = on;
+        self
+    }
+
+    /// The address the listener really bound (the peer lookup matches connections to it).
+    pub fn listener(mut self, addr: SocketAddr) -> Self {
+        self.listener = addr;
+        self
+    }
+
+    /// Replace the peer-UID lookup (default: `/proc/net/tcp*`). For tests.
+    #[doc(hidden)]
+    pub fn peer_uid_resolver(mut self, f: PeerUidResolver) -> Self {
+        self.peer_uid = f;
+        self
+    }
+
+    /// Whether the switch is on.
+    pub fn trusts_local_user(&self) -> bool {
+        self.trust_local_user
+    }
+
+    /// The connection from `peer` is the daemon's own user on this machine: the switch is on, the
+    /// peer is on loopback and its socket belongs to our effective UID. `None` (no peer address
+    /// known) is never trusted.
+    pub fn is_local_user(&self, peer: Option<SocketAddr>) -> bool {
+        let (Some(peer), Some(own)) = (peer, self.own_uid) else {
+            return false;
+        };
+        self.trust_local_user && peer::is_loopback(peer.ip()) && (self.peer_uid)(peer, self.listener) == Some(own)
     }
 
     /// Host header allowlist.
@@ -140,19 +209,31 @@ impl Security {
         if let Ok(mut g) = self.failures.lock() {
             *g = (0, None);
         }
+        self.open_session(false)
+    }
+
+    /// A new session. `local` marks one opened without the token (only for a connection
+    /// [`Security::is_local_user`] trusts); when the table is full, local sessions go first.
+    pub(crate) fn open_session(&self, local: bool) -> Option<(String, String)> {
         let id = random_hex(32).ok()?;
         let csrf = random_hex(32).ok()?;
         let now = Instant::now();
         let mut s = self.sessions.lock().ok()?;
         s.retain(|_, v| now.duration_since(v.last_seen) < SESSION_IDLE);
         while s.len() >= MAX_SESSIONS {
-            let oldest = s.iter().min_by_key(|(_, v)| v.created).map(|(k, _)| k.clone());
-            match oldest {
+            // A page that keeps opening local sessions must not push out a token login.
+            let victim = s
+                .iter()
+                .filter(|(_, v)| v.local)
+                .min_by_key(|(_, v)| v.created)
+                .or_else(|| s.iter().min_by_key(|(_, v)| v.created))
+                .map(|(k, _)| k.clone());
+            match victim {
                 Some(k) => s.remove(&k),
                 None => break,
             };
         }
-        s.insert(id.clone(), Session { csrf: csrf.clone(), last_seen: now, created: now });
+        s.insert(id.clone(), Session { csrf: csrf.clone(), last_seen: now, created: now, local });
         Some((id, csrf))
     }
 
@@ -203,6 +284,26 @@ mod tests {
         assert!(warned.get());
         assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn local_sessions_are_evicted_before_token_logins() {
+        let tok = "ab".repeat(32);
+        let s = Security::new(tok.clone(), 4078);
+        let logins: Vec<String> = (0..MAX_SESSIONS - 1).map(|_| s.login(&tok).unwrap().0).collect();
+        let (local1, _) = s.open_session(true).unwrap();
+        // Table full: the next local session pushes out the oldest LOCAL one, never a token login.
+        let (local2, _) = s.open_session(true).unwrap();
+        assert!(s.session_csrf(&local1).is_none());
+        assert!(s.session_csrf(&local2).is_some());
+        assert!(logins.iter().all(|c| s.session_csrf(c).is_some()));
+        // With no local session left to evict, the oldest token login goes, as before.
+        let (local3, _) = s.open_session(true).unwrap();
+        assert!(s.session_csrf(&local2).is_none());
+        assert!(s.session_csrf(&local3).is_some());
+        let (extra, _) = s.login(&tok).unwrap();
+        assert!(s.session_csrf(&local3).is_none(), "a token login evicts the local session first");
+        assert!(s.session_csrf(&extra).is_some());
     }
 
     #[test]

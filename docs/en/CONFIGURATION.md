@@ -122,6 +122,7 @@ sim_interval_ms = 1000
 bind = "127.0.0.1"
 port = 4078
 lan = false
+trust_local_user = true
 
 [gui]
 language = "auto"
@@ -230,6 +231,7 @@ available or above 10 % pressure.
 | `api.bind` | `"127.0.0.1"` | a loopback address only |
 | `api.port` | 4078 | 1–65535 (needs a restart) |
 | `api.lan` | `false` | `true` is refused: LAN access needs TLS, not implemented in this build; use `ssh -L 4078:127.0.0.1:4078` |
+| `api.trust_local_user` | `true` | connections from this machine by the same user account need no token (the peer's UID is checked); everything else keeps the token. `false` requires the token everywhere (needs a restart). See [GUI.md](GUI.md#local-access-without-a-token) |
 | `gui.language` | `"auto"` | `auto`, `en`, `pt-BR` (the browser's choice in the header wins for that browser) |
 
 ## Other files

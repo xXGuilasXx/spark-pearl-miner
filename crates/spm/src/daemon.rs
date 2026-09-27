@@ -641,6 +641,7 @@ pub async fn start(opts: DaemonOptions) -> anyhow::Result<DaemonHandle> {
     }
 
     let token = spm_api::security::load_or_create_token(&paths.token_file(), |w| tracing::warn!("{w}"))?;
+    let trust_local_user = cfg.api.trust_local_user;
     let api_listener = if opts.api {
         let port = opts.api_port_override.unwrap_or(cfg.api.port);
         let bind = cfg.api.bind.parse().unwrap_or(std::net::IpAddr::from([127, 0, 0, 1]));
@@ -774,7 +775,7 @@ pub async fn start(opts: DaemonOptions) -> anyhow::Result<DaemonHandle> {
         let backend = Arc::new(bridge.clone());
         let tok = token.clone();
         tasks.push(tokio::spawn(async move {
-            if let Err(e) = spm_api::server::serve(listener, backend, tok, std::future::pending()).await {
+            if let Err(e) = spm_api::server::serve(listener, backend, tok, trust_local_user, std::future::pending()).await {
                 tracing::error!(error = %e, "API server stopped");
             }
         }));

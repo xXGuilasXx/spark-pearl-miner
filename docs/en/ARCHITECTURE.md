@@ -40,4 +40,4 @@ Pure reducer `step(state, event, now)` with an injected clock. Failure triggers 
 Profiles Eco / **Balanced (75 W target, 85 W stop, default)** / Max; optional boot-time clock cap unit (`nvidia-smi -lgc 300,2200`, root once); non-root NVML governor; fault signatures; `running.marker`. Memory: worker ≤ 2 GiB; refuse to start unless `MemAvailable − budget ≥ 20 GiB`; exit below 16 GiB or PSI memory `some avg10 > 10 %`. On a `spark-modo` box the worker runs only as the `miner` runtime; loading a model stops it (≤ 10 ms in v0).
 
 ## Security of the local API
-Token file (0600) exchanged for an HttpOnly SameSite=Strict cookie plus a CSRF header; Host/Origin allowlist; strict CSP; pool strings rendered as text only; config changes audited; LAN binding opt-in and TLS-only.
+Token file (0600) exchanged for an HttpOnly SameSite=Strict cookie plus a CSRF header (the daemon's own user on this machine, identified by the peer socket's UID in `/proc/net/tcp`, gets the session without the token; mutations still need cookie + CSRF); Host/Origin allowlist; strict CSP; pool strings rendered as text only; config changes audited; LAN binding opt-in and TLS-only.

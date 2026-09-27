@@ -13,6 +13,9 @@ spark-pearl-miner gui              # opens the browser, already logged in
 spark-pearl-miner gui --print-url  # prints the login URL instead (for SSH)
 ```
 
+On the Spark itself, logged in as the account that runs the daemon, just open
+**`http://127.0.0.1:4078/`**: no token, no login screen (see [Local access](#local-access-without-a-token)).
+
 `gui` starts the user service if it is not running. The URL carries the API token in its
 fragment (`#token=…`), which browsers never send to the server; the page exchanges it once for a
 session and removes it from the address bar. You can also paste the token from
@@ -42,7 +45,8 @@ install -Dm0644 packaging/spark-pearl-miner.desktop ~/.local/share/applications/
 | Session cookie | `POST /api/v1/session {"token": …}` returns an `HttpOnly; SameSite=Strict; Path=/` cookie (another random 256-bit value, kept in memory: a restart logs everyone out) and a CSRF value. Wrong tokens are answered more slowly each time. |
 | CSRF | Every `POST`/`PUT`/`DELETE` under `/api/` must carry the session's value in `X-SPM-CSRF`, otherwise **403**. |
 | Host / Origin | `Host` must be `127.0.0.1:4078`, `localhost:4078` or `[::1]:4078` and an `Origin`, if present, the same origin; anything else is **403** (defeats DNS rebinding). |
-| No session | Any `/api/*` call without a valid cookie is **401**. |
+| Local user | With `api.trust_local_user = true` (the default), a loopback connection whose socket belongs to the daemon's own UID needs no token: `GET /api/v1/session` opens a session by itself and other `GET`s answer without a cookie. Mutations still need the cookie and `X-SPM-CSRF`. See [Local access](#local-access-without-a-token). |
+| No session | Any other `/api/*` call without a valid cookie is **401**. |
 | Headers | `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store` on the API. |
 | Text only | Strings that come from pools (errors, job ids) are rendered with `textContent`; the GUI never uses `innerHTML`. |
 | Audit | Every configuration change is appended to `~/.local/state/spark-pearl-miner/audit.log` with its source (`api`, `file`, `cli`); a changed payout wallet raises a banner until you confirm it. |
@@ -50,6 +54,36 @@ install -Dm0644 packaging/spark-pearl-miner.desktop ~/.local/share/applications/
 The developer fee is read-only everywhere: `/api/v1/fee` has no write method, and
 `PUT /api/v1/config` refuses any key that looks fee-related (`fee`, `dev…`, `donation…`) with
 `422 fee_not_configurable`.
+
+### Local access without a token
+
+On the machine that runs the daemon, the same user account is let in without the token: opening
+`http://127.0.0.1:4078/` goes straight to the dashboard. For each connection from `127.0.0.0/8` or
+`::1` with no session cookie, the daemon looks up the client's socket in `/proc/net/tcp` (or
+`/proc/net/tcp6`) and compares the UID that owns it with its own. Only on a match:
+
+* `GET /api/v1/session` opens a session exactly as a token login does (`HttpOnly; SameSite=Strict`
+  cookie plus a CSRF value), so the GUI starts without a login screen;
+* other `GET` calls answer without a cookie (handy for `curl` on the box);
+* `POST`/`PUT`/`DELETE` still need the session cookie **and** `X-SPM-CSRF`. A hostile web page
+  open in your own browser runs under your UID too, which is why the UID check alone never
+  authorizes a change. The session bootstrap itself is only answered to the GUI's own fetch
+  (`Sec-Fetch-Site: same-origin`). Any *program* running as your account, though, can open a
+  session this way and then change anything, exactly as it could by reading your token file.
+
+It is refused when the browser says the request comes from another page (`Sec-Fetch-Site` other
+than `same-origin` or `none`), when it carries `Forwarded`, `X-Forwarded-For` or `X-Real-IP` (a
+proxy), and always subject to the Host/Origin allowlist above.
+
+**Other accounts** on the same machine still need the token: the Spark is a multi-user box and
+`127.0.0.1` is shared by every account, while the token file is readable only by you. Access over
+the network (LAN or Tailscale, later) needs the token too. One thing to know: a tunnel or proxy that
+*you* run under your own account (for example `ssh -L` logged in as you, or a `socat` you started)
+connects as your UID, so whoever can use it is let in without the token. For `ssh -L` that is no
+more than your SSH login already gives; do not expose such a proxy to other people.
+
+To require the token everywhere, set `trust_local_user = false` under `[api]` in
+`~/.config/spark-pearl-miner/config.toml` and restart the daemon.
 
 ## Screens
 

@@ -3,7 +3,8 @@
 //! * [`config`]: the TOML schema (`schema_version = 1`), defaults and validation, shared with the
 //!   daemon. It has no fee setting at all; fee-looking keys are refused explicitly.
 //! * [`security`]: token file (0600) → HttpOnly SameSite=Strict cookie + CSRF value; Host/Origin
-//!   allowlist.
+//!   allowlist; the same user account on this machine may skip the token (`api.trust_local_user`).
+//! * [`peer`]: the UID behind a loopback connection, from `/proc/net/tcp` and `/proc/net/tcp6`.
 //! * [`server`]: axum router on `127.0.0.1:4078` — REST, SSE and the static GUI from `webui/`.
 //! * [`pooltest`]: the "Test connection" button (DNS + TCP + TLS; authorize only when confirmed).
 //!
@@ -11,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 pub mod config;
+pub mod peer;
 pub mod pooltest;
 pub mod security;
 pub mod server;

@@ -137,13 +137,18 @@ function showLogin(message) {
     message ? h('p', { class: 'err' }, message) : null,
     h('p', null, t('login.text')),
     h('pre', { class: 'cmd' }, 'spark-pearl-miner gui\n# ssh: spark-pearl-miner gui --print-url'),
+    h('p', { class: 'hint' }, t('login.local')),
     h('div', { class: 'field' }, h('label', null, t('login.token')), input, h('div', { class: 'hint' }, t('login.token_hint'))),
     err,
     h('div', { class: 'row end' }, h('button', { type: 'button', class: 'primary', onclick: submit }, t('login.submit')))));
 }
 
 async function startApp() {
-  api.setUnauthorizedHandler(() => showLogin(t('login.expired')));
+  // On this machine the daemon may open a new session by itself (same user account): try that
+  // before asking for the token.
+  api.setUnauthorizedHandler(async () => {
+    if (!(await api.resume())) showLogin(t('login.expired'));
+  });
   await refresh();
   let saved = null;
   try { saved = localStorage.getItem('spm.lang'); } catch (_) { /* ignore */ }

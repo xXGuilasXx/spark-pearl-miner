@@ -459,11 +459,14 @@ pub struct ApiConfig {
     pub port: u16,
     /// LAN access (opt-in, TLS only). Not implemented in this build: `true` is rejected.
     pub lan: bool,
+    /// Connections from this machine by the same user account need no token (the peer's UID is
+    /// checked); everything else keeps the token. Set false to require the token everywhere.
+    pub trust_local_user: bool,
 }
 
 impl Default for ApiConfig {
     fn default() -> Self {
-        ApiConfig { bind: "127.0.0.1".to_string(), port: DEFAULT_API_PORT, lan: false }
+        ApiConfig { bind: "127.0.0.1".to_string(), port: DEFAULT_API_PORT, lan: false, trust_local_user: true }
     }
 }
 
@@ -843,5 +846,16 @@ mod tests {
         assert_eq!(c.pools.len(), 3);
         assert_eq!(c.api.port, DEFAULT_API_PORT);
         assert_eq!(c.miner.worker, DEFAULT_WORKER);
+    }
+
+    #[test]
+    fn trust_local_user_defaults_on_and_can_be_turned_off() {
+        assert!(Config::default().api.trust_local_user);
+        // Files written before the key existed keep working and get the default.
+        let c = Config::from_toml("schema_version = 1\n[api]\nbind = \"127.0.0.1\"\nport = 4078\nlan = false\n").unwrap();
+        assert!(c.api.trust_local_user);
+        let c = Config::from_toml("schema_version = 1\n[api]\ntrust_local_user = false\n").unwrap();
+        assert!(!c.api.trust_local_user);
+        c.validate(Strictness::File).unwrap();
     }
 }

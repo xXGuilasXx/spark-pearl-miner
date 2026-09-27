@@ -20,6 +20,11 @@ Se este projeto for útil para você, doações em PRL são bem-vindas no mesmo 
 
 `prl1pkqprrek7pemaxyvl4deusyz2hrkywnkhl86w7yqv53x0qyvsd5fs57s90n`
 
+## Pools
+O minerador vem com três presets de pool e failover automático entre elas: HeroMiners BR, LuckyPool BR e Kryptex (TLS na porta 8048); veja `docs/pt-BR/CONFIGURACAO.md`. Se ainda precisa escolher uma: eu já minerei PRL na **Kryptex** e nunca tive problema com os pagamentos dela. Cadastrar-se pelo meu link de referência não custa nada e ajuda este projeto:
+
+https://pool.kryptex.com/?ref=b2cfe3e2 (link de referência)
+
 ## Expectativas honestas
 Um GB10 deve atingir cerca de 65–85 TH/s (creditados, unidade das pools) dentro de um envelope seguro de 75–85 W, o que, nas condições de rede de setembro de 2026, dá cerca de 1,6–2,0 PRL/dia brutos. A dificuldade subiu 36 % nos 30 dias anteriores a este texto e a recompensa por bloco cai ~4 % ao mês. Já existe um minerador fechado para DGX Spark; a proposta deste projeto é ser _aberto e auditável_, não _o primeiro_. Leia `docs/pt-BR/VIABILIDADE.md` antes de gastar com hardware ou energia.
 

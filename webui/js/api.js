@@ -16,7 +16,9 @@ export class ApiError extends Error {
   }
 }
 
-async function call(method, path, body) {
+let resuming = null;
+
+async function call(method, path, body, retried) {
   const opts = { method, credentials: 'same-origin', headers: {}, cache: 'no-store' };
   if (body !== undefined) {
     opts.headers['Content-Type'] = 'application/json';
@@ -26,7 +28,15 @@ async function call(method, path, body) {
   const r = await fetch(path, opts);
   let data = null;
   try { data = await r.json(); } catch (_) { data = null; }
-  if (r.status === 401 && path !== '/api/v1/session') onUnauthorized();
+  if (r.status === 401 && path !== '/api/v1/session') {
+    // The daemon restarted (sessions live in memory). On this machine the local user gets a
+    // fresh session without a login: resume once (shared between concurrent calls) and retry.
+    if (!retried) {
+      if (!resuming) resuming = resume().finally(() => { resuming = null; });
+      if (await resuming) return call(method, path, body, true);
+    }
+    onUnauthorized();
+  }
   if (!r.ok) throw new ApiError((data && (data.message || data.error)) || r.statusText, r.status, data);
   return data;
 }

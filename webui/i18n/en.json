@@ -105,6 +105,7 @@
 
   "login.title": "Log in",
   "login.text": "Run this on the miner to open the GUI already logged in (it passes a secret token that only your user can read):",
+  "login.local": "On this machine, your own user account is let in without a token. If you see this screen, you are connecting from another account or another machine (or api.trust_local_user is off).",
   "login.token": "Or paste the API token",
   "login.token_hint": "It is in ~/.config/spark-pearl-miner/api-token (readable only by you).",
   "login.submit": "Log in",
