@@ -2,8 +2,9 @@
 //!
 //! GB10 has no software power limit (`nvidia-smi -pl` is unsupported) and some units power off
 //! hard under sustained GPU load around 88–92 W. The levers we have are an SM clock cap
-//! (`nvidia-smi -lgc 300,2200`, root, installed once by the optional boot unit) and the duty
-//! cycle of our own worker. This crate is the policy for the second one:
+//! (`nvidia-smi -lgc 300,2000` for Balanced; 2200 only for the acknowledged Max profile; root,
+//! installed once by the optional boot unit) and the duty cycle of our own worker. This crate is
+//! the policy for the second one:
 //!
 //! * [`Profile`]: Eco / **Balanced** (75 W target, 85 W hard stop, the default) / Max (88 W,
 //!   92 W, needs an explicit acknowledgement), each with a recommended clock cap.
