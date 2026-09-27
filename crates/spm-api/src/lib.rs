@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 pub mod config;
+pub mod config_comments;
 pub mod peer;
 pub mod pooltest;
 pub mod security;

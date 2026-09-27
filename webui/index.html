@@ -4,26 +4,29 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>spark-pearl-miner</title>
+<title>Spark Pearl Miner</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/app.css">
 <script type="module" src="js/app.js"></script>
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><img src="favicon.svg" alt="" width="22" height="22"><span>spark-pearl-miner</span></div>
-  <nav id="nav" class="nav" hidden></nav>
+  <div class="brand"><img src="favicon.svg" alt="" width="22" height="22"><span>Spark Pearl Miner</span></div>
+  <span id="state-pill" class="pillbox" hidden></span>
   <div class="topright">
-    <span id="state-pill" class="pillbox" hidden></span>
     <div class="lang" role="group" aria-label="Language">
       <button type="button" id="lang-en" data-lang="en">EN</button>
       <button type="button" id="lang-pt" data-lang="pt-BR">PT</button>
     </div>
+    <button type="button" id="gear" class="iconbtn" aria-label="Settings" hidden>&#9881;</button>
+    <a id="help" class="iconbtn" target="_blank" rel="noopener noreferrer" aria-label="Manual" hidden>?</a>
   </div>
 </header>
-<div id="banner" class="banner" hidden></div>
+<div id="banners" class="banners"></div>
 <main id="main" class="main"><p class="muted">Loading…</p></main>
+<footer id="footer" class="footer" hidden></footer>
 <div id="toasts" class="toasts" aria-live="polite"></div>
+<div id="overlay" class="overlay" hidden></div>
 <noscript><p class="main">This interface needs JavaScript (no external scripts are loaded).</p></noscript>
 </body>
 </html>

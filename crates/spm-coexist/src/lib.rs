@@ -8,13 +8,14 @@
 //! * [`CoexistMode::SparkModo`] — on a box managed by `spark-modo` the worker runs only as its
 //!   `miner` runtime (exclusive GPU lease); `spark-modo` starts and stops it. The daemon does not
 //!   gate anything, it just reports.
-//! * [`CoexistMode::Yield`] (default) — poll vLLM's `/metrics` every 100–250 ms and mine only
+//! * [`CoexistMode::Yield`] — poll vLLM's `/metrics` every 100–250 ms and mine only
 //!   after `idle` (5 s) of `num_requests_running == 0 && num_requests_waiting == 0`; pause the
 //!   worker (context kept) as soon as either is non-zero. When the metrics are unavailable, fall
 //!   back to NVML per-process SM utilization of other compute processes.
 //! * [`CoexistMode::YieldRelease`] — like Yield, but a busy LLM makes the daemon Release the
 //!   worker: the process exits and its CUDA context (and memory) is freed.
-//! * [`CoexistMode::Exclusive`] — opt-in: mine regardless of other GPU users.
+//! * [`CoexistMode::Exclusive`] (default, as in `spm-api`'s config) — mine regardless of other
+//!   GPU users; the user presses Stop to use the GPU for something else.
 //!
 //! Every mode is subject to the [`memguard`] (unified memory: refuse to start without 20 GiB of
 //! headroom, exit below 16 GiB available or above 10 % memory pressure).
@@ -62,11 +63,11 @@ pub enum CoexistMode {
     /// The `spark-modo` `miner` runtime owns the worker; the daemon only reports.
     SparkModo,
     /// Pause the worker while the LLM server is busy.
-    #[default]
     Yield,
     /// Release the worker (exit, free the CUDA context) while the LLM server is busy.
     YieldRelease,
-    /// Mine regardless (opt-in).
+    /// Mine regardless (the default).
+    #[default]
     Exclusive,
 }
 
@@ -163,7 +164,7 @@ mod tests {
         }
         assert_eq!("yield_release".parse::<CoexistMode>(), Ok(CoexistMode::YieldRelease));
         assert!("share".parse::<CoexistMode>().is_err());
-        assert_eq!(CoexistMode::default(), CoexistMode::Yield);
+        assert_eq!(CoexistMode::default(), CoexistMode::Exclusive);
         assert!(!CoexistMode::SparkModo.daemon_controls_worker());
         assert!(
             CoexistMode::Exclusive.daemon_controls_worker() && !CoexistMode::Exclusive.polls_llm()

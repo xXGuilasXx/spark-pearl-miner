@@ -25,13 +25,16 @@ pub const DEFAULT_API_PORT: u16 = 4078;
 /// Default worker name.
 pub const DEFAULT_WORKER: &str = "spark";
 
-/// The whole configuration file.
+/// The whole configuration file. The field order is the order of the generated file: the Basic
+/// block (what the GUI edits) first, then the Advanced block (the DGX Spark preset).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub schema_version: u32,
     #[serde(default)]
     pub miner: MinerConfig,
+    #[serde(default)]
+    pub gui: GuiConfig,
     #[serde(default = "default_pools")]
     pub pools: Vec<PoolEntry>,
     #[serde(default)]
@@ -44,8 +47,6 @@ pub struct Config {
     pub worker: WorkerConfig,
     #[serde(default)]
     pub api: ApiConfig,
-    #[serde(default)]
-    pub gui: GuiConfig,
 }
 
 impl Default for Config {
@@ -272,7 +273,8 @@ pub fn dialect_for_host(host: &str) -> Dialect {
     }
 }
 
-/// The three default slots: HeroMiners BR → LuckyPool BR → Kryptex.
+/// The three default slots: Kryptex → HeroMiners BR → LuckyPool BR (all three verified live on the
+/// DGX Spark with accepted shares and no rejects; Kryptex first: explicit TLS on 8048).
 pub fn default_pools() -> Vec<PoolEntry> {
     let hero = PoolEntry::new("HeroMiners BR", "br.pearl.herominers.com", 1200, TlsSetting::Auto);
     let mut lucky = PoolEntry::new("LuckyPool BR", "pearl-br.luckypool.io", 3360, TlsSetting::Pinned);
@@ -281,7 +283,7 @@ pub fn default_pools() -> Vec<PoolEntry> {
     lucky.jsonrpc = JsonRpcSetting::On;
     let mut kryptex = PoolEntry::new("Kryptex", "prl-br.kryptex.network", 8048, TlsSetting::On);
     kryptex.dialect = DialectSetting::Kryptex;
-    vec![hero, lucky, kryptex]
+    vec![kryptex, hero, lucky]
 }
 
 /// Failover thresholds (defaults = `docs/en/ARCHITECTURE.md`, "Failover").
@@ -628,14 +630,11 @@ impl Config {
         serde_json::from_value(v).map_err(|e| ConfigError::Parse(e.to_string()))
     }
 
-    /// Serialize to TOML with a short header.
+    /// Serialize to the commented `config.toml`: a header, the Basic and Advanced banners and a
+    /// comment above every key (see [`crate::config_comments`]). Only comments are added; the
+    /// values are exactly `toml::to_string_pretty`'s, so the text parses back to `self`.
     pub fn to_toml(&self) -> String {
-        let body = toml::to_string_pretty(self).unwrap_or_default();
-        format!(
-            "# spark-pearl-miner configuration (schema_version {SCHEMA_VERSION}).\n\
-             # Edited by the GUI (http://127.0.0.1:4078) or by hand; changes are picked up while the\n\
-             # daemon runs. The developer fee is not configurable: see FEE.md.\n\n{body}"
-        )
+        crate::config_comments::annotate(&toml::to_string_pretty(self).unwrap_or_default())
     }
 
     /// Check every field. Returns all problems at once.
@@ -724,7 +723,10 @@ impl Config {
             ));
         }
         let c = &self.coexistence;
-        if spm_coexist::http::HttpUrl::parse(&c.metrics_url).is_err() {
+        // Only the yield modes poll the metrics endpoint: in the others the URL is not used, so a
+        // stale value must not stop the miner from loading its file.
+        let polls = matches!(c.mode, CoexistenceMode::Yield | CoexistenceMode::YieldRelease);
+        if polls && spm_coexist::http::HttpUrl::parse(&c.metrics_url).is_err() {
             e.push(FieldError::new(
                 "coexistence.metrics_url",
                 "metrics_url_invalid",
@@ -789,23 +791,72 @@ mod tests {
         let c = valid();
         c.validate(Strictness::Submit).unwrap();
         let text = c.to_toml();
-        assert!(text.starts_with("# spark-pearl-miner configuration"));
+        assert!(text.starts_with("# spark-pearl-miner settings (schema_version 1). This is the ONLY settings file."));
         assert!(text.contains("schema_version = 1"));
         assert_eq!(Config::from_toml(&text).unwrap(), c);
+    }
+
+    /// A config that exercises every key, including the optional ones (`spki_pin`).
+    fn every_key() -> Config {
+        let mut c = valid();
+        c.power.profile = PowerProfile::Max;
+        c.power.max_acknowledged = true;
+        c.coexistence.mode = CoexistenceMode::Yield;
+        c.worker.simulate = true;
+        c.gui.language = "pt-BR".into();
+        c
+    }
+
+    #[test]
+    fn every_key_of_the_file_has_a_comment_and_the_text_round_trips() {
+        for c in [Config::default(), valid(), every_key()] {
+            let text = c.to_toml();
+            assert_eq!(Config::from_toml(&text).unwrap(), c, "from_toml(to_toml(x)) == x");
+            let lines: Vec<&str> = text.lines().collect();
+            let mut in_array = false;
+            for (i, line) in lines.iter().enumerate() {
+                if in_array {
+                    in_array = !line.trim_start().starts_with(']');
+                    continue;
+                }
+                if line.starts_with('#') || line.starts_with('[') || line.trim().is_empty() {
+                    continue;
+                }
+                assert!(line.contains(" = "), "unexpected line {line:?}");
+                assert!(i > 0 && lines[i - 1].starts_with("# "), "no comment above `{line}`:\n{text}");
+                in_array = line.ends_with('[');
+            }
+        }
+    }
+
+    #[test]
+    fn the_file_has_the_basic_block_before_the_advanced_block() {
+        let text = Config::default().to_toml();
+        let at = |needle: &str| text.find(needle).unwrap_or_else(|| panic!("{needle} missing:\n{text}"));
+        let basic = at(crate::config_comments::BASIC_BANNER);
+        let advanced = at(crate::config_comments::ADVANCED_BANNER);
+        assert!(basic < at("schema_version = 1"));
+        for key in ["\n[miner]\n", "\n[gui]\n", "\n[[pools]]\n", "\nwallet = ", "\nlanguage = "] {
+            let i = at(key);
+            assert!(basic < i && i < advanced, "{key} is not in the Basic block");
+        }
+        let order: Vec<usize> = ["\n[failover]\n", "\n[power]\n", "\n[coexistence]\n", "\n[worker]\n", "\n[api]\n"].iter().map(|k| at(k)).collect();
+        assert!(advanced < order[0] && order.windows(2).all(|w| w[0] < w[1]), "advanced sections out of order");
+        assert!(text.contains("Comments you add by hand are NOT kept"));
     }
 
     #[test]
     fn default_slots_match_the_architecture() {
         let p = default_pools();
-        assert_eq!((p[0].host.as_str(), p[0].port, p[0].tls, p[0].dialect), ("br.pearl.herominers.com", 1200, TlsSetting::Auto, DialectSetting::Auto));
-        assert_eq!((p[1].host.as_str(), p[1].port, p[1].tls, p[1].dialect, p[1].jsonrpc), ("pearl-br.luckypool.io", 3360, TlsSetting::Pinned, DialectSetting::Object, JsonRpcSetting::On));
-        assert_eq!(p[1].spki_pin, "d0ehDQxaU5IUv4UHWXItQKqdJ8anqZclQXcoIjwF/mk=");
-        assert_eq!((p[2].host.as_str(), p[2].port, p[2].tls, p[2].dialect), ("prl-br.kryptex.network", 8048, TlsSetting::On, DialectSetting::Kryptex));
-        assert_eq!(p[0].resolved_dialect(), Dialect::Object);
-        assert_eq!(p[1].resolved_jsonrpc(), Some(true));
-        assert_eq!(p[2].resolved_dialect(), Dialect::Kryptex);
-        assert_eq!(p[1].transport_mode(true), TlsMode::luckypool());
-        assert_eq!(p[0].transport_mode(false), TlsMode::Off);
+        assert_eq!((p[0].host.as_str(), p[0].port, p[0].tls, p[0].dialect), ("prl-br.kryptex.network", 8048, TlsSetting::On, DialectSetting::Kryptex));
+        assert_eq!((p[1].host.as_str(), p[1].port, p[1].tls, p[1].dialect), ("br.pearl.herominers.com", 1200, TlsSetting::Auto, DialectSetting::Auto));
+        assert_eq!((p[2].host.as_str(), p[2].port, p[2].tls, p[2].dialect, p[2].jsonrpc), ("pearl-br.luckypool.io", 3360, TlsSetting::Pinned, DialectSetting::Object, JsonRpcSetting::On));
+        assert_eq!(p[2].spki_pin, "d0ehDQxaU5IUv4UHWXItQKqdJ8anqZclQXcoIjwF/mk=");
+        assert_eq!(p[0].resolved_dialect(), Dialect::Kryptex);
+        assert_eq!(p[1].resolved_dialect(), Dialect::Object);
+        assert_eq!(p[2].resolved_jsonrpc(), Some(true));
+        assert_eq!(p[2].transport_mode(true), TlsMode::luckypool());
+        assert_eq!(p[1].transport_mode(false), TlsMode::Off);
     }
 
     #[test]
@@ -826,6 +877,7 @@ mod tests {
         assert_eq!(c.coexistence.metrics_url, "http://127.0.0.1:8001/metrics");
         assert_eq!((c.coexistence.poll_ms, c.coexistence.idle_s, c.coexistence.busy_sm_pct), (200, 5, 10));
         let mut bad = valid();
+        bad.coexistence.mode = CoexistenceMode::Yield;
         bad.coexistence.metrics_url = "https://127.0.0.1:8001/metrics".into();
         bad.coexistence.poll_ms = 50;
         bad.coexistence.idle_s = 0;
@@ -835,6 +887,12 @@ mod tests {
         for p in ["coexistence.metrics_url", "coexistence.poll_ms", "coexistence.idle_s", "coexistence.busy_sm_pct", "power.max_acknowledged"] {
             assert!(fields.iter().any(|f| f == p), "{p} not refused: {fields:?}");
         }
+        // The URL is only checked where it is used (the yield modes).
+        let mut exclusive = valid();
+        exclusive.coexistence.metrics_url = "https://127.0.0.1:8001/metrics".into();
+        exclusive.validate(Strictness::File).unwrap();
+        exclusive.coexistence.mode = CoexistenceMode::YieldRelease;
+        assert!(exclusive.validate(Strictness::File).is_err());
         // Old files with only `mode` still load.
         let c = Config::from_toml("schema_version = 1\n[coexistence]\nmode = \"yield\"\n").unwrap();
         assert_eq!((c.coexistence.mode, c.coexistence.idle_s), (CoexistenceMode::Yield, 5));
