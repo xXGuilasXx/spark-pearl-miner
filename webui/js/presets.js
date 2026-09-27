@@ -1,20 +1,21 @@
-// Pool presets. Endpoints marked `unverified` were not probed by the project yet.
+// Pool presets. `verified`: probed live on the DGX Spark with accepted shares and no rejects; the
+// others are known endpoints of the same pools that the project has not tested yet.
 
 const LUCKY_PIN = 'd0ehDQxaU5IUv4UHWXItQKqdJ8anqZclQXcoIjwF/mk=';
 
-function hero(region, label) {
-  return { id: `hero-${region}`, name: `HeroMiners ${label}`, host: `${region}.pearl.herominers.com`, port: 1200, tls: 'auto', dialect: 'auto', jsonrpc: 'auto' };
+function hero(region, label, verified = false) {
+  return { id: `hero-${region}`, name: `HeroMiners ${label}`, host: `${region}.pearl.herominers.com`, port: 1200, tls: 'auto', dialect: 'auto', jsonrpc: 'auto', verified };
 }
 
 export const PRESETS = [
-  hero('br', 'BR'),
+  { id: 'kryptex', name: 'Kryptex', host: 'prl-br.kryptex.network', port: 8048, tls: 'on', dialect: 'kryptex', jsonrpc: 'auto', verified: true },
+  hero('br', 'BR', true),
+  { id: 'lucky-br', name: 'LuckyPool BR', host: 'pearl-br.luckypool.io', port: 3360, tls: 'pinned', spki_pin: LUCKY_PIN, dialect: 'object', jsonrpc: 'on', verified: true },
   hero('us', 'US'),
   hero('us2', 'US2'),
   hero('de', 'DE'),
   hero('fr', 'FR'),
-  { id: 'lucky-br', name: 'LuckyPool BR', host: 'pearl-br.luckypool.io', port: 3360, tls: 'pinned', spki_pin: LUCKY_PIN, dialect: 'object', jsonrpc: 'on' },
-  { id: 'lucky-eu', name: 'LuckyPool EU', host: 'pearl-eu1.luckypool.io', port: 3360, tls: 'pinned', spki_pin: LUCKY_PIN, dialect: 'object', jsonrpc: 'on', unverified: true },
-  { id: 'kryptex', name: 'Kryptex', host: 'prl-br.kryptex.network', port: 8048, tls: 'on', dialect: 'kryptex', jsonrpc: 'auto' },
+  { id: 'lucky-eu', name: 'LuckyPool EU', host: 'pearl-eu1.luckypool.io', port: 3360, tls: 'pinned', spki_pin: LUCKY_PIN, dialect: 'object', jsonrpc: 'on', verified: false },
 ];
 
 /** A pool entry (config schema) from a preset. */
@@ -44,6 +45,7 @@ export function defaultPools() {
   return ['kryptex', 'hero-br', 'lucky-br'].map((id) => fromPreset(PRESETS.find((p) => p.id === id)));
 }
 
-export function customPool() {
-  return { name: '', host: '', port: 0, tls: 'auto', spki_pin: '', dialect: 'auto', jsonrpc: 'auto', proof: 'auto', password: 'x', pattern: 'auto', enabled: true };
+/** A pool typed by hand: every hidden setting on its default. */
+export function customPool(host, port) {
+  return { name: host, host, port, tls: 'auto', spki_pin: '', dialect: 'auto', jsonrpc: 'auto', proof: 'auto', password: 'x', pattern: 'auto', enabled: true };
 }
