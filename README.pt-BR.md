@@ -6,7 +6,7 @@ patrocínio ou endosso da NVIDIA ou da Pearl Research Labs.
 _English: [README.md](README.md)_
 
 > **Status:** minerando em pools da mainnet (Kryptex, HeroMiners BR, LuckyPool BR) com shares
-> aceitas · pré-lançamento **0.1.0-alpha.1**.
+> aceitas · pré-lançamento **0.1.0-alpha.2**.
 
 ## Por quê
 

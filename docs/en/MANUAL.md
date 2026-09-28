@@ -421,7 +421,7 @@ disappears by itself when the service answers again.
 | Element | What it does |
 |---|---|
 | the fee line (small print) | the same compiled-in fee line as in the setup, always visible |
-| v0.1.0-alpha.1 (commit) | the version of the program |
+| v0.1.0-alpha.2 (commit) | the version of the program |
 | **Manual** | opens this manual |
 | **Export diagnostics** | downloads a JSON file for support: version, status, pools, settings and the last 5000 log lines, with wallet addresses shortened to `prl1…xxxx` |
 | **Advanced settings: {path}** and **Copy path** | where the [settings file](#advanced-file) is |
