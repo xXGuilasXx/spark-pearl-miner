@@ -82,7 +82,7 @@ name, the language and the pools later with the gear icon ([Settings](#settings)
 
 | Element | What it does |
 |---|---|
-| **Welcome** and the text below it | a short introduction: the miner turns the idle Spark into Pearl (PRL) income at about 63 W on the GPU, and you only need your wallet address |
+| **Welcome** and the text below it | a short introduction: the miner turns the idle Spark into Pearl (PRL) income at about 67 W on the GPU, and you only need your wallet address |
 | "You can stop mining at any time from the dashboard." | a reminder; stopping is one button (see [the main button](#main-button)) |
 | **English** / **Português (Brasil)** | picks the language of the GUI and goes to step 2. The button that matches your browser's language is highlighted (blue) |
 
@@ -152,8 +152,8 @@ The preconfigured box lists:
 
 - **Pools:** Kryptex → HeroMiners BR → LuckyPool BR, with automatic failover (switch in about 1 s,
   return after 60 s stable);
-- **Power:** Balanced profile, SM clock capped at 2000 MHz, stops above 85 W (measured about 63 W,
-  GPU 72 °C). This wording appears only once the miner has seen the clock cap in force. Until then
+- **Power:** Balanced profile, SM clock capped at 2000 MHz, stops above 85 W (measured about 67 W,
+  GPU up to 80 °C). This wording appears only once the miner has seen the clock cap in force. Until then
   it reads "…SM clock capped at 2000 MHz once the boot clock cap is installed (the installer offers
   it…)", because the cap is an optional step of the installer (see [the installer's two
   questions](#installer-questions));
@@ -300,10 +300,10 @@ is no Pause button in the GUI (pause and resume stay available on the [command l
 
 | Element | Meaning |
 |---|---|
-| big number, e.g. **73.9 T-MAC/s** | the work credited by the pool, averaged over the last 60 s. 1 T-MAC/s is what pools call 1 TH/s |
+| big number, e.g. **77.9 T-MAC/s** | the work credited by the pool, averaged over the last 60 s. 1 T-MAC/s is what pools call 1 TH/s |
 | credited, last 60 s | how the number is measured |
 | "Moves in steps: the pool credits whole attempts (7.04e13 MACs each)." | the number jumps instead of moving smoothly, because each finished attempt counts as a block of 7.04e13 MACs. In the simulation this line reads *simulated* |
-| "Tested on the Spark: 73.9 T-MAC/s at 2000 MHz" | the reference: what a DGX Spark sustains with the default clock cap |
+| "24 h on the Spark: 77.9 T-MAC/s at 2000 MHz" | the reference: what a DGX Spark sustains with the default clock cap |
 | **Your balance is on your pool's website** | opens [where to see your balance](#balance). The GUI never shows a PRL-per-day estimate |
 
 ### 3.6 Card 2: Shares
@@ -674,7 +674,7 @@ alone unless a pool's support asks for a change.
 
 | Setting | Preset | When to touch |
 |---|---|---|
-| `profile` | `"balanced"` (75 W target, 85 W stop, 2000 MHz cap; measured about 63 W, GPU 72 °C, 73.9 T-MAC/s) | `"eco"` for a quieter Spark; `"max"` is not recommended |
+| `profile` | `"balanced"` (75 W target, 85 W stop, 2000 MHz cap; measured about 67 W, GPU up to 80 °C, 77.9 T-MAC/s) | `"eco"` for a quieter Spark; `"max"` is not recommended |
 | `max_acknowledged` | `false` | only with `profile = "max"` |
 
 Built in (not settings): 10 readings per second; the target drops 3 W per °C above 78 °C; pause at
@@ -824,7 +824,7 @@ that need your password once (`sudo`). Pressing Enter answers **Yes**:
 
 | Question | What Yes does | If you answer No |
 |---|---|---|
-| Install the 2000 MHz GPU clock cap (recommended)? | runs `sudo ~/.local/share/spark-pearl-miner/install-clockcap.sh --apply`: the SM clock stays at or below 2000 MHz now and at every boot (about 63 W, far from the ~88–92 W power-off) | the GPU is not capped; only the power governor guards it. The summary, the last setup step and the dashboard show the command until you run it |
+| Install the 2000 MHz GPU clock cap (recommended)? | runs `sudo ~/.local/share/spark-pearl-miner/install-clockcap.sh --apply`: the SM clock stays at or below 2000 MHz now and at every boot (about 67 W, far from the ~88–92 W power-off) | the GPU is not capped; only the power governor guards it. The summary, the last setup step and the dashboard show the command until you run it |
 | Keep mining after you log out and start at boot, before you log in? | runs `sudo loginctl enable-linger $USER` | the miner runs only while you are logged in; run the command later if you change your mind |
 
 `--yes` answers both with yes, `--no-sudo` skips both, and when there is no terminal to ask on

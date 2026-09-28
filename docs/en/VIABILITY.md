@@ -15,7 +15,7 @@
 
 **Unit:** in Pearl, 1 "hash" = 1 int7×int7 multiply-accumulate of the noised GEMM, normalized to noise rank 128. `1 TH/s = 10¹² MAC/s = 2 INT8 TOPS` of useful GEMM. Pools credit `diff × 2³²` MACs per accepted share.
 
-**GB10, measured on this unit:** with the default Balanced profile and the 2000 MHz clock cap this miner sustains **73.9 TH/s credited (T-MAC/s) at ~63 W of GPU power, GPU 72 °C** (`docs/benchmarks/20260926-2000mhz-sustained.md`). The INT8 tensor peak (MB1, `docs/en/BENCHMARKS.md`) is 217 TOPS at stock clocks and 170 TOPS at 2000 MHz, so the hard ceiling is ~108 TH/s (~85 TH/s at the cap): the miner runs at ~87 % of the capped peak. A closed-source DGX Spark miner claims ~76 TH/s at ~99 W.
+**GB10, measured on this unit:** with the default Balanced profile and the 2000 MHz clock cap this miner sustains **73.9 TH/s credited (T-MAC/s) at ~67 W of GPU power, GPU up to 80 °C** (`docs/benchmarks/20260926-2000mhz-sustained.md`). The INT8 tensor peak (MB1, `docs/en/BENCHMARKS.md`) is 217 TOPS at stock clocks and 170 TOPS at 2000 MHz, so the hard ceiling is ~108 TH/s (~85 TH/s at the cap): the miner runs at ~87 % of the capped peak. A closed-source DGX Spark miner claims ~76 TH/s at ~99 W.
 
 | Hashrate | PRL/day gross | US$/day @ 1.30 | US$/day @ 0.70 | US$/day @ 0.30 |
 |---|---|---|---|---|
@@ -24,7 +24,7 @@
 | 75 TH/s | 1.81 | 2.35 | 1.27 | 0.54 |
 | 90 TH/s | 2.17 | 2.82 | 1.52 | 0.65 |
 
-Costs (wall power not measured yet; the GPU itself draws ~63 W at the default cap, the rest is the SoC, memory, SSD and fans): an estimated 100–130 W at the wall while mining → 2.4–3.1 kWh/day → R$1.9–3.4/day (R$0.80–1.10/kWh) ≈ US$0.37–0.66/day. Pool fee 0–1 %, developer fee 2 %.
+Costs (wall power not measured yet; the GPU itself draws ~67 W at the default cap, the rest is the SoC, memory, SSD and fans): an estimated 100–130 W at the wall while mining → 2.4–3.1 kWh/day → R$1.9–3.4/day (R$0.80–1.10/kWh) ≈ US$0.37–0.66/day. Pool fee 0–1 %, developer fee 2 %.
 **Net at 75 TH/s and US$1.30: ≈ US$1.4–1.9/day (≈ US$45–55/month). Break-even price: ≈ US$0.18–0.43/PRL.** PRL traded at US$0.14 in July 2026.
 
 On a Spark that also serves LLMs (like the author's), mining only happens while the GPU is otherwise idle, so real numbers are lower.

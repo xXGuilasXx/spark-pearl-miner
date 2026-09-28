@@ -85,7 +85,7 @@ nome do worker, o idioma e as pools depois pelo ícone de engrenagem ([Configura
 
 | Elemento | O que faz |
 |---|---|
-| **Boas-vindas** e o texto abaixo | uma apresentação curta: o minerador transforma o tempo ocioso do Spark em renda em Pearl (PRL), com cerca de 63 W na GPU, e você só precisa do endereço da sua carteira |
+| **Boas-vindas** e o texto abaixo | uma apresentação curta: o minerador transforma o tempo ocioso do Spark em renda em Pearl (PRL), com cerca de 67 W na GPU, e você só precisa do endereço da sua carteira |
 | "Você pode parar de minerar a qualquer momento pelo painel." | um lembrete; parar é um botão (veja [o botão principal](#main-button)) |
 | **English** / **Português (Brasil)** | escolhe o idioma da GUI e vai para o passo 2. O botão do idioma do seu navegador vem destacado (azul) |
 
@@ -156,7 +156,7 @@ A caixa de valores prontos lista:
 - **Pools:** Kryptex → HeroMiners BR → LuckyPool BR, com failover automático (troca em cerca de
   1 s, volta após 60 s estável);
 - **Energia:** perfil Equilibrado, clock SM limitado a 2000 MHz, para acima de 85 W (medido: cerca
-  de 63 W, GPU a 72 °C). Esse texto só aparece depois que o minerador viu o limite de clock em
+  de 63 W, GPU até 80 °C). Esse texto só aparece depois que o minerador viu o limite de clock em
   vigor. Até lá ele diz "…clock SM limitado a 2000 MHz quando o limite de clock do boot estiver
   instalado (o instalador oferece…)", porque o limite é um passo opcional do instalador (veja [as
   duas perguntas do instalador](#installer-questions));
@@ -304,10 +304,10 @@ minerando antes. Não há botão de Pausa na GUI (pausar e retomar continuam na
 
 | Elemento | Significado |
 |---|---|
-| número grande, ex. **73,9 T-MAC/s** | o trabalho creditado pela pool, na média dos últimos 60 s. 1 T-MAC/s é o que as pools chamam de 1 TH/s |
+| número grande, ex. **77,9 T-MAC/s** | o trabalho creditado pela pool, na média dos últimos 60 s. 1 T-MAC/s é o que as pools chamam de 1 TH/s |
 | creditada, últimos 60 s | como o número é medido |
 | "Anda em degraus: a pool credita tentativas inteiras (7,04e13 MACs cada)." | o número pula em vez de mudar suavemente, porque cada tentativa concluída conta como um bloco de 7,04e13 MACs. Na simulação esta linha diz *simulado* |
-| "Testado no Spark: 73,9 T-MAC/s a 2000 MHz" | a referência: o que um DGX Spark sustenta com o limite de clock padrão |
+| "24 h no Spark: 77,9 T-MAC/s a 2000 MHz" | a referência: o que um DGX Spark sustenta com o limite de clock padrão |
 | **Seu saldo fica no site da sua pool** | abre [onde ver o seu saldo](#balance). A GUI nunca mostra uma estimativa de PRL por dia |
 
 ### 3.6 Cartão 2: Shares
@@ -685,7 +685,7 @@ não ser que o suporte de uma pool peça.
 
 | Configuração | Valor pronto | Quando mexer |
 |---|---|---|
-| `profile` | `"balanced"` (alvo 75 W, parada 85 W, limite 2000 MHz; medido: cerca de 63 W, GPU a 72 °C, 73,9 T-MAC/s) | `"eco"` para um Spark mais silencioso; `"max"` não é recomendado |
+| `profile` | `"balanced"` (alvo 75 W, parada 85 W, limite 2000 MHz; medido: cerca de 67 W, GPU até 80 °C, 77,9 T-MAC/s) | `"eco"` para um Spark mais silencioso; `"max"` não é recomendado |
 | `max_acknowledged` | `false` | só com `profile = "max"` |
 
 Embutido (não são configurações): 10 leituras por segundo; o alvo cai 3 W por °C acima de 78 °C;
@@ -840,7 +840,7 @@ que pedem a sua senha uma vez (`sudo`). Apertar Enter responde **Sim**:
 
 | Pergunta | O que Sim faz | Se você responder Não |
 |---|---|---|
-| Instalar o limite de clock da GPU de 2000 MHz (recomendado)? | executa `sudo ~/.local/share/spark-pearl-miner/install-clockcap.sh --apply`: o clock do SM fica em 2000 MHz ou menos agora e em todo boot (cerca de 63 W, longe do desligamento em ~88–92 W) | a GPU fica sem limite; só o governador de energia a protege. O resumo, o último passo da configuração e o painel mostram o comando até você executá-lo |
+| Instalar o limite de clock da GPU de 2000 MHz (recomendado)? | executa `sudo ~/.local/share/spark-pearl-miner/install-clockcap.sh --apply`: o clock do SM fica em 2000 MHz ou menos agora e em todo boot (cerca de 67 W, longe do desligamento em ~88–92 W) | a GPU fica sem limite; só o governador de energia a protege. O resumo, o último passo da configuração e o painel mostram o comando até você executá-lo |
 | Continuar minerando depois que você sair da sessão e começar no boot, antes de você entrar? | executa `sudo loginctl enable-linger $USER` | o minerador só roda enquanto você está logado; execute o comando depois se mudar de ideia |
 
 `--yes` responde sim às duas, `--no-sudo` pula as duas, e quando não há terminal para perguntar
