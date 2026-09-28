@@ -14,14 +14,14 @@ Um DGX Spark passa a maior parte do tempo esperando o próximo trabalho. Este mi
 ociosa para minerar Pearl (PRL), uma moeda de prova de trabalho útil cujo "hash" é uma multiplicação
 de matrizes INT8, exatamente o que os tensor cores do GB10 fazem bem.
 
-No DGX Spark, com o limite de clock padrão de 2000 MHz, ele sustenta **73,9 T-MAC/s** de trabalho
-creditado com **cerca de 63 W na GPU** e a GPU a **72 °C**: bem abaixo dos ~88–92 W em que o Spark
+No DGX Spark, com o limite de clock padrão de 2000 MHz, ele sustenta **77,9 T-MAC/s** de trabalho
+creditado com **cerca de 67 W na GPU** e a GPU a **72 °C**: bem abaixo dos ~88–92 W em que o Spark
 sabidamente desliga. A taxa creditada anda em degraus porque a pool credita tentativas inteiras
 (7,04e13 MACs cada).
 
 Quanto isso rende depende da dificuldade da rede e do preço do PRL, que mudam rápido. No **retrato de
 2026-09-26** da [VIABILIDADE](docs/pt-BR/VIABILIDADE.md) (dificuldade 29,4 M, 0,0241 PRL por TH/s
-por dia, PRL a US$1,30), 73,9 T-MAC/s dão cerca de **1,8 PRL/dia brutos**, antes da taxa de 2 % do
+por dia, PRL a US$1,30), 77,9 T-MAC/s dão cerca de **1,8 PRL/dia brutos**, antes da taxa de 2 % do
 desenvolvedor e da taxa da própria pool. A dificuldade subiu 36 % nos 30 dias anteriores a esse
 retrato, então espere menos com o tempo. O site da sua pool mostra o que você ganha de verdade. Isto
 não é aconselhamento financeiro.
@@ -46,7 +46,7 @@ systemd do usuário e um atalho no menu de aplicativos, e inicia o serviço. Ant
 perguntas, ambas respondidas com **Sim** ao apertar Enter, que pedem a sua senha uma vez (`sudo`):
 
 - **Instalar o limite de clock da GPU de 2000 MHz?** Recomendado: a rede de segurança que mantém a
-  GPU em cerca de 63 W, longe dos ~88–92 W em que o Spark desliga (reversível).
+  GPU em cerca de 67 W, longe dos ~88–92 W em que o Spark desliga (reversível).
 - **Continuar minerando depois que você sair da sessão e começar no boot?** (lingering)
 
 Ele nunca mexe nas suas configurações, e uma instalação nova ainda não minera.
@@ -120,7 +120,7 @@ https://pool.kryptex.com/?ref=b2cfe3e2 (link de referência)
 
 - **Energia.** O GB10 não tem limite de potência por software e algumas unidades desligam
   abruptamente por volta de 88–92 W na GPU. O perfil padrão **Equilibrado** mira 75 W e para em
-  85 W, com o limite de clock de 2000 MHz (medido: cerca de 63 W). Um governador lê a GPU 10 vezes
+  85 W, com o limite de clock de 2000 MHz (medido: cerca de 67 W). Um governador lê a GPU 10 vezes
   por segundo e pausa a mineração quando a GPU passa de 83 °C, a placa passa de 95 °C ou a potência
   fica acima da parada por 3 leituras (pausa de 60 s). Sem leituras de energia, não minera. O perfil
   Máximo (2200 MHz) mediu 83–87 W e a placa a 97,5 °C, então ele só existe no arquivo de

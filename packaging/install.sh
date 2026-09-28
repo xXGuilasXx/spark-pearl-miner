@@ -725,7 +725,7 @@ sudo_steps() {
   fi
   if [ "$want_cap" -eq 1 ]; then
     say "  The GB10 has no software power limit and is known to power off at about 88–92 W. The"
-    say "  clock cap keeps the GPU at about 63 W (2000 MHz, measured); without it only the power"
+    say "  clock cap keeps the GPU at about 67 W (2000 MHz, measured); without it only the power"
     say "  governor guards the Spark. It is reversible (uninstall-clockcap.sh)."
     if ask_yes "Install the 2000 MHz GPU clock cap (recommended)?"; then
       if as_root "$SHAREDIR/install-clockcap.sh" --apply && clock_cap_active; then
@@ -797,7 +797,7 @@ summary() {
   if ! clock_cap_active; then
     say ""
     say "  ${B}Recommended, before you press Start mining:${N} cap the GPU clock at 2000 MHz at every boot"
-    say "  (about 63 W, far from the ~88–92 W at which the Spark powers off; reversible). One command:"
+    say "  (about 67 W, far from the ~88–92 W at which the Spark powers off; reversible). One command:"
     say "    sudo $SHAREDIR/install-clockcap.sh --apply"
   fi
   say ""

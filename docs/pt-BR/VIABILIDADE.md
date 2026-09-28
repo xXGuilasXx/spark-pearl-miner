@@ -15,7 +15,7 @@
 
 **Unidade:** no Pearl, 1 "hash" = 1 multiplica-acumula int7×int7 do GEMM com ruído, normalizado ao rank 128. `1 TH/s = 10¹² MAC/s = 2 TOPS INT8` de GEMM útil. As pools creditam `diff × 2³²` MACs por share aceita.
 
-**GB10, medido nesta unidade:** com o perfil padrão Balanced e o cap de clock de 2000 MHz este minerador sustenta **73,9 TH/s creditados (T-MAC/s) com ~63 W na GPU, GPU a 72 °C** (`docs/benchmarks/20260926-2000mhz-sustained.md`). O pico INT8 dos tensor cores (MB1, `docs/pt-BR/BENCHMARKS.md`) é 217 TOPS em clock stock e 170 TOPS a 2000 MHz, então o teto é ~108 TH/s (~85 TH/s no cap): o minerador roda a ~87 % do pico com cap. Um minerador fechado para DGX Spark declara ~76 TH/s a ~99 W.
+**GB10, medido nesta unidade:** com o perfil padrão Balanced e o cap de clock de 2000 MHz este minerador sustenta **73,9 TH/s creditados (T-MAC/s) com ~67 W na GPU, GPU até 80 °C** (`docs/benchmarks/20260926-2000mhz-sustained.md`). O pico INT8 dos tensor cores (MB1, `docs/pt-BR/BENCHMARKS.md`) é 217 TOPS em clock stock e 170 TOPS a 2000 MHz, então o teto é ~108 TH/s (~85 TH/s no cap): o minerador roda a ~87 % do pico com cap. Um minerador fechado para DGX Spark declara ~76 TH/s a ~99 W.
 
 | Hashrate | PRL/dia bruto | US$/dia @ 1,30 | US$/dia @ 0,70 | US$/dia @ 0,30 |
 |---|---|---|---|---|
@@ -24,7 +24,7 @@
 | 75 TH/s | 1,81 | 2,35 | 1,27 | 0,54 |
 | 90 TH/s | 2,17 | 2,82 | 1,52 | 0,65 |
 
-Custos (a potência na tomada ainda não foi medida; a GPU em si consome ~63 W no cap padrão, o resto é SoC, memória, SSD e ventoinhas): estimados 100–130 W na tomada enquanto minera → 2,4–3,1 kWh/dia → R$1,9–3,4/dia (R$0,80–1,10/kWh) ≈ US$0,37–0,66/dia. Taxa da pool 0–1 %, taxa do desenvolvedor 2 %.
+Custos (a potência na tomada ainda não foi medida; a GPU em si consome ~67 W no cap padrão, o resto é SoC, memória, SSD e ventoinhas): estimados 100–130 W na tomada enquanto minera → 2,4–3,1 kWh/dia → R$1,9–3,4/dia (R$0,80–1,10/kWh) ≈ US$0,37–0,66/dia. Taxa da pool 0–1 %, taxa do desenvolvedor 2 %.
 **Líquido a 75 TH/s e US$1,30: ≈ US$1,4–1,9/dia (≈ US$45–55/mês). Preço de equilíbrio: ≈ US$0,18–0,43/PRL.** O PRL valeu US$0,14 em julho de 2026.
 
 Num Spark que também serve LLMs (como o do autor), só se minera com a GPU ociosa, então os números reais são menores.

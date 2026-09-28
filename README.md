@@ -14,14 +14,14 @@ A DGX Spark spends most of its time waiting for the next job. This miner puts th
 on Pearl (PRL), a proof-of-useful-work coin whose "hash" is an INT8 matrix multiplication, which is
 exactly what the GB10's tensor cores are good at.
 
-On the DGX Spark, with the default 2000 MHz clock cap, it sustains **73.9 T-MAC/s** of credited work
-at **about 63 W of GPU power**, with the GPU at **72 °C**: well below the ~88–92 W at which the
+On the DGX Spark, with the default 2000 MHz clock cap, it sustains **77.9 T-MAC/s** of credited work
+at **about 67 W of GPU power**, with the GPU at **72 °C**: well below the ~88–92 W at which the
 Spark is known to power off. The credited rate moves in steps because the pool credits whole
 attempts (7.04e13 MACs each).
 
 What that earns depends on the network difficulty and the PRL price, which both move fast. At the
 **2026-09-26 snapshot** in [VIABILITY](docs/en/VIABILITY.md) (difficulty 29.4 M, 0.0241 PRL per
-TH/s per day, PRL at US$1.30), 73.9 T-MAC/s is about **1.8 PRL/day gross**, before the 2 %
+TH/s per day, PRL at US$1.30), 77.9 T-MAC/s is about **1.8 PRL/day gross**, before the 2 %
 developer fee and the pool's own fee. Difficulty rose 36 % in the 30 days before that snapshot, so
 expect less over time. Your pool's website shows what you really earn. This is not financial
 advice.
@@ -119,7 +119,7 @@ https://pool.kryptex.com/?ref=b2cfe3e2 (referral link)
 
 - **Power.** The GB10 has no software power limit and some units power off hard around 88–92 W of
   GPU draw. The default **Balanced** profile targets 75 W and stops at 85 W, with the 2000 MHz clock
-  cap (measured about 63 W). A governor reads the GPU 10 times per second and pauses mining when the
+  cap (measured about 67 W). A governor reads the GPU 10 times per second and pauses mining when the
   GPU passes 83 °C, the board passes 95 °C, or the power stays above the stop for 3 readings (60 s
   pause). Without power readings it does not mine. The Max profile (2200 MHz) measured 83–87 W and a
   97.5 °C board, so it exists only in the settings file behind an explicit acknowledgement and is

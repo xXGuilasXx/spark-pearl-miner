@@ -1,0 +1,21 @@
+G1 soak #3 — mining mode, 24 h, 2026-09-27 04:31 → 2026-09-28 04:31 UTC
+Real miner (spark-pearl-miner 0.1.0-alpha.1, commit 326aa84/3d6e28e) under the owner's local 'mineracao' mode: GPU 100 % dedicated,
+spark-miner.service with ExecStartPre nvidia-smi -lgc 300,2000, profile Balanced (75 W target, 85 W stop), coexistence exclusive,
+pool Kryptex (prl-br.kryptex.network:8048, TLS, v2/gzip session, diff 2 097 152). No other load on the box during the 24 h.
+
+GPU log (bench/soak-log.sh, 10 s): g1-20260927T043129Z-mining24h-soak.csv
+rows 8593 over 24.0 h (1 session(s))
+max power 71.46 W at 2026/09/27 14:30:59.877; mean 67.16 W
+min SM clock 1976 MHz at 2026/09/27 04:31:29.611; min under load (>= 30 W) 1976 MHz
+max GPU temperature 80 C; max acpitz 88.8 C
+rows with active clock event reasons: 0
+no gap > 20 s
+last session ended cleanly: yes
+
+Miner log (API, 60 s): g1-20260927T043129Z-mining24h-miner.csv
+rows 1440 (2026-09-27T04:31:29Z .. 2026-09-28T04:30:59Z)
+power mean 67.2 W, max 71.4 W, min 55.2 W; GPU max 80 C (mean 77.9); acpitz max 88.6 C, mean 85.8 C
+SM clock 1976 MHz throughout (cap 2000, status capped); duty min 96 %, mean 99.6 %; governor trips 0
+credited rate: 77.9 T-MAC/s averaged over 86369 s of mining (23.99 h); 60 s window min 69.2 / median 78.6 / max 82.1
+shares: 765 accepted, 4 rejected (all 4 stale: the pool changed the job while the share was in flight; 0 invalid) = 0.52 %
+credited MACs: 6.730e18 = 95 640 attempts; state 'mining' the whole time; no power-off, no compute mismatch
