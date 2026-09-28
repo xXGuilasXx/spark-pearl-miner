@@ -425,7 +425,7 @@ config.toml)."** Ele some sozinho quando o serviço volta a responder.
 | Elemento | O que faz |
 |---|---|
 | a linha da taxa (letra pequena) | a mesma linha da taxa compilada da configuração inicial, sempre visível |
-| v0.1.0-alpha.1 (commit) | a versão do programa |
+| v0.1.0-alpha.2 (commit) | a versão do programa |
 | **Manual** | abre este manual |
 | **Exportar diagnóstico** | baixa um arquivo JSON para suporte: versão, estado, pools, configurações e as últimas 5000 linhas de log, com os endereços de carteira abreviados para `prl1…xxxx` |
 | **Configurações avançadas: {caminho}** e **Copiar caminho** | onde fica o [arquivo de configurações](#advanced-file) |

@@ -6,7 +6,7 @@ sponsored by, or endorsed by NVIDIA or Pearl Research Labs.
 _Português: [README.pt-BR.md](README.pt-BR.md)_
 
 > **Status:** mining on mainnet pools (Kryptex, HeroMiners BR, LuckyPool BR) with accepted shares ·
-> pre-release **0.1.0-alpha.1**.
+> pre-release **0.1.0-alpha.2**.
 
 ## Why
 
