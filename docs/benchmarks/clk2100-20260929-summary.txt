@@ -1,0 +1,50 @@
+Clock step 2100 MHz — mining mode, 2026-09-29 (HANDOFF item 1)
+Question: can the Balanced cap move from 2000 to 2100 MHz (power <= 75 W, board < 90 C, more T-MAC/s)?
+Answer: NO. 2100 MHz is thermally fine but costs ~+5 W, crosses the 75 W target and gives no measurable gain.
+
+Setup: real miner (spark-pearl-miner 0.1.0-alpha.2, main a442750) under my local 'mineracao' mode, GPU 100 %
+dedicated, Balanced (75 W target, 85 W stop), Kryptex (prl-br.kryptex.network:8048, TLS, v2/gzip). The clock lock
+was changed live with a small local root helper (nvidia-smi -lgc 300,2100 / 300,2000), without restarting the miner.
+Clock under load: 1976 MHz at the 2000 cap, 2086 MHz at the 2100 cap (+5.6 %). The desktop session stayed up.
+
+Files: clk2100-20260929-soak.csv (10 s, 13:51-22:45 UTC, 3 logger sessions, 6 min gap 15:51-15:57 between them),
+       clk2100-20260929-miner.csv (miner API every 30 s), -pmon.txt (nvidia-smi pmon, SM % per process, 21:43-22:45),
+       -interleave.txt (switch times). Whole log: max power 78.6 W, max GPU 80 C, max acpitz 88.5 C,
+       0 rows with clock event reasons, no gap > 20 s inside a session.
+
+1) Baseline, 2000 MHz, 13:51-21:09 (7.3 h)
+   credited 80.81 T-MAC/s; power mean 68.6 W, max 72.4 W, 0 samples >= 75 W; GPU max 79 C; acpitz mean 86.1, max 88.5 C
+   duty mean 99.8 % (min 96); 0 trips; +236 accepted, +3 stale; 1.179 T-MAC/s per W
+   30 min windows: 75.7 .. 84.3 T-MAC/s (sd 3.6) in two plateaus at the SAME clock:
+   ~83.5-84.3 at ~71 W (13:51-17:21, 20:22-21:08) and ~75.7-77.6 at ~65-68 W (17:21-19:51).
+
+2) First test, 2100 MHz for 30 min, 21:09:30-21:39:40 (auto revert at 21:39:47)
+   power mean 73.9 W, max 78.6 W, p95 77.2 W, 47 of 180 samples >= 75 W; GPU max 80 C; acpitz mean 86.0, max 87.3 C
+   duty mean 98.0 % (min 94: the governor trimming to the 75 W target); 0 trips; +13 accepted, 0 rejected
+   credited 78.66 T-MAC/s (1.064 per W) vs 82.38 (1.185 per W) in the 30 min before at 2000 MHz.
+   The rate had dropped to the low plateau at 21:08, before the switch, so this pair is not a fair comparison.
+
+3) Interleaved A/B, 6 x 10 min, 21:43-22:43, first minute after each switch dropped
+   phase     T-MAC/s   W mean (max)    >=75 W   acpitz max   duty    SM miner   SM Claude app
+   A1 2000    84.17    71.1 (72.6)      0/54      87.0 C      99.9    93.4 %      0.4 %
+   B1 2100    76.67    72.4 (77.1)      7/53      86.8 C      98.5    83.1 %      2.6 %
+   A2 2000    79.34    67.6 (70.4)      0/54      88.4 C      99.9    91.9 %      1.4 %
+   B2 2100    73.45    70.2 (72.3)      0/53      86.7 C      99.2    84.1 %      4.1 %
+   A3 2000    72.57    63.6 (64.7)      0/53      87.3 C     100.0    86.9 %      3.1 %
+   B3 2100    73.59    71.0 (73.2)      0/52      86.5 C      99.7    78.8 %      2.9 %
+   Least squares with a linear drift term (y = a + b*phase + c*[2100]):
+     throughput  c = -2.29 +/- 2.24 T-MAC/s  (expected from the clock: about +4.6; ruled out at ~3 sigma)
+     power       c = +4.85 +/- 1.62 W
+     miner SM    c = -7.4  +/- 1.6 points
+   Paired (each B against its neighbouring A phases): -6.2 %, -3.3 %, +1.4 %.
+
+Reading: at the 2000 MHz cap the attempt loop is already not kernel-bound. The miner keeps the SMs busy only 87-93 %
+of the time; at 2100 MHz the kernel finishes sooner, the SM-busy share drops by ~7 points and the credited rate does
+not move. The time saved in the kernel is spent waiting on something else (host side of the attempt loop or the
+shared SoC). Desktop GPU clients (the Claude desktop app, Chrome, Xorg) took 0.4-4 % SM on average per phase (up to
+~10 % in single samples while a chat was streaming); that explains only part of the plateaus.
+
+Decision: keep the Balanced cap at 2000 MHz (no change to code, docs or the local unit). Next lever instead of clock:
+measure the per-attempt gaps and push the SM-busy share towards ~98 % (worth +5-10 % at the same clock and power).
+Side effect: the daemon's clock-cap detector now reports 'uncapped' (it saw 2086 MHz) until the next restart; the lock
+is back at 300-2000 MHz (1976 MHz under load at 22:45).

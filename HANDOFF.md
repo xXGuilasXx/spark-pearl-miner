@@ -6,7 +6,7 @@ aqui.
 
 ## Estado atual
 
-- **main `a442750`**, publicado no GitHub. Pre-releases **v0.1.0-alpha.1** e **v0.1.0-alpha.2** com
+- **main** (ver `git log -1`), publicado no GitHub. Pre-releases **v0.1.0-alpha.1** e **v0.1.0-alpha.2** com
   tarball aarch64 + `SHA256SUMS`; o instalador (`packaging/install.sh`) baixa a mais nova e confere
   o checksum.
 - **Kernel**: INT8 `mma.sync` para `sm_121a`, bit-exato contra o `zk-pow` oficial (portão G0).
@@ -35,11 +35,18 @@ aqui.
 
 ## O que falta (ordem sugerida)
 
-1. **Teste curto a 2100 MHz** no modo mineração: ver se a potência fica ≤ 75 W e a placa < 90 °C;
-   se couber, avaliar subir o cap padrão (hoje 2000 MHz, 63–71 W).
-2. **Provas comprimíveis**: preencher A/B de forma repetitiva para a prova cair de ~120 KB para
+Feito em 29/09: **degrau de 2100 MHz testado e descartado.** Placa até 88,4 °C (igual a 2000 MHz),
+mas +4,9 W (máx 78,6 W, acima do alvo de 75 W um quarto do tempo) e nenhum ganho de taxa
+(−2,3 ± 2,2 T-MAC/s num A/B intercalado). O cap continua em 2000 MHz. Evidências em
+`docs/benchmarks/clk2100-20260929-*`.
+
+1. **Provas comprimíveis**: preencher A/B de forma repetitiva para a prova cair de ~120 KB para
    poucos KB em gzip/zstd (a Kryptex diz ~100×), reduzindo stale; confirmar aceitação nas pools
    (item no TODO, M6).
+2. **Lacunas entre tentativas** (M10): a 2000 MHz o minerador ocupa os SMs só 87–93 % do tempo
+   (`nvidia-smi pmon`) e um kernel mais rápido não aumentou a taxa. Expor os tempos de tentativa e
+   de espera nas stats/API, achar a espera e mirar ~98 % (+5–10 % sem mais clock nem potência).
+   Explicar os dois patamares no mesmo clock (~84 T-MAC/s a ~71 W e ~76 a ~66 W).
 3. **Hora de aceitação na HeroMiners** (último item do M6).
 4. **M12 — FP8 / certificado v4**: acompanhar o PR #311 e a `Fp8ForkHeight`; spike de `QMMA` e
    bit-exatidão contra o `zk-pow` do branch `fp8-scheme` antes do fork (risco nº 1 do projeto).
@@ -61,8 +68,8 @@ bench/soak-log.sh --interval 10 --duration 3600 --out docs/benchmarks/<nome>.csv
 
 > Continue o projeto spark-pearl-miner (minerador de Pearl/PRL para o DGX Spark) no repositório
 > `/home/xxguilasxx/Desktop/Miner PRL/spark-pearl-miner`. Leia primeiro `HANDOFF.md`, `CLAUDE.md`,
-> `TODO.md` e a memória do projeto. Estado: main `a442750`, v0.1.0-alpha.2 publicada, portão G1
+> `TODO.md` e a memória do projeto. Estado: v0.1.0-alpha.2 publicada, portão G1
 > cumprido (soak de 24 h), minerador rodando no modo mineração desta máquina. Siga as regras de
 > branch, gate com código de saída checado, push automático após merge verde, sem marca de IA e
-> subagentes em Opus 5.5. Comece pelo item 1 de "O que falta" (teste curto a 2100 MHz), avisando
+> subagentes em Opus 5.5. Comece pelo item 1 de "O que falta" (provas comprimíveis), avisando
 > antes de qualquer coisa que pare ou reinicie o minerador.

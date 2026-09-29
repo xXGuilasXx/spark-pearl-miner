@@ -28,6 +28,10 @@
 ## Instalação em um comando (2026-09-27, versão 0.1.0-alpha.1)
 - 🟡 `packaging/install.sh` (como usuário, sem root; `curl -fsSL …/packaging/install.sh | bash`, de um clone ou do tarball extraído): baixa o release mais novo verificado pelo SHA256SUMS ou compila do fonte (rustup + nvcc), instala binário, unit `--user` com `ExecStartPre=config check`, atalho no menu e `~/.local/share/spark-pearl-miner/`; nunca mexe no config.toml; `--upgrade` (com volta automática se o binário novo recusar o config.toml), `--rollback`, `--uninstall [--purge]`, `--dry-run`. `packaging/make-release.sh` gera o tarball determinístico + SHA256SUMS e só imprime o `gh release create`. Teste: `tools/test-install.sh` (40 verificações num HOME descartável com binários falsos; `--real` empacota e instala o binário de verdade). Pendente: o primeiro release publicado por mim.
 
+## Degrau de 2100 MHz (2026-09-29)
+- ✅ Testado no modo mineração (30 min + 1 h alternando 2000/2100 contra 7,3 h a 2000 MHz): placa máx 88,4 °C, mas +4,9 ± 1,6 W (máx 78,6 W, acima do alvo de 75 W um quarto do tempo) e nenhum ganho de taxa (−2,3 ± 2,2 T-MAC/s descontada a deriva; só o clock daria cerca de +4,6). **O cap do Balanced continua em 2000 MHz.** `docs/benchmarks/clk2100-20260929-summary.txt`.
+- ⬜ Próximo ganho: fechar as lacunas entre tentativas. A 2000 MHz o minerador ocupa os SMs só 87–93 % do tempo; expor os tempos de tentativa e de espera nas stats/API, achar a espera (canário no host, anel de hits, verificação de share, preparo do job, divisão de energia do SoC) e mirar ~98 % (+5–10 % no mesmo clock e na mesma potência). Explicar também os dois patamares no mesmo clock (~84 T-MAC/s a ~71 W e ~76 a ~66 W).
+
 ## Alerta registrado em 2026-09-26
 - ✅ **Carteira da taxa trocada em 2026-09-26 por carteira própria criada com o `oystercli` oficial (prl1pkqp…s90n).** Resolvido: o endereço de depósito da SafeTrade não é mais usado. Ainda pendente antes do v0.1.0: a prova de controle (G4), agora possível com a carteira própria.
 

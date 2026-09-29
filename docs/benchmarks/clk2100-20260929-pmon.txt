@@ -1,0 +1,681 @@
+# nvidia-smi pmon -s u -d 10, started 2026-09-29T21:43:00Z (no per-line timestamps: sample i ~ start + 10 s * i)
+# gpu         pid   type     sm    mem    enc    dec    jpg    ofa    command 
+# Idx           #    C/G      %      %      %      %      %      %    name 
+    0     443959     G      7      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0     443959     G     10      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     83      0      -      -      -      -    spark-pearl-min
+    0     443959     G      5      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     88      0      -      -      -      -    spark-pearl-min
+    0     443959     G     11      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     82      0      -      -      -      -    spark-pearl-min
+    0     443959     G      6      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     88      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     91      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     91      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     93      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     93      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     93      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     91      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     93      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     93      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     93      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     93      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     91      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     91      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0     443959     G      5      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     90      0      -      -      -      -    spark-pearl-min
+    0     443959     G     14      0      -      -      -      -    Claude --gpu-pr
+    0     549323     G      1      0      -      -      -      -    chrome --type=g
+    0    1847802     C     78      0      -      -      -      -    spark-pearl-min
+    0     443959     G      5      0      -      -      -      -    Claude --gpu-pr
+    0     549323     G      1      0      -      -      -      -    chrome --type=g
+    0    1847802     C     87      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     95      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     91      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      2      0      -      -      -      -    Xorg           
+    0    1847802     C     88      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G      0      0      -      -      -      -    gnome-shell    
+    0    1847802     C     87      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      2      0      -      -      -      -    gnome-shell    
+    0    1847802     C     87      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0     549323     G      1      0      -      -      -      -    chrome --type=g
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0     549323     G      1      0      -      -      -      -    chrome --type=g
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0     443959     G      0      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     84      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     87      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0     443959     G      0      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     84      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     87      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0     443959     G      1      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     85      0      -      -      -      -    spark-pearl-min
+    0     443959     G      7      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     79      0      -      -      -      -    spark-pearl-min
+    0     443959     G     12      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     74      0      -      -      -      -    spark-pearl-min
+    0     443959     G     15      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     70      0      -      -      -      -    spark-pearl-min
+    0     443959     G      6      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     80      0      -      -      -      -    spark-pearl-min
+    0     443959     G      4      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     81      0      -      -      -      -    spark-pearl-min
+    0     443959     G      2      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     83      0      -      -      -      -    spark-pearl-min
+    0     443959     G      1      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     85      0      -      -      -      -    spark-pearl-min
+    0     443959     G      3      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     82      0      -      -      -      -    spark-pearl-min
+    0     443959     G      2      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     83      0      -      -      -      -    spark-pearl-min
+    0     443959     G      2      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     84      0      -      -      -      -    spark-pearl-min
+    0     443959     G      7      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     79      0      -      -      -      -    spark-pearl-min
+    0     443959     G      4      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     81      0      -      -      -      -    spark-pearl-min
+    0     443959     G      3      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     81      0      -      -      -      -    spark-pearl-min
+    0     443959     G      4      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     80      0      -      -      -      -    spark-pearl-min
+    0     443959     G      7      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     79      0      -      -      -      -    spark-pearl-min
+    0     443959     G     12      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     74      0      -      -      -      -    spark-pearl-min
+    0     443959     G      5      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     80      0      -      -      -      -    spark-pearl-min
+    0     443959     G      9      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     77      0      -      -      -      -    spark-pearl-min
+    0     443959     G      7      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     79      0      -      -      -      -    spark-pearl-min
+    0     443959     G      6      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     79      0      -      -      -      -    spark-pearl-min
+    0     443959     G      6      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     80      0      -      -      -      -    spark-pearl-min
+    0     443959     G      8      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     78      0      -      -      -      -    spark-pearl-min
+    0     443959     G      1      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     85      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     85      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0     443959     G      2      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     84      0      -      -      -      -    spark-pearl-min
+    0     443959     G      2      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     84      0      -      -      -      -    spark-pearl-min
+    0     443959     G      1      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     85      0      -      -      -      -    spark-pearl-min
+    0     443959     G      6      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     82      0      -      -      -      -    spark-pearl-min
+    0     443959     G      2      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     90      0      -      -      -      -    spark-pearl-min
+    0     443959     G      5      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     88      0      -      -      -      -    spark-pearl-min
+    0     443959     G      2      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     90      0      -      -      -      -    spark-pearl-min
+    0     443959     G      1      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0     443959     G      1      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     93      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0     443959     G      0      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0     443959     G      0      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     91      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0     443959     G      1      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     93      0      -      -      -      -    spark-pearl-min
+    0     443959     G      1      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     93      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0     443959     G      0      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0     443959     G      1      0      -      -      -      -    Claude --gpu-pr
+    0    1029175     G      0      0      -      -      -      -    gnome-shell    
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0     443959     G      4      0      -      -      -      -    Claude --gpu-pr
+    0    1029175     G      0      0      -      -      -      -    gnome-shell    
+    0    1847802     C     88      0      -      -      -      -    spark-pearl-min
+    0     443959     G      1      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     93      0      -      -      -      -    spark-pearl-min
+    0     443959     G      5      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0     443959     G      5      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0     443959     G      5      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0     443959     G     17      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     75      0      -      -      -      -    spark-pearl-min
+    0     443959     G     24      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     70      0      -      -      -      -    spark-pearl-min
+    0     443959     G     13      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     81      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0     443959     G      1      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     93      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     93      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0     549323     G      1      0      -      -      -      -    chrome --type=g
+    0    1847802     C     91      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     91      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      4      0      -      -      -      -    gnome-shell    
+    0    1847802     C     90      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      2      0      -      -      -      -    gnome-shell    
+    0    1847802     C     91      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      8      0      -      -      -      -    gnome-shell    
+    0    1847802     C     82      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      7      0      -      -      -      -    gnome-shell    
+    0    1847802     C     81      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      2      0      -      -      -      -    Xorg           
+    0    1029175     G      7      0      -      -      -      -    gnome-shell    
+    0    1847802     C     80      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      5      0      -      -      -      -    Xorg           
+    0    1029175     G      7      0      -      -      -      -    gnome-shell    
+    0    1847802     C     78      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G      7      0      -      -      -      -    gnome-shell    
+    0    1847802     C     82      0      -      -      -      -    spark-pearl-min
+    0     443959     G      1      0      -      -      -      -    Claude --gpu-pr
+    0    1029175     G      6      0      -      -      -      -    gnome-shell    
+    0    1847802     C     83      0      -      -      -      -    spark-pearl-min
+    0     443959     G      1      0      -      -      -      -    Claude --gpu-pr
+    0    1029175     G      7      0      -      -      -      -    gnome-shell    
+    0    1847802     C     80      0      -      -      -      -    spark-pearl-min
+    0     443959     G      1      0      -      -      -      -    Claude --gpu-pr
+    0    1029175     G      5      0      -      -      -      -    gnome-shell    
+    0    1847802     C     83      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      3      0      -      -      -      -    gnome-shell    
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0     443959     G      7      0      -      -      -      -    Claude --gpu-pr
+    0    1029175     G      2      0      -      -      -      -    gnome-shell    
+    0    1847802     C     80      0      -      -      -      -    spark-pearl-min
+    0     443959     G     12      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     78      0      -      -      -      -    spark-pearl-min
+    0     443959     G     18      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     72      0      -      -      -      -    spark-pearl-min
+    0     443959     G     13      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     76      0      -      -      -      -    spark-pearl-min
+    0     443959     G     10      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     79      0      -      -      -      -    spark-pearl-min
+    0     443959     G     15      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     74      0      -      -      -      -    spark-pearl-min
+    0     443959     G     16      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     73      0      -      -      -      -    spark-pearl-min
+    0     443959     G     11      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     78      0      -      -      -      -    spark-pearl-min
+    0     443959     G     12      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     77      0      -      -      -      -    spark-pearl-min
+    0     443959     G     14      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     77      0      -      -      -      -    spark-pearl-min
+    0     443959     G      6      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     84      0      -      -      -      -    spark-pearl-min
+    0     443959     G      9      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     81      0      -      -      -      -    spark-pearl-min
+    0     443959     G     23      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     66      0      -      -      -      -    spark-pearl-min
+    0     443959     G     26      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     63      0      -      -      -      -    spark-pearl-min
+    0     443959     G     10      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     79      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     90      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G      3      0      -      -      -      -    gnome-shell    
+    0    1847802     C     85      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      2      0      -      -      -      -    gnome-shell    
+    0    1847802     C     88      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     90      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     90      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     90      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      0      0      -      -      -      -    gnome-shell    
+    0    1847802     C     87      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     90      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      2      0      -      -      -      -    gnome-shell    
+    0    1847802     C     87      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     88      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      0      0      -      -      -      -    gnome-shell    
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      2      0      -      -      -      -    gnome-shell    
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      2      0      -      -      -      -    gnome-shell    
+    0    1847802     C     87      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      8      0      -      -      -      -    gnome-shell    
+    0    1847802     C     79      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      6      0      -      -      -      -    gnome-shell    
+    0    1847802     C     83      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      4      0      -      -      -      -    gnome-shell    
+    0    1847802     C     84      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      2      0      -      -      -      -    gnome-shell    
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      2      0      -      -      -      -    gnome-shell    
+    0    1847802     C     87      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     88      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     88      0      -      -      -      -    spark-pearl-min
+    0     443959     G      2      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     87      0      -      -      -      -    spark-pearl-min
+    0     443959     G      4      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     85      0      -      -      -      -    spark-pearl-min
+    0     443959     G      6      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     83      0      -      -      -      -    spark-pearl-min
+    0     443959     G      3      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     88      0      -      -      -      -    spark-pearl-min
+    0     443959     G     10      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     83      0      -      -      -      -    spark-pearl-min
+    0     443959     G     11      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     82      0      -      -      -      -    spark-pearl-min
+    0     443959     G     11      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     81      0      -      -      -      -    spark-pearl-min
+    0     443959     G      9      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     84      0      -      -      -      -    spark-pearl-min
+    0     443959     G     14      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     79      0      -      -      -      -    spark-pearl-min
+    0     443959     G     20      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     72      0      -      -      -      -    spark-pearl-min
+    0     443959     G      9      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     84      0      -      -      -      -    spark-pearl-min
+    0     443959     G      5      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     88      0      -      -      -      -    spark-pearl-min
+    0     443959     G      5      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     88      0      -      -      -      -    spark-pearl-min
+    0     443959     G     19      0      -      -      -      -    Claude --gpu-pr
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1847802     C     72      0      -      -      -      -    spark-pearl-min
+    0     443959     G     15      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     78      0      -      -      -      -    spark-pearl-min
+    0     443959     G      1      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      0      0      -      -      -      -    gnome-shell    
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      5      0      -      -      -      -    gnome-shell    
+    0    1847802     C     88      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G      7      0      -      -      -      -    gnome-shell    
+    0    1847802     C     83      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     91      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      4      0      -      -      -      -    gnome-shell    
+    0    1847802     C     90      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      9      0      -      -      -      -    gnome-shell    
+    0    1847802     C     84      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G      6      0      -      -      -      -    gnome-shell    
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G      4      0      -      -      -      -    gnome-shell    
+    0    1847802     C     87      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      2      0      -      -      -      -    gnome-shell    
+    0    1847802     C     88      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     93      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      2      0      -      -      -      -    Xorg           
+    0    1847802     C     91      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      2      0      -      -      -      -    Xorg           
+    0    1847802     C     91      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     93      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     93      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G      7      0      -      -      -      -    gnome-shell    
+    0    1847802     C     83      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G     15      0      -      -      -      -    gnome-shell    
+    0    1847802     C     76      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G      3      0      -      -      -      -    gnome-shell    
+    0    1847802     C     88      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      2      0      -      -      -      -    Xorg           
+    0    1029175     G      9      0      -      -      -      -    gnome-shell    
+    0    1847802     C     82      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      2      0      -      -      -      -    Xorg           
+    0    1029175     G     15      0      -      -      -      -    gnome-shell    
+    0    1847802     C     75      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G     15      0      -      -      -      -    gnome-shell    
+    0    1847802     C     76      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      5      0      -      -      -      -    Xorg           
+    0    1029175     G      9      0      -      -      -      -    gnome-shell    
+    0    1847802     C     79      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G      2      0      -      -      -      -    gnome-shell    
+    0    1847802     C     90      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0     443959     G      2      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     91      0      -      -      -      -    spark-pearl-min
+    0     443959     G      5      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0     443959     G      9      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     85      0      -      -      -      -    spark-pearl-min
+    0     443959     G     11      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     82      0      -      -      -      -    spark-pearl-min
+    0     443959     G      6      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0     443959     G      1      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0     443959     G     10      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     83      0      -      -      -      -    spark-pearl-min
+    0     443959     G      9      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     84      0      -      -      -      -    spark-pearl-min
+    0     443959     G      7      0      -      -      -      -    Claude --gpu-pr
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     82      0      -      -      -      -    spark-pearl-min
+    0     443959     G      6      0      -      -      -      -    Claude --gpu-pr
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0     443959     G     11      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     82      0      -      -      -      -    spark-pearl-min
+    0     443959     G     25      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     69      0      -      -      -      -    spark-pearl-min
+    0     443959     G      6      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     87      0      -      -      -      -    spark-pearl-min
+    0     443959     G      5      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     88      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      0      0      -      -      -      -    gnome-shell    
+    0    1847802     C     90      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     91      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     91      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G     14      0      -      -      -      -    gnome-shell    
+    0    1847802     C     74      0      -      -      -      -    spark-pearl-min
+    0    1029175     G     18      0      -      -      -      -    gnome-shell    
+    0    1847802     C     72      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      7      0      -      -      -      -    gnome-shell    
+    0    1847802     C     83      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      3      0      -      -      -      -    gnome-shell    
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      2      0      -      -      -      -    Xorg           
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      5      0      -      -      -      -    Xorg           
+    0    1847802     C     85      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     90      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      3      0      -      -      -      -    Xorg           
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     85      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      6      0      -      -      -      -    Xorg           
+    0    1029175     G      3      0      -      -      -      -    gnome-shell    
+    0    1847802     C     80      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      2      0      -      -      -      -    Xorg           
+    0    1029175     G      7      0      -      -      -      -    gnome-shell    
+    0    1847802     C     80      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      3      0      -      -      -      -    Xorg           
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     90      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      2      0      -      -      -      -    gnome-shell    
+    0    1847802     C     87      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G     12      0      -      -      -      -    gnome-shell    
+    0    1847802     C     75      0      -      -      -      -    spark-pearl-min
+    0    1029175     G     17      0      -      -      -      -    gnome-shell    
+    0    1847802     C     71      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G     17      0      -      -      -      -    gnome-shell    
+    0    1847802     C     71      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      5      0      -      -      -      -    Xorg           
+    0    1029175     G      3      0      -      -      -      -    gnome-shell    
+    0    1847802     C     82      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      5      0      -      -      -      -    Xorg           
+    0    1029175     G      5      0      -      -      -      -    gnome-shell    
+    0    1847802     C     80      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      2      0      -      -      -      -    gnome-shell    
+    0    1847802     C     87      0      -      -      -      -    spark-pearl-min
+    0    1029175     G     15      0      -      -      -      -    gnome-shell    
+    0    1847802     C     75      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      6      0      -      -      -      -    Xorg           
+    0    1029175     G      9      0      -      -      -      -    gnome-shell    
+    0    1847802     C     74      0      -      -      -      -    spark-pearl-min
+    0    1028837     G     11      0      -      -      -      -    Xorg           
+    0    1029175     G      8      0      -      -      -      -    gnome-shell    
+    0    1847802     C     70      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      4      0      -      -      -      -    Xorg           
+    0    1029175     G     10      0      -      -      -      -    gnome-shell    
+    0    1847802     C     74      0      -      -      -      -    spark-pearl-min
+    0    1028837     G     10      0      -      -      -      -    Xorg           
+    0    1029175     G     12      0      -      -      -      -    gnome-shell    
+    0    1847802     C     67      0      -      -      -      -    spark-pearl-min
+    0    1028837     G     10      0      -      -      -      -    Xorg           
+    0    1847802     C     80      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      2      0      -      -      -      -    Xorg           
+    0    1029175     G      3      0      -      -      -      -    gnome-shell    
+    0    1847802     C     84      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      3      0      -      -      -      -    Xorg           
+    0    1029175     G     10      0      -      -      -      -    gnome-shell    
+    0    1847802     C     76      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      2      0      -      -      -      -    Xorg           
+    0    1029175     G     16      0      -      -      -      -    gnome-shell    
+    0    1847802     C     71      0      -      -      -      -    spark-pearl-min
+    0     443959     G      1      0      -      -      -      -    Claude --gpu-pr
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G     17      0      -      -      -      -    gnome-shell    
+    0    1847802     C     69      0      -      -      -      -    spark-pearl-min
+    0     443959     G      2      0      -      -      -      -    Claude --gpu-pr
+    0    1029175     G      7      0      -      -      -      -    gnome-shell    
+    0    1847802     C     79      0      -      -      -      -    spark-pearl-min
+    0     443959     G      6      0      -      -      -      -    Claude --gpu-pr
+    0    1028837     G      2      0      -      -      -      -    Xorg           
+    0    1029175     G      7      0      -      -      -      -    gnome-shell    
+    0    1847802     C     73      0      -      -      -      -    spark-pearl-min
+    0     443959     G      6      0      -      -      -      -    Claude --gpu-pr
+    0    1028837     G      5      0      -      -      -      -    Xorg           
+    0    1029175     G      7      0      -      -      -      -    gnome-shell    
+    0    1847802     C     71      0      -      -      -      -    spark-pearl-min
+    0     443959     G      8      0      -      -      -      -    Claude --gpu-pr
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     78      0      -      -      -      -    spark-pearl-min
+    0     443959     G     11      0      -      -      -      -    Claude --gpu-pr
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1847802     C     77      0      -      -      -      -    spark-pearl-min
+    0     443959     G     20      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     68      0      -      -      -      -    spark-pearl-min
+    0     443959     G     10      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     79      0      -      -      -      -    spark-pearl-min
+    0     443959     G      8      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     81      0      -      -      -      -    spark-pearl-min
+    0     443959     G      7      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     82      0      -      -      -      -    spark-pearl-min
+    0     443959     G      5      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     85      0      -      -      -      -    spark-pearl-min
+    0     443959     G     10      0      -      -      -      -    Claude --gpu-pr
+    0    1847802     C     80      0      -      -      -      -    spark-pearl-min
+    0     443959     G     17      0      -      -      -      -    Claude --gpu-pr
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     70      0      -      -      -      -    spark-pearl-min
+    0     443959     G     18      0      -      -      -      -    Claude --gpu-pr
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G      6      0      -      -      -      -    gnome-shell    
+    0    1847802     C     63      0      -      -      -      -    spark-pearl-min
+    0     443959     G     17      0      -      -      -      -    Claude --gpu-pr
+    0    1029175     G      2      0      -      -      -      -    gnome-shell    
+    0    1847802     C     70      0      -      -      -      -    spark-pearl-min
+    0     443959     G      5      0      -      -      -      -    Claude --gpu-pr
+    0    1029175     G      5      0      -      -      -      -    gnome-shell    
+    0    1847802     C     80      0      -      -      -      -    spark-pearl-min
+    0     443959     G      1      0      -      -      -      -    Claude --gpu-pr
+    0    1029175     G      3      0      -      -      -      -    gnome-shell    
+    0    1847802     C     85      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      5      0      -      -      -      -    Xorg           
+    0    1029175     G      8      0      -      -      -      -    gnome-shell    
+    0    1847802     C     76      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G      7      0      -      -      -      -    gnome-shell    
+    0    1847802     C     81      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1847802     C     88      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G      5      0      -      -      -      -    gnome-shell    
+    0    1847802     C     84      0      -      -      -      -    spark-pearl-min
+    0    1029175     G     16      0      -      -      -      -    gnome-shell    
+    0    1847802     C     74      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G      6      0      -      -      -      -    gnome-shell    
+    0    1847802     C     83      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      2      0      -      -      -      -    Xorg           
+    0    1029175     G      6      0      -      -      -      -    gnome-shell    
+    0    1847802     C     82      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G      7      0      -      -      -      -    gnome-shell    
+    0    1847802     C     81      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G      3      0      -      -      -      -    gnome-shell    
+    0    1847802     C     87      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      2      0      -      -      -      -    gnome-shell    
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G      6      0      -      -      -      -    gnome-shell    
+    0    1847802     C     85      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      5      0      -      -      -      -    gnome-shell    
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     93      0      -      -      -      -    spark-pearl-min
+    0    1847802     C     94      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      0      0      -      -      -      -    gnome-shell    
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      0      0      -      -      -      -    gnome-shell    
+    0    1847802     C     91      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      6      0      -      -      -      -    gnome-shell    
+    0    1847802     C     86      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      1      0      -      -      -      -    Xorg           
+    0    1029175     G     11      0      -      -      -      -    gnome-shell    
+    0    1847802     C     81      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      5      0      -      -      -      -    gnome-shell    
+    0    1847802     C     89      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      2      0      -      -      -      -    gnome-shell    
+    0    1847802     C     90      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      1      0      -      -      -      -    gnome-shell    
+    0    1847802     C     92      0      -      -      -      -    spark-pearl-min
+    0    1029175     G      5      0      -      -      -      -    gnome-shell    
+    0    1847802     C     88      0      -      -      -      -    spark-pearl-min
+    0    1029175     G     13      0      -      -      -      -    gnome-shell    
+    0    1847802     C     80      0      -      -      -      -    spark-pearl-min
+    0    1028837     G      4      0      -      -      -      -    Xorg           
+    0    1029175     G     15      0      -      -      -      -    gnome-shell    
+    0    1847802     C     74      0      -      -      -      -    spark-pearl-min
