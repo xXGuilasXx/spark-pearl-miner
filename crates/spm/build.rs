@@ -22,9 +22,12 @@ fn main() {
     println!("cargo:rustc-env=SPM_GIT_COMMIT={}", commit.unwrap_or_else(|| "unknown".into()));
 }
 
-/// The repository's `.git` directory (also right for worktrees), or None outside a checkout.
+/// The repository's `.git` directory for this checkout (worktree-aware), or None
+/// outside a checkout. `--git-dir` is correct in worktrees (it points at
+/// `<common>/worktrees/<name>`), where `--git-common-dir` would point at the
+/// main checkout's `.git` and miss this worktree's HEAD moves.
 fn git_dir() -> Option<std::path::PathBuf> {
-    let out = Command::new("git").args(["rev-parse", "--git-common-dir"]).output().ok()?;
+    let out = Command::new("git").args(["rev-parse", "--git-dir"]).output().ok()?;
     if !out.status.success() {
         return None;
     }
