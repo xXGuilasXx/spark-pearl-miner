@@ -35,7 +35,7 @@ On a Spark that also serves LLMs (like the author's), mining only happens while 
 
 ## 3. Headwinds (all measured, none hypothetical)
 - Difficulty **+36 % in 30 days**; PRL-per-TH fell **−32 % in 10 weeks**; miner software alone doubled per-card rates between June and September 2026.
-- Block subsidy decays smoothly: ~2,206 PRL in 1 month, ~1,794 in 6 months, ~1,435 in 12 months.
+- Block subsidy decays smoothly: ~2,228 PRL in 1 month, ~1,891 in 6 months, ~1,579 in 12 months (from upstream `CalcBlockSubsidy` at snapshot height 119,365, 194 s/block target).
 - If block time returns to the 194 s target, daily emission drops another ~22 %.
 - Thin, concentrated liquidity: ~US$2.9 M/day volume, ~87 % on SafeTrade (a 1.9/5 Trustpilot exchange with withdrawal complaints). Daily emission ≈ 60 % of daily volume (sell overhang).
 - Pools concentrated: Kryptex ~45–50 %, pearlhash.xyz ~25–28 %.
