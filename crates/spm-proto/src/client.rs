@@ -17,7 +17,7 @@ use tokio::time::Instant;
 use crate::codec::{self, CodecError, NdjsonReader};
 use crate::encode::{self, ProofEncoding, ProofField, ProofFormatLearner};
 use crate::tls::{ConnectError, Connector, PoolStream, TlsMode, Transport};
-use crate::{authorize_lines, classify_reject, parse_notify_value, reply_of, reply_type, submit_line};
+use crate::{authorize_lines, classify_reject, encoding_after_auth, parse_notify_value, reply_of, reply_type, submit_line};
 use crate::{Dialect, FrameOpts, Job, RejectKind, Reply, AGENT};
 
 pub const DEFAULT_SUBMIT_ACK_TIMEOUT: Duration = Duration::from_secs(30);
@@ -237,11 +237,7 @@ impl State<'_> {
                 Reply::Accepted => {
                     self.authorized = true;
                     let proof_type = reply_type(&v).map(str::to_string);
-                    match proof_type.as_deref() {
-                        Some("v2") => self.plain_encoding = ProofEncoding::Gzip,
-                        Some("plain") => self.plain_encoding = ProofEncoding::Plain,
-                        _ => {}
-                    }
+                    self.plain_encoding = encoding_after_auth(self.cfg.dialect, proof_type.as_deref(), self.plain_encoding);
                     tracing::info!(
                         login = %format!("{}.{}", self.cfg.wallet, self.cfg.worker),
                         proof_type = proof_type.as_deref().unwrap_or("-"),

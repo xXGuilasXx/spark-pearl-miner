@@ -280,7 +280,7 @@ The order is the priority: the first entry is pool 1. A fourth entry is refused.
 | `port` | – | 1–65535 |
 | `tls` | `"auto"` | `auto` (TLS first; plain TCP only when the server does not speak TLS, never after a certificate error; the result is remembered per `host:port` for 7 days), `on`, `off`, `pinned` (TLS checked against `spki_pin` only, for self-signed pools) |
 | `spki_pin` | – | base64 SHA-256 of the server's public key; only with `tls = "pinned"` |
-| `dialect` | `"auto"` | `auto` (Kryptex hosts → `kryptex`, everything else → `object`), `object` (HeroMiners, LuckyPool), `kryptex`, `kryptex-v2` (gzip proofs; not confirmed live) |
+| `dialect` | `"auto"` | `auto` (Kryptex hosts → `kryptex-v2`, everything else → `object`), `object` (HeroMiners, LuckyPool), `kryptex`, `kryptex-v2` (gzip proofs, as Kryptex asks; falls back to plain by itself) |
 | `jsonrpc` | `"auto"` | add `"jsonrpc":"2.0"` to requests: `auto` (on for `*.luckypool.io`, dialect default otherwise), `on`, `off` |
 | `proof` | `"auto"` | proof encoding: `auto` (starts with `plain_proof`, switches after 3 format rejects and remembers the working field per pool), `plain`, `zstd` (`plain_proof_zst`) |
 | `password` | `"x"` | stratum password, up to 64 printable characters (Kryptex also accepts `d=<N>`) |
@@ -292,7 +292,7 @@ Settings pool rows; typing a preset's `host:port` uses all of its keys):
 
 | Preset | Host:port | TLS | Dialect / jsonrpc | Status |
 |---|---|---|---|---|
-| Kryptex | `prl-br.kryptex.network:8048` | on | kryptex / auto | verified live, default pool 1 |
+| Kryptex | `prl-br.kryptex.network:8048` | on | kryptex-v2 / auto | verified live, default pool 1 |
 | HeroMiners BR | `br.pearl.herominers.com:1200` | auto | auto / auto | verified live, default pool 2 |
 | LuckyPool BR | `pearl-br.luckypool.io:3360` | pinned `d0ehDQxaU5IUv4UHWXItQKqdJ8anqZclQXcoIjwF/mk=` | object / on | verified live, default pool 3 |
 | HeroMiners US / US2 / DE / FR | `{us,us2,de,fr}.pearl.herominers.com:1200` | auto | auto / auto | not verified |

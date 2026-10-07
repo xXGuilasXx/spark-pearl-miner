@@ -81,8 +81,18 @@ impl ClockCapDetector {
     /// Feeds one sample with the duty in force while it was taken.
     pub fn observe(&mut self, s: &Sample, duty_pct: u8) {
         self.max_seen_mhz = self.max_seen_mhz.max(s.sm_mhz);
-        self.last_ts = Some(s.ts);
+        let prev_ts = self.last_ts.replace(s.ts);
         if s.sm_mhz > self.cap_mhz + CAP_TOLERANCE_MHZ {
+            // A telemetry gap breaks the run just like a below-cap sample
+            // does: with no sample for longer than MAX_SAMPLE_GAP there is
+            // no evidence the clock stayed above the cap for the whole
+            // interval, so the run restarts at this sample. (The loaded
+            // accumulator below already refuses to count such intervals.)
+            if let (Some(prev), Some(_)) = (prev_ts, self.exceed_since) {
+                if s.ts.saturating_sub(prev) > MAX_SAMPLE_GAP {
+                    self.exceed_since = Some(s.ts);
+                }
+            }
             let since = *self.exceed_since.get_or_insert(s.ts);
             if s.ts.saturating_sub(since) >= CAP_EXCEED_FOR {
                 self.last_exceeded_ts = Some(s.ts);
@@ -153,6 +163,22 @@ mod tests {
         // …then the verdict follows the loaded-time evidence again.
         d.observe(&sample(4 + CAP_FORGET.as_secs() + 1, 1990), 100);
         assert!(matches!(d.status(), CapStatus::Capped { .. }), "{:?}", d.status());
+    }
+
+    #[test]
+    fn a_telemetry_gap_does_not_confirm_an_exceedance() {
+        let mut d = ClockCapDetector::new(2000);
+        d.observe(&sample(0, 2400), 100);
+        // Ten seconds pass with no sample at all (telemetry stall, e.g. the
+        // post-restart idle boost straddling a hiccup): the two readings do
+        // not prove 3 s *uninterrupted* above the cap.
+        d.observe(&sample(10, 2400), 100);
+        assert!(!matches!(d.status(), CapStatus::Uncapped { .. }), "{:?}", d.status());
+        // A genuinely sustained run after the gap still confirms.
+        for t in 11..=13 {
+            d.observe(&sample(t, 2400), 100);
+        }
+        assert!(matches!(d.status(), CapStatus::Uncapped { max_seen_mhz: 2400 }), "{:?}", d.status());
     }
 
     #[test]
