@@ -7,11 +7,28 @@
 #
 #   tools/test-install.sh          # with a stub binary (seconds)
 #   tools/test-install.sh --real   # package the real binary (cargo build --profile dist first)
+#   tools/test-install.sh --real --binary PATH  # use an existing binary without invoking Cargo
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 REAL=0
-[ "${1:-}" = --real ] && REAL=1
+REAL_BINARY=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --real) REAL=1 ;;
+    --binary)
+      shift
+      REAL_BINARY=${1:?--binary needs a path}
+      ;;
+    *) echo 'usage: tools/test-install.sh [--real [--binary PATH]]' >&2; exit 2 ;;
+  esac
+  shift
+done
+if [ -n "$REAL_BINARY" ]; then
+  [ "$REAL" -eq 1 ] || { echo '--binary requires --real' >&2; exit 2; }
+  case "$REAL_BINARY" in /*) ;; *) REAL_BINARY="$PWD/$REAL_BINARY" ;; esac
+  [ -x "$REAL_BINARY" ] || { echo "no executable at $REAL_BINARY" >&2; exit 2; }
+fi
 
 T=$(mktemp -d /tmp/spm-install.XXXXXX)
 trap 'rm -rf "$T"' EXIT
@@ -25,6 +42,24 @@ export XDG_CONFIG_HOME="$HOME/.config" XDG_DATA_HOME="$HOME/.local/share"
 export XDG_STATE_HOME="$HOME/.local/state" XDG_CACHE_HOME="$HOME/.cache"
 unset XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS DISPLAY WAYLAND_DISPLAY
 mkdir -p "$HOME"
+
+# Installer preflight fixtures: the smoke checks packaging and per-user install
+# behavior, so it must not query a real GPU or require a host CUDA installation.
+# The real binary still uses the real dynamic loader; only these command outputs
+# are simulated. The large-loader-cache regression below overrides ldconfig again.
+mkdir -p "$T/preflight"
+cat >"$T/preflight/nvidia-smi" <<'EOF'
+#!/usr/bin/env bash
+[ "$*" = '--query-gpu=name,driver_version --format=csv,noheader' ] || exit 1
+echo 'NVIDIA GB10, 580.00'
+EOF
+cat >"$T/preflight/ldconfig" <<'EOF'
+#!/usr/bin/env bash
+[ "$*" = '-p' ] || exit 1
+echo 'libcudart.so.13 (libc6,AArch64) => /usr/local/cuda/lib64/libcudart.so.13'
+EOF
+chmod 0755 "$T/preflight/nvidia-smi" "$T/preflight/ldconfig"
+export PATH="$T/preflight:$PATH"
 
 APP=spark-pearl-miner
 VERSION=$(awk '/^\[workspace\.package\]/{p=1;next} /^\[/{p=0} p&&$1=="version"{gsub(/"/,"",$3);print $3;exit}' "$ROOT/Cargo.toml")
@@ -69,9 +104,13 @@ package() {
 
 echo "== packaging"
 if [ "$REAL" -eq 1 ]; then
-  # The real build uses my own toolchain and build cache.
-  HOME="$REAL_HOME" bash "$ROOT/packaging/make-release.sh" --allow-dirty --out "$T/dist1" >"$T/package.log" 2>&1 ||
-    { tail -n 30 "$T/package.log" >&2; fail "make-release.sh (real build)"; }
+  if [ -n "$REAL_BINARY" ]; then
+    package "$T/dist1" "$REAL_BINARY"
+  else
+    # The real build uses my own toolchain and build cache.
+    HOME="$REAL_HOME" bash "$ROOT/packaging/make-release.sh" --allow-dirty --out "$T/dist1" >"$T/package.log" 2>&1 ||
+      { tail -n 30 "$T/package.log" >&2; fail "make-release.sh (real build)"; }
+  fi
 else
   stub "$T/stub1/$APP" one
   package "$T/dist1" "$T/stub1/$APP"

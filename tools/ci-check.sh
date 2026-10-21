@@ -10,6 +10,22 @@ fi
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
 export SPM_GPU_TESTS=0 SPM_NVML_TESTS=0 CUDA_VISIBLE_DEVICES=-1
 
+installer_smoke() {
+  if [ "$(id -u)" -eq 0 ]; then
+    # CUDA's build container is root, but the production installer must stay a
+    # per-user operation. The smoke account receives no credentials or session.
+    runuser -u nobody -- env -i \
+      PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+      HOME=/nonexistent USER=nobody LOGNAME=nobody \
+      LD_LIBRARY_PATH="${CUDA_HOME:-/usr/local/cuda}/lib64" \
+      GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$ROOT" \
+      SPM_GPU_TESTS=0 SPM_NVML_TESTS=0 CUDA_VISIBLE_DEVICES=-1 \
+      bash "$ROOT/tools/test-install.sh" "$@"
+  else
+    bash "$ROOT/tools/test-install.sh" "$@"
+  fi
+}
+
 case "${1:-}" in
   cpu)
     cargo test --locked --workspace --exclude spm-gpu --exclude spm-worker --exclude spark-pearl-miner
@@ -18,7 +34,7 @@ case "${1:-}" in
     (cd tests/fixtures && sha256sum -c --quiet SHA256SUMS)
     python3 -B tools/test-publish-release.py
     python3 -B tools/test-bump-version.py
-    bash tools/test-install.sh
+    installer_smoke
     ;;
   full)
     # Fail instead of silently skipping CUTLASS layout or SASS validation.
@@ -37,9 +53,9 @@ case "${1:-}" in
     bash tools/merge-check.sh
     python3 -B tools/test-publish-release.py
     python3 -B tools/test-bump-version.py
-    bash tools/test-install.sh
-    bash tools/test-install.sh --real
+    installer_smoke
     bash packaging/make-release.sh
+    installer_smoke --real --binary "$CARGO_TARGET_DIR/dist/spark-pearl-miner"
     python3 - <<'PY'
 import json
 from pathlib import Path
