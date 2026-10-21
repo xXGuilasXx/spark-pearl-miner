@@ -6,12 +6,16 @@ fn main() {
     println!("cargo:rerun-if-env-changed=SPM_GIT_COMMIT");
     println!("cargo:rerun-if-changed=build.rs");
     // Re-run when HEAD moves, so an incremental build does not keep the previous commit.
-    if let Some(git_dir) = git_dir() {
-        println!("cargo:rerun-if-changed={}", git_dir.join("HEAD").display());
-        println!("cargo:rerun-if-changed={}", git_dir.join("packed-refs").display());
-        if let Ok(head) = std::fs::read_to_string(git_dir.join("HEAD")) {
+    if let Some(head_path) = git_path("HEAD") {
+        println!("cargo:rerun-if-changed={}", head_path.display());
+        if let Some(packed_refs) = git_path("packed-refs") {
+            println!("cargo:rerun-if-changed={}", packed_refs.display());
+        }
+        if let Ok(head) = std::fs::read_to_string(head_path) {
             if let Some(r) = head.trim().strip_prefix("ref: ") {
-                println!("cargo:rerun-if-changed={}", git_dir.join(r).display());
+                if let Some(reference) = git_path(r) {
+                    println!("cargo:rerun-if-changed={}", reference.display());
+                }
             }
         }
     }
@@ -22,9 +26,10 @@ fn main() {
     println!("cargo:rustc-env=SPM_GIT_COMMIT={}", commit.unwrap_or_else(|| "unknown".into()));
 }
 
-/// The repository's `.git` directory (also right for worktrees), or None outside a checkout.
-fn git_dir() -> Option<std::path::PathBuf> {
-    let out = Command::new("git").args(["rev-parse", "--git-common-dir"]).output().ok()?;
+/// Resolve each Git metadata path separately: worktrees have their own HEAD,
+/// but share branch refs and packed-refs with the common repository directory.
+fn git_path(path: &str) -> Option<std::path::PathBuf> {
+    let out = Command::new("git").args(["rev-parse", "--git-path", path]).output().ok()?;
     if !out.status.success() {
         return None;
     }

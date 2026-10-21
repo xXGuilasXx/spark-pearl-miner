@@ -27,7 +27,28 @@ fi
 echo "== building bench"; cargo build --release -p spm-gpu --features gpu --example bench >/dev/null
 BENCH=$(ls -t "$CARGO_TARGET_DIR"/release/examples/bench 2>/dev/null | head -1)
 echo "== validating sudo (kept alive every 5 min so the cleanup never waits for a password)"; sudo -v
-( while true; do sleep 300; sudo -n true 2>/dev/null || exit; done ) & KEEP=$!
+# The keepalive must never outlive this script: if the parent is SIGKILLed the
+# EXIT/INT/TERM trap below cannot run, and the orphan would otherwise refresh
+# the sudo timestamp every 5 min indefinitely. So the loop pins the script's
+# identity (PID + process start time from /proc, immune to PID reuse) and exits
+# once that process is gone. (A `kill -0 $PPID` guard would NOT work: the
+# orphaned loop is reparented to init, which always answers kill -0.)
+process_start_time() {
+  local stat
+  local -a fields
+  IFS= read -r stat < "/proc/$1/stat" || return 1
+  # comm (field 2) may contain spaces and parentheses; starttime is field 20
+  # after its final closing parenthesis, starting at state (field 3).
+  IFS=' ' read -r -a fields <<< "${stat##*) }"
+  printf '%s\n' "${fields[19]}"
+}
+SOAK_PID=$$; SOAK_START=$(process_start_time "$SOAK_PID")
+soak_alive() { [ "$(process_start_time "$SOAK_PID" 2>/dev/null)" = "$SOAK_START" ]; }
+( while soak_alive; do
+    sleep 300
+    soak_alive || exit
+    sudo -n true 2>/dev/null || exit
+  done ) & KEEP=$!
 echo "== locking SM clock at $MHZ MHz (sudo)"; sudo nvidia-smi -lgc 300,"$MHZ" >/dev/null
 START_UP=$(cut -d' ' -f1 /proc/uptime)
 cleanup() {
