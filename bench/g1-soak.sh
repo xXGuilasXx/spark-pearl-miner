@@ -33,9 +33,21 @@ echo "== validating sudo (kept alive every 5 min so the cleanup never waits for 
 # identity (PID + process start time from /proc, immune to PID reuse) and exits
 # once that process is gone. (A `kill -0 $PPID` guard would NOT work: the
 # orphaned loop is reparented to init, which always answers kill -0.)
-SOAK_PID=$$; SOAK_START=$(cut -d' ' -f22 /proc/$$/stat)
-( while [ "$(cut -d' ' -f22 /proc/$SOAK_PID/stat 2>/dev/null)" = "$SOAK_START" ]; do
-    sleep 300; sudo -n true 2>/dev/null || exit
+process_start_time() {
+  local stat
+  local -a fields
+  IFS= read -r stat < "/proc/$1/stat" || return 1
+  # comm (field 2) may contain spaces and parentheses; starttime is field 20
+  # after its final closing parenthesis, starting at state (field 3).
+  IFS=' ' read -r -a fields <<< "${stat##*) }"
+  printf '%s\n' "${fields[19]}"
+}
+SOAK_PID=$$; SOAK_START=$(process_start_time "$SOAK_PID")
+soak_alive() { [ "$(process_start_time "$SOAK_PID" 2>/dev/null)" = "$SOAK_START" ]; }
+( while soak_alive; do
+    sleep 300
+    soak_alive || exit
+    sudo -n true 2>/dev/null || exit
   done ) & KEEP=$!
 echo "== locking SM clock at $MHZ MHz (sudo)"; sudo nvidia-smi -lgc 300,"$MHZ" >/dev/null
 START_UP=$(cut -d' ' -f1 /proc/uptime)
