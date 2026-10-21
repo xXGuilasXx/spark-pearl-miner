@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
+  SPM_GPU_TESTS: '0'
+  SPM_NVML_TESTS: '0'
+  CUDA_VISIBLE_DEVICES: '-1'
+
+jobs:
+  cpu:
+    name: CPU checks
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out the exact revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Prepare host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential pkg-config python3 curl ca-certificates
+      - name: Install the pinned Rust toolchain
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+          fi
+          export PATH="$HOME/.cargo/bin:$PATH"
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]["channel"])')
+          rustup toolchain install "$version" --profile minimal --component clippy --component rustfmt
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Run the CPU gate
+        run: tools/ci-check.sh cpu
+
+  package:
+    name: ARM64 CUDA package
+    needs: cpu
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    container:
+      image: nvidia/cuda:13.0.2-devel-ubuntu24.04@sha256:5dc1bca23d05bd37b011be68ec470c03b403a5da07ec3a86e41af9470e9d0cc6
+    defaults:
+      run:
+        shell: bash
+    env:
+      CUDA_HOME: /usr/local/cuda
+      NVCC: /usr/local/cuda/bin/nvcc
+      SPM_CUDA_ARCH: sm_121a
+    steps:
+      - name: Prepare host tools
+        run: |
+          apt-get update
+          apt-get install --no-install-recommends -y git curl ca-certificates build-essential python3 pkg-config
+      - name: Check out the exact revision and CUTLASS headers
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Install the pinned Rust toolchain
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+          export PATH="$HOME/.cargo/bin:$PATH"
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]["channel"])')
+          rustup toolchain install "$version" --profile minimal --component clippy --component rustfmt
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Test all host paths and build the ARM64 package
+        run: tools/ci-check.sh full
+      - name: Keep the tested package for the release workflow
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-linux-aarch64
+          path: |
+            dist/spark-pearl-miner-*-linux-aarch64.tar.gz
+            dist/SHA256SUMS
+            dist/RELEASE-METADATA.json
+          if-no-files-found: error
+          retention-days: 7

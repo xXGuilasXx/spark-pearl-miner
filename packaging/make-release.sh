@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the release tarball and its SHA256SUMS on the DGX Spark (aarch64). It never uploads or
+# Builds the release tarball and its SHA256SUMS on Linux ARM64 (a Spark or a CI runner). It never uploads or
 # pushes anything: at the end it prints the `gh release create` command for me to run.
 #
 #   packaging/make-release.sh                  # build --profile dist, stage, pack into dist/
@@ -72,7 +72,7 @@ NAME="$APP-$VERSION-linux-aarch64"
 TARBALL="$NAME.tar.gz"
 
 if [ -z "$BINARY" ]; then
-  [ "$(uname -m)" = aarch64 ] || die "release binaries are built on the DGX Spark (aarch64)"
+  [ "$(uname -m)" = aarch64 ] || die "release binaries require a Linux ARM64 (aarch64) build environment"
   NVCC=${NVCC:-}
   if [ -z "$NVCC" ]; then
     if command -v nvcc >/dev/null 2>&1; then NVCC=$(command -v nvcc); else NVCC=/usr/local/cuda/bin/nvcc; fi
