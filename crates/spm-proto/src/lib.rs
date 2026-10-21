@@ -59,6 +59,25 @@ impl Dialect {
     }
 }
 
+/// The proof encoding in force once the pool answers the authorize request.
+///
+/// Kryptex offers its gzip session by echoing `type: "v2"` in the ack; when it
+/// does not offer it, it answers without `type` and the session falls back to
+/// plain proofs by itself (the contract `dialect_for_host` documents). Only an
+/// explicit `"v2"` selects gzip and only an explicit `"plain"` selects plain;
+/// any other answer leaves the current encoding alone — except for KryptexV2,
+/// whose pre-auth default is gzip, so a missing or unrecognised answer must
+/// reset it to plain, or every proof goes out gzipped to a pool that never
+/// agreed to that and rejects them all.
+pub fn encoding_after_auth(dialect: Dialect, proof_type: Option<&str>, current: ProofEncoding) -> ProofEncoding {
+    match proof_type {
+        Some("v2") => ProofEncoding::Gzip,
+        Some("plain") => ProofEncoding::Plain,
+        _ if dialect == Dialect::KryptexV2 => ProofEncoding::Plain,
+        _ => current,
+    }
+}
+
 /// A parsed `mining.notify`. Fields are identical across the object and kryptex dialects.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Job {
@@ -399,6 +418,22 @@ pub fn classify_reject(reason: &str) -> RejectKind {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn auth_ack_selects_the_proof_encoding() {
+        // Kryptex echoing "v2" keeps the gzip session it offered.
+        assert_eq!(encoding_after_auth(Dialect::KryptexV2, Some("v2"), ProofEncoding::Gzip), ProofEncoding::Gzip);
+        // An explicit "plain" answer selects plain for every dialect.
+        assert_eq!(encoding_after_auth(Dialect::KryptexV2, Some("plain"), ProofEncoding::Gzip), ProofEncoding::Plain);
+        // No `type` in the ack means Kryptex does not offer v2: the session
+        // must fall back to plain by itself, not keep the pre-auth gzip
+        // default (every proof would be rejected by that pool).
+        assert_eq!(encoding_after_auth(Dialect::KryptexV2, None, ProofEncoding::Gzip), ProofEncoding::Plain);
+        assert_eq!(encoding_after_auth(Dialect::KryptexV2, Some("v3"), ProofEncoding::Gzip), ProofEncoding::Plain);
+        // Other dialects start at plain and a missing answer changes nothing.
+        assert_eq!(encoding_after_auth(Dialect::Kryptex, None, ProofEncoding::Plain), ProofEncoding::Plain);
+        assert_eq!(encoding_after_auth(Dialect::Object, None, ProofEncoding::Plain), ProofEncoding::Plain);
+    }
 
     #[test]
     fn frames_have_fixed_member_order() {

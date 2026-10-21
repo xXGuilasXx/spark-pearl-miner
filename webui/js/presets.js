@@ -8,7 +8,7 @@ function hero(region, label, verified = false) {
 }
 
 export const PRESETS = [
-  { id: 'kryptex', name: 'Kryptex', host: 'prl-br.kryptex.network', port: 8048, tls: 'on', dialect: 'kryptex', jsonrpc: 'auto', verified: true },
+  { id: 'kryptex', name: 'Kryptex', host: 'prl-br.kryptex.network', port: 8048, tls: 'on', dialect: 'kryptex-v2', jsonrpc: 'auto', verified: true },
   hero('br', 'BR', true),
   { id: 'lucky-br', name: 'LuckyPool BR', host: 'pearl-br.luckypool.io', port: 3360, tls: 'pinned', spki_pin: LUCKY_PIN, dialect: 'object', jsonrpc: 'on', verified: true },
   hero('us', 'US'),

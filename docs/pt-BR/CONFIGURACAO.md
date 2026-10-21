@@ -288,7 +288,7 @@ A ordem é a prioridade: a primeira entrada é a pool 1. Uma quarta entrada é r
 | `port` | – | 1–65535 |
 | `tls` | `"auto"` | `auto` (TLS primeiro; TCP simples só quando o servidor não fala TLS, nunca depois de um erro de certificado; o resultado fica guardado por `host:porta` por 7 dias), `on`, `off`, `pinned` (TLS conferido só contra o `spki_pin`, para pools autoassinadas) |
 | `spki_pin` | – | SHA-256 em base64 da chave pública do servidor; só com `tls = "pinned"` |
-| `dialect` | `"auto"` | `auto` (hosts da Kryptex → `kryptex`, o resto → `object`), `object` (HeroMiners, LuckyPool), `kryptex`, `kryptex-v2` (provas em gzip; não confirmado ao vivo) |
+| `dialect` | `"auto"` | `auto` (hosts da Kryptex → `kryptex-v2`, o resto → `object`), `object` (HeroMiners, LuckyPool), `kryptex`, `kryptex-v2` (provas em gzip, como a Kryptex pede; volta para plain sozinho) |
 | `jsonrpc` | `"auto"` | acrescenta `"jsonrpc":"2.0"` às requisições: `auto` (ligado para `*.luckypool.io`, padrão do dialeto nos outros), `on`, `off` |
 | `proof` | `"auto"` | codificação da prova: `auto` (começa com `plain_proof`, troca depois de 3 rejeições de formato e guarda o campo que funcionou por pool), `plain`, `zstd` (`plain_proof_zst`) |
 | `password` | `"x"` | senha do stratum, até 64 caracteres imprimíveis (a Kryptex aceita também `d=<N>`) |
@@ -301,7 +301,7 @@ as chaves dela):
 
 | Predefinição | Host:porta | TLS | Dialeto / jsonrpc | Situação |
 |---|---|---|---|---|
-| Kryptex | `prl-br.kryptex.network:8048` | on | kryptex / auto | verificada ao vivo, pool 1 padrão |
+| Kryptex | `prl-br.kryptex.network:8048` | on | kryptex-v2 / auto | verificada ao vivo, pool 1 padrão |
 | HeroMiners BR | `br.pearl.herominers.com:1200` | auto | auto / auto | verificada ao vivo, pool 2 padrão |
 | LuckyPool BR | `pearl-br.luckypool.io:3360` | pinned `d0ehDQxaU5IUv4UHWXItQKqdJ8anqZclQXcoIjwF/mk=` | object / on | verificada ao vivo, pool 3 padrão |
 | HeroMiners US / US2 / DE / FR | `{us,us2,de,fr}.pearl.herominers.com:1200` | auto | auto / auto | não verificada |
