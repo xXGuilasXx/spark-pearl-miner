@@ -756,6 +756,21 @@ fn cert_version_4_pauses_with_update_required() {
 }
 
 #[test]
+fn cert_version_omitted_pauses_with_update_required() {
+    let mut sim = Sim::new(pools(3), vec![]);
+    sim.start();
+    sim.run_until(secs(10));
+    assert!(sim.gpu);
+    sim.pools[0].cert_version = None; // the pool omits cert_version; treat as unsupported
+    sim.run_until(secs(31));
+    assert_eq!(sim.manager(), ManagerState::Paused { reason: PauseReason::UnsupportedScheme });
+    assert!(!sim.gpu);
+    assert!(sim.alerts().iter().any(|m| m.contains(UPDATE_REQUIRED_ALERT)));
+    assert!(sim.state.is_unsupported(P1));
+    assert!(SlotId::all().all(|s| !sim.slot(s).is_open()));
+}
+
+#[test]
 fn cert_version_4_on_a_probe_only_disables_that_slot() {
     let mut sim = Sim::new(pools(2), vec![FakePool::refusing()]);
     sim.start();

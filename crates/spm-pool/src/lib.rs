@@ -438,7 +438,8 @@ pub enum Event {
     Authorized { slot: SlotId },
     /// Authorize rejected (bad wallet/worker): the slot becomes a config error.
     AuthRejected { slot: SlotId, msg: String },
-    /// A `mining.notify`. `cert_version: None` means the pool omits it (assume V3).
+    /// A `mining.notify`. `cert_version: None` means the pool omits it (treated
+    /// as unsupported — an "update required" alert is raised, like for `>= 4`).
     JobReceived { slot: SlotId, job_id: String, cert_version: Option<u32> },
     /// A submit was accepted.
     ShareAccepted { slot: SlotId },
@@ -1200,7 +1201,7 @@ impl State {
         if !accepts_jobs {
             return;
         }
-        if cert_version.unwrap_or(SUPPORTED_CERT_VERSION) != SUPPORTED_CERT_VERSION {
+        if cert_version != Some(SUPPORTED_CERT_VERSION) {
             self.on_unsupported(i, cert_version, now, out);
             return;
         }
