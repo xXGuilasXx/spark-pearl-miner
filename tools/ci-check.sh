@@ -9,6 +9,17 @@ if [ -f "$HOME/.cargo/env" ]; then
 fi
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
 export SPM_GPU_TESTS=0 SPM_NVML_TESTS=0 CUDA_VISIBLE_DEVICES=-1
+# Keep trust scoped to this checkout and this process. Reading a Docker Desktop
+# bind mount as the smoke account can otherwise leave cached ownership that Git
+# rejects in the parent process, even when the smoke never writes the index.
+ci_git_config_count=${GIT_CONFIG_COUNT:-0}
+case "$ci_git_config_count" in
+  *[!0-9]* | '') echo 'error: GIT_CONFIG_COUNT must be a non-negative integer' >&2; exit 1 ;;
+esac
+ci_git_config_count=$((10#$ci_git_config_count))
+export "GIT_CONFIG_KEY_$ci_git_config_count=safe.directory" "GIT_CONFIG_VALUE_$ci_git_config_count=$ROOT"
+export GIT_CONFIG_COUNT=$((ci_git_config_count + 1))
+unset ci_git_config_count
 
 installer_smoke() {
   if [ "$(id -u)" -eq 0 ]; then
@@ -19,6 +30,7 @@ installer_smoke() {
       HOME=/nonexistent USER=nobody LOGNAME=nobody \
       LD_LIBRARY_PATH="${CUDA_HOME:-/usr/local/cuda}/lib64" \
       GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$ROOT" \
+      GIT_OPTIONAL_LOCKS=0 \
       SPM_GPU_TESTS=0 SPM_NVML_TESTS=0 CUDA_VISIBLE_DEVICES=-1 \
       bash "$ROOT/tools/test-install.sh" "$@"
   else
