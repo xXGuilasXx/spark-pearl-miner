@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions: {}
+
+# A newer successful CI run cannot publish over a release already being finalized.
+concurrency:
+  group: publish-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'xXGuilasXx/spark-pearl-miner' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+      attestations: write
+      id-token: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_COMMIT: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Check out the commit that passed CI
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # pinned releases/v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Download the artifact from that CI run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-linux-aarch64
+          path: release-artifact
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Validate artifact and prepare the draft
+        id: prepare
+        run: >-
+          python3 -B tools/publish-release.py prepare
+          --artifact-dir release-artifact
+          --expected-commit "$RELEASE_COMMIT"
+          --state "$RUNNER_TEMP/spm-release-state.json"
+
+      - name: Attest the validated ARM64 tarball
+        if: steps.prepare.outputs.should_publish == 'true'
+        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2.2.0
+        with:
+          subject-path: release-artifact/*.tar.gz
+
+      - name: Publish the complete release
+        if: steps.prepare.outputs.should_publish == 'true'
+        run: >-
+          python3 -B tools/publish-release.py publish
+          --artifact-dir release-artifact
+          --expected-commit "$RELEASE_COMMIT"
+          --state "$RUNNER_TEMP/spm-release-state.json"
+
+      - name: Remove an unpublished draft after failure
+        if: failure() && steps.prepare.outputs.release_id != ''
+        run: >-
+          python3 -B tools/publish-release.py cleanup
+          --artifact-dir release-artifact
+          --expected-commit "$RELEASE_COMMIT"
+          --state "$RUNNER_TEMP/spm-release-state.json"

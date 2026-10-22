@@ -6,7 +6,7 @@ patrocínio ou endosso da NVIDIA ou da Pearl Research Labs.
 _English: [README.md](README.md)_
 
 > **Status:** minerando em pools da mainnet (Kryptex, HeroMiners BR, LuckyPool BR) com shares
-> aceitas · pré-lançamento **0.1.0-alpha.2**.
+> aceitas · pré-lançamento **0.1.0-alpha.3**.
 
 ## Por quê
 
@@ -193,6 +193,7 @@ Para usuários: [Manual (ilustrado)](docs/pt-BR/MANUAL.md) · [Configuração](d
 
 As capturas de tela são geradas de novo com `tools/screenshots.sh`; o instalador é testado com
 `tools/test-install.sh`, e os tarballs de release são gerados com `packaging/make-release.sh`.
+O [guia de lançamentos](docs/pt-BR/LANCAMENTOS.md) explica as versões, os testes de CI e a publicação automática.
 
 ## Licença
 Apache-2.0 — veja [LICENSE](LICENSE) e [NOTICE](NOTICE) (ISC: Pearl Research Labs e The Decred developers; BSD-3: NVIDIA CUTLASS).
