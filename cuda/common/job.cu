@@ -13,16 +13,28 @@
 #include "spm_cuda.h"
 
 #include "../gemm/gemm_tma.cuh"
+#include "../gemm/gemm_umma.cuh"
 #include "../prep/prep.cuh"
 #include "blake3.cuh"
 #include "splitmix.cuh"
 
 static_assert(sizeof(spm_hit_t) == sizeof(spm::gemm::HitRecord), "hit record layout");
 static_assert(spm::gemm::DUMP_WORDS * 4 == 104, "dump record is TileResult::dump_bytes (104 bytes)");
+static_assert(sizeof(spm_hit_t) == sizeof(spm::umma::HitRecord5), "gen5 hit record layout");
+static_assert(spm::umma::DUMP_WORDS * 4 == 104, "gen5 dump record is 104 bytes");
 
 namespace {
 
 thread_local int32_t g_last_cuda_error = 0;
+
+// GEN5_MINE=1 selects the 5th-generation 2SM UMMA kernel (sm_110a) for the GEMM+hash stage.
+bool gen5_enabled() {
+  static const bool on = [] {
+    const char* v = getenv("GEN5_MINE");
+    return v != nullptr && v[0] != '\0' && v[0] != '0';
+  }();
+  return on;
+}
 
 constexpr uint64_t kDefaultBudget = 2ull << 30;
 constexpr uint32_t kDefaultHitCapacity = 4096;
@@ -416,6 +428,7 @@ int32_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
   cudaFuncAttributes attr;
   e = spm::gemm::gemm_hash_s8_attributes(&attr);
   if (e == cudaSuccess) e = spm::gemm::configure_gemm_hash_s8();
+  if (e == cudaSuccess && gen5_enabled()) e = spm::umma::configure_gemm_hash_s8_umma();
   if (e != cudaSuccess) return fail(fail_cuda(e));
 
   // Highest stream priority for the chunks: the A-side builds of spm_job_prepare_attempt run on a
@@ -558,8 +571,58 @@ cudaError_t enqueue_chunk(spm_job* j) {
   const uint64_t left = j->tiles_total - begin;
   const uint64_t cap = std::max<uint32_t>(1, j->chunk_tiles);
   const uint64_t pieces = std::max<uint64_t>(1, (left + cap - 1) / cap);
-  const uint32_t end = begin + (uint32_t)((left + pieces - 1) / pieces);
+  uint32_t end = begin + (uint32_t)((left + pieces - 1) / pieces);
   const uint32_t slot = (j->head + j->count) % kPipeline;
+
+  if (gen5_enabled()) {
+    // GEN5 (2SM UMMA): cluster tiles pair CTA rows (2r, 2r+1), so chunk boundaries stay even and
+    // the bookkeeping advances by the even end (the odd tiles_total tail keeps its odd end; the
+    // trailing cluster tile's out-of-range half is zero-filled by TMA and its hash tiles skipped).
+    uint32_t end5 = end + (end & 1u);
+    if (end5 > j->tiles_total) end5 = j->tiles_total;
+    const uint32_t cbegin = begin >> 1;
+    const uint32_t cend = (end5 + 1u) >> 1;
+    const uint32_t ncl = std::min<uint32_t>(j->ctas / 2u, cend - cbegin);
+
+    spm::umma::Params5 pm5;
+    memset(&pm5, 0, sizeof(pm5));
+    pm5.m = j->m;
+    pm5.n = j->n;
+    pm5.k_slices = j->k_slices;
+    pm5.k_total = j->k;
+    pm5.ctiles_m = (j->m + 2u * spm::gemm::BM - 1) / (2u * spm::gemm::BM);
+    pm5.ctiles_n = j->tiles_n;
+    pm5.swizzle = std::max<uint32_t>(1u, j->band / 2u);
+    pm5.tile_begin = cbegin;
+    pm5.tile_end = cend;
+    pm5.status = j->counters + 2 * slot + 1;
+    pm5.abort_flag = j->abort_flag->dev;
+    memcpy(pm5.key, j->key, sizeof(pm5.key));
+    memcpy(pm5.bound, j->bound, sizeof(pm5.bound));
+    pm5.dump = j->dump;
+    pm5.dump_row_stride = j->n / 16;
+    pm5.hits = reinterpret_cast<spm::umma::HitRecord5*>(j->hits);
+    pm5.hit_count = j->counters + kCounterHits;
+    pm5.hit_capacity = j->hit_capacity;
+    pm5.a_ptr = j->a_noised;
+    pm5.b_ptr = j->bt_noised;
+
+    cudaError_t e = cudaMemsetAsync(j->counters + 2 * slot, 0, 2 * sizeof(uint32_t), j->stream);
+    if (e == cudaSuccess) e = cudaEventRecord(j->ev_begin[slot], j->stream);
+    if (e == cudaSuccess)
+      e = spm::umma::launch_gemm_hash_s8_umma(pm5, ncl * 2u, j->stream);
+    if (e == cudaSuccess)
+      e = cudaMemcpyAsync(j->h_status + slot, pm5.status, sizeof(uint32_t), cudaMemcpyDeviceToHost, j->stream);
+    if (e == cudaSuccess) e = cudaEventRecord(j->ev_end[slot], j->stream);
+    if (e != cudaSuccess) return e;
+    j->inflight[slot].begin = begin;
+    j->inflight[slot].end = end5;
+    j->inflight[slot].grid = ncl * 2u;
+    j->count += 1;
+    j->enqueue_tile = end5;
+    return cudaSuccess;
+  }
+
   const uint32_t grid = std::min<uint32_t>(j->ctas, end - begin);
 
   spm::gemm::Params prm;
@@ -642,6 +705,11 @@ int32_t spm_job_run_chunk(spm_job_t* j, spm_chunk_info_t* info) {
   const uint32_t status = j->h_status[slot];
   j->head = (j->head + 1) % kPipeline;
   j->count -= 1;
+  if (status & spm::umma::STATUS_BADMODEL) {
+    // GEN5 static-coordinate self-check failed: kernel and layout disagree, results untrustworthy.
+    drain(j);
+    return SPM_E_SHAPE;
+  }
   if (info != nullptr) {
     info->tile_begin = c.begin;
     info->tile_end = c.end;
@@ -743,11 +811,19 @@ int32_t spm_job_info(const spm_job_t* j, spm_job_info_t* out) {
   out->ctas = j->ctas;
   out->chunk_tiles = j->chunk_tiles;
   cudaFuncAttributes attr;
-  if (spm::gemm::gemm_hash_s8_attributes(&attr) != cudaSuccess) return fail_cuda(cudaGetLastError());
+  if (gen5_enabled()) {
+    if (spm::umma::gemm_hash_s8_umma_attributes(&attr) != cudaSuccess)
+      return fail_cuda(cudaGetLastError());
+    out->smem_bytes = spm::umma::SMEM_BYTES_5;
+    out->threads = spm::umma::THREADS;
+  } else {
+    if (spm::gemm::gemm_hash_s8_attributes(&attr) != cudaSuccess)
+      return fail_cuda(cudaGetLastError());
+    out->smem_bytes = spm::gemm::SMEM_BYTES;
+    out->threads = spm::gemm::THREADS;
+  }
   out->regs_per_thread = (uint32_t)attr.numRegs;
   out->local_bytes = (uint32_t)attr.localSizeBytes;
-  out->smem_bytes = spm::gemm::SMEM_BYTES;
-  out->threads = spm::gemm::THREADS;
   return SPM_OK;
 }
 
