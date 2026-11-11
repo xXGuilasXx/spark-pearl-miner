@@ -80,7 +80,9 @@ impl Options {
             stats_every: Duration::from_secs(1),
             canary_hits: 8,
             signals: true,
-            memory_guard: true,
+            // SPM_MEMORY_GUARD_OFF=1: the 22 GiB MemAvailable assumption does not hold on DRIVE
+            // OS boards (the reserved hugepage pool caps MemAvailable); restores the Thor switch.
+            memory_guard: !std::env::var("SPM_MEMORY_GUARD_OFF").is_ok_and(|v| v == "1"),
             telemetry: true,
             nonce_start: None,
         }

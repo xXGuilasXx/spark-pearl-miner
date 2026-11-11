@@ -95,8 +95,19 @@ impl DaemonOptions {
             api_port_override: None,
             control_socket: true,
             telemetry: true,
-            governor: TelemetryChoice::Auto,
-            memory: Some(MemorySource::proc()),
+            // SPM_GOVERNOR_OFF=1 / SPM_MEMORY_GUARD_OFF=1: the DGX Spark assumptions (NVML present,
+            // 22 GiB MemAvailable headroom) do not hold on DRIVE OS boards (no NVML; the reserved
+            // hugepage pool caps MemAvailable). Restores the switches the Thor deployment used.
+            governor: if std::env::var("SPM_GOVERNOR_OFF").is_ok_and(|v| v == "1") {
+                TelemetryChoice::Off
+            } else {
+                TelemetryChoice::Auto
+            },
+            memory: if std::env::var("SPM_MEMORY_GUARD_OFF").is_ok_and(|v| v == "1") {
+                None
+            } else {
+                Some(MemorySource::proc())
+            },
             logs,
             events,
         }
