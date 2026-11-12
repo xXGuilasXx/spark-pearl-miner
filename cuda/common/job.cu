@@ -407,13 +407,35 @@ int32_t spm_job_create(const spm_job_params_t* params, spm_job_t** out) {
     j->chunk_tiles = p.chunk_tiles;
   } else {
     const double tile_macs = (double)spm::gemm::BM * spm::gemm::BN * (double)(j->k_slices * spm::gemm::SLICE_K);
-    const double ceiling = std::floor(kChunkCeilingUs * kClockFloorMhz * kFloorMacPerClkPerSm / tile_macs);
-    j->max_chunk_tiles = (uint32_t)std::min<double>(
-        UINT32_MAX, std::max<double>(kMinTilesPerCta, ceiling) * j->ctas);
-    // First guess: 1 T-MAC/s per SM (below the measured ~1.8), adapted after every chunk.
-    const double tile_us = tile_macs / 1e6;
-    const double per_cta = std::max<double>(kMinTilesPerCta, (double)j->target_chunk_us / tile_us);
-    j->chunk_tiles = (uint32_t)std::min<double>(per_cta * j->ctas, j->max_chunk_tiles);
+    if (gen5_enabled()) {
+      // GEN5 (2SM UMMA): the gen4-calibrated constants above (1800 MHz clock floor x 560
+      // MAC/clk/SM) cap chunks at 840 CTA tiles ~ 1.1 ms of gen5 kernel time, so the fixed
+      // per-chunk cost (cluster launch, TMEM alloc, pipeline init, tail wave, host round
+      // trip) eats 40-60% of the wall clock. Re-derive the ceiling from the measured
+      // whole-kernel rate (Thor, 14 SM @ 1.53 GHz pinned, 2026-11-12: 100.5 T-MAC/s) with a
+      // 30% slowdown margin. The GEN5 abort contract is chunk-bounded (status-only abort,
+      // gemm_umma.cuh): the worst-case cancel latency becomes ~2 chunks x 8 ms — a
+      // documented deviation from the stock single-chunk <=10 ms rule (dedicated board,
+      // no co-resident compute; deviation approved 2026-11-13).
+      double tmacs = 100.5;
+      if (const char* v = getenv("SPM_GEN5_TMACS")) tmacs = atof(v);  // experiment override
+      const double per_sm_tmacs = tmacs * 0.70 / (double)j->ctas;
+      const double ceiling = std::floor(kChunkCeilingUs * 1e-6 * per_sm_tmacs * 1e12 / tile_macs);
+      j->max_chunk_tiles = (uint32_t)std::min<double>(
+          UINT32_MAX, std::max<double>(kMinTilesPerCta, ceiling) * j->ctas);
+      // First guess at the measured rate (the EMA below keeps adapting per chunk).
+      const double tile_us = tile_macs / (tmacs * 1e12 / (double)j->ctas);
+      const double per_cta = std::max<double>(kMinTilesPerCta, (double)j->target_chunk_us / tile_us);
+      j->chunk_tiles = (uint32_t)std::min<double>(per_cta * j->ctas, j->max_chunk_tiles);
+    } else {
+      const double ceiling = std::floor(kChunkCeilingUs * kClockFloorMhz * kFloorMacPerClkPerSm / tile_macs);
+      j->max_chunk_tiles = (uint32_t)std::min<double>(
+          UINT32_MAX, std::max<double>(kMinTilesPerCta, ceiling) * j->ctas);
+      // First guess: 1 T-MAC/s per SM (below the measured ~1.8), adapted after every chunk.
+      const double tile_us = tile_macs / 1e6;
+      const double per_cta = std::max<double>(kMinTilesPerCta, (double)j->target_chunk_us / tile_us);
+      j->chunk_tiles = (uint32_t)std::min<double>(per_cta * j->ctas, j->max_chunk_tiles);
+    }
   }
 
   if (p.abort_flag != nullptr) {
