@@ -181,8 +181,13 @@ gemm_hash_umma_kernel(const __grid_constant__ Params5 p) {
         acc_pipeline.consumer_wait(acc_cons);
         Tensor tDtS = thr_t2r.partition_S(tAcc(_, _, _, acc_cons.index()));
         if (s != 0) fold_bar.arrive_and_wait();  // last slice's owner reads are done
+#ifdef SPM_STEP2_UNIQ
+        // Step2 unique-slot: every slot is overwritten by exactly one thread per slice — no
+        // zeroing pass needed (folds the two gstart barriers into one).
+#else
         shared.fold_part[epi_tid] = 0u;
         fold_bar.arrive_and_wait();
+#endif
         uint32_t part[4];
 #pragma unroll
         for (int q = 0; q < 4; ++q) part[q] = 0u;
@@ -201,11 +206,17 @@ gemm_hash_umma_kernel(const __grid_constant__ Params5 p) {
             part[q] ^= __shfl_xor_sync(0xffffffffu, part[q], 8);
             part[q] ^= __shfl_xor_sync(0xffffffffu, part[q], 16);
           }
-          // one representative atomic per group (laneid < 8); slot base = HR*16 + 4*blk (static).
+          // one representative per group (laneid < 8); slot base = HR*16 + 4*blk (static).
           if (laneid < 8) {
 #pragma unroll
             for (int q = 0; q < 4; ++q)
+#ifdef SPM_STEP2_UNIQ
+              // Step2: slot = (warp, tt, q, g=laneid) — g=laneid is HR&7 (wm is encoded by the
+              // warp index); sole writer per slot, so a plain store is race-free.
+              shared.fold_slots[warp_idx * 128u + tt * 32u + q * 8u + laneid] = part[q];
+#else
               atomicXor(&shared.fold_part[slot_base[tt] + q], part[q]);
+#endif
           }
         }
         fold_bar.arrive_and_wait();
@@ -215,7 +226,23 @@ gemm_hash_umma_kernel(const __grid_constant__ Params5 p) {
           const uint32_t t_rows = tm * 256 + cluster_rank * 128 + 64u * (HR >> 3) + (HR & 7u);
           const uint32_t t_cols = tn * 256 + 64u * ((HC >> 2) & 3u) + 2u * (HC & 3u);
           if (t_rows < p.m && t_cols < p.n) {  // 64-multiple shapes: t_rows < m <=> tile fully in
+#ifdef SPM_STEP2_UNIQ
+            // Step2 gather: fold = XOR of exactly 4 slots — row pair w in {2wm, 2wm+1} shifted by
+            // the column half 4*(wn>>1), column pair tt in {2*(wn&1), 2*(wn&1)+1}, q = HC&3,
+            // g = HR&7. The barrier above orders every store before these plain loads.
+            const uint32_t wm = HR >> 3, hr = HR & 7u;
+            const uint32_t wn = HC >> 2, qo = HC & 3u;
+            const uint32_t w_base = 2u * wm + 4u * (wn >> 1);
+            const uint32_t tt_base = 2u * (wn & 1u);
+            uint32_t fold = 0;
+#pragma unroll
+            for (int dw = 0; dw < 2; ++dw)
+#pragma unroll
+              for (int dtt = 0; dtt < 2; ++dtt)
+                fold ^= shared.fold_slots[(w_base + dw) * 128u + (tt_base + dtt) * 32u + qo * 8u + hr];
+#else
             const uint32_t fold = shared.fold_part[HR * 16u + HC];
+#endif
             uint32_t* my_t = &shared.t_circ[epi_tid * 17];
             const uint32_t head = s & 15u;
             const uint32_t old = (s < 16u) ? 0u : my_t[head];  // first pass has no predecessor

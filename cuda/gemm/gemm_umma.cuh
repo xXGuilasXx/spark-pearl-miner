@@ -126,9 +126,20 @@ struct SharedStorage5 {
   } pipelines;
   typename CollectiveMainloop::TensorStorage tensors;
   uint32_t tmem_base_ptr;
+#ifdef SPM_STEP2_UNIQ
+  // Step2 unique-slot fold: slot = (warp, tt, q, g=lane<8) — 1024 words, every slot overwritten
+  // by exactly one thread per slice (plain store, no atomics, no zeroing); the owner gathers
+  // exactly 4 slots (row pair {2wm,2wm+1} x col pair {2wn,2wn+1}). Bit-exact vs. the atomic
+  // fold (board-verified on the standalone kernel, 2026-11-13).
+  uint32_t fold_slots[1024];
+#else
   uint32_t fold_part[256];       // per slice: fold of hash tile (HR,HC) (atomic XOR)
+#endif
   uint32_t t_circ[256 * 17];     // per-thread transcript circular slots (stride 17: banks)
 };
+
+// sm_110a/101a per-CTA dynamic smem limit (227 KB): layout changes must pass this gate at compile
+static_assert(sizeof(SharedStorage5) <= 232448, "SharedStorage5 over smem limit");
 
 // Cluster-tile raster: bands of `swizzle` cluster rows, column-major inside a band (the L2 sweet
 // spot measured at 253.9 T for the pure GEMM engine and kept for the mining kernel).
