@@ -308,8 +308,14 @@ cudaError_t launch_gemm_hash_s8_umma(Params5 p, uint32_t grid, cudaStream_t stre
       cute::make_stride(int64_t(p.k_total), Int<1>{}, int64_t(p.n) * p.k_total)};
   p.cutlass_params = CollectiveMainloop::to_underlying_arguments(
       make_shape(p.m, p.n, p.k_total, 1), cargs, nullptr, cutlass::KernelHardwareInfo{});
+  // cuda_stream MUST carry the job stream: without it the kernel lands on the default stream,
+  // so every event/status/memcpy on the job stream decouples from the running kernel (chunk
+  // timings collapse to launch latency, prep kernels starve against the mining kernel, the
+  // 10 ms cancellation contract breaks). Found via the worker's attempt decomposition
+  // (kernel_ms 0.87 vs wall_ms 1403 per attempt, 2026-11-13).
   const cutlass::Status st = cutlass::launch_kernel_on_cluster(
-      cutlass::ClusterLaunchParams{dim3(grid), dim3(THREADS), dim3(2, 1, 1), (int)SMEM_BYTES_5},
+      cutlass::ClusterLaunchParams{dim3(grid), dim3(THREADS), dim3(2, 1, 1), (int)SMEM_BYTES_5,
+                                   stream},
       (const void*)&gemm_hash_umma_kernel, p);
   return st == cutlass::Status::kSuccess ? cudaSuccess : cudaErrorUnknown;
 }
