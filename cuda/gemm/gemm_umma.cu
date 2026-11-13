@@ -76,6 +76,15 @@ gemm_hash_umma_kernel(const __grid_constant__ Params5 p) {
     cute::TMEM::Allocator2Sm tmem_allocator{};
     // tcgen05.alloc requires a single fully-active warp as the issuer.
     tmem_allocator.allocate(cute::TMEM::Sm100TmemCapacityColumns, &shared.tmem_base_ptr);
+#ifdef SPM_D2_SYNCWARP
+    __syncwarp();  // D2 (WEDGE-AUDIT §3, stock parity): post-alloc warp hygiene
+#endif
+#ifdef SPM_D3_RENDEZVOUS
+    // D3: init the dealloc rendezvous barrier (32 = this CTA's MMA warp) before any use;
+    // fence makes the init cluster-visible ahead of the teardown rendezvous.
+    if ((threadIdx.x & 31) == 0) shared.tmem_dealloc_bar.init(32);
+    cutlass::arch::fence_barrier_init();
+#endif
     cutlass::arch::NamedBarrier tmem_bar(EPI_THREADS + 32, cutlass::arch::ReservedNamedBarriers::TmemAllocBarrier);
     tmem_bar.arrive_and_wait();
     const uint32_t tmem_base = shared.tmem_base_ptr;
@@ -121,6 +130,15 @@ gemm_hash_umma_kernel(const __grid_constant__ Params5 p) {
     cutlass::arch::NamedBarrier epi_done_bar(EPI_THREADS + 32, (cutlass::arch::ReservedNamedBarriers)(int(cutlass::arch::ReservedNamedBarriers::FirstUserBarrier) + 1));
     epi_done_bar.arrive_and_wait();
     tmem_allocator.release_allocation_lock();
+#ifdef SPM_D3_RENDEZVOUS
+    // D3 (stock sm100_gemm_tma_warpspecialized L791-800 parity): peer-MMA rendezvous before
+    // free — leader does wait+arrive, follower arrive+wait; neither frees while the peer's
+    // TMEM might still be read by its epilogue.
+    const uint32_t peer_rank = cluster_rank ^ 1u;  // 2x1 cluster: the peer CTA
+    shared.tmem_dealloc_bar.arrive(peer_rank, !is_leader);
+    shared.tmem_dealloc_bar.wait(0u);
+    shared.tmem_dealloc_bar.arrive(peer_rank, is_leader);
+#endif
     tmem_allocator.free(tmem_base, cute::TMEM::Sm100TmemCapacityColumns);
   } else {
     // ---------------- Epilogue warps ----------------

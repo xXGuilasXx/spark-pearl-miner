@@ -136,6 +136,12 @@ struct SharedStorage5 {
   uint32_t fold_part[256];       // per slice: fold of hash tile (HR,HC) (atomic XOR)
 #endif
   uint32_t t_circ[256 * 17];     // per-thread transcript circular slots (stride 17: banks)
+#ifdef SPM_D3_RENDEZVOUS
+  // D3 (WEDGE-AUDIT §3, stock sm100_gemm_tma_warpspecialized L791-800 parity): cluster-level
+  // barrier so both CTAs' MMA warps rendezvous before either frees TMEM. init(32) = the local
+  // MMA warp's 32 threads; the peer's remote arrive fills it.
+  cutlass::arch::ClusterBarrier tmem_dealloc_bar;
+#endif
 };
 
 // sm_110a/101a per-CTA dynamic smem limit (227 KB): layout changes must pass this gate at compile
