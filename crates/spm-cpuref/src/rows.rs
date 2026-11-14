@@ -124,6 +124,24 @@ pub fn tile_from_rows(
     rank: usize,
     a_noise_seed: &Hash256,
 ) -> Result<TileResult> {
+    tile_from_rows_fold_every(t_rows, t_cols, a_rows, bt_rows, k, rank, a_noise_seed, 1)
+}
+
+/// Relaxed-fold-granularity variant of [`tile_from_rows`]: fold once per `fold_every` slices
+/// (the SPM_FOLD_EVERY=N PoW proposal, see pearl-umma-miner PROTOCOL-FOLD-GATE.md). The fold
+/// input stays the CUMULATIVE acc (pool invariant); the transcript slot becomes
+/// `(s / fold_every) % TRANSCRIPT_WORDS`; the final partial group still folds.
+/// `fold_every = 1` reproduces the current pool semantics bit-exactly.
+pub fn tile_from_rows_fold_every(
+    t_rows: u32,
+    t_cols: u32,
+    a_rows: &[i8],
+    bt_rows: &[i8],
+    k: usize,
+    rank: usize,
+    a_noise_seed: &Hash256,
+    fold_every: usize,
+) -> Result<TileResult> {
     ensure!(
         k > 0 && rank > 0 && a_rows.len().is_multiple_of(k) && bt_rows.len().is_multiple_of(k),
         "rows must be whole k-long rows"
@@ -131,9 +149,11 @@ pub fn tile_from_rows(
     let h = a_rows.len() / k;
     let w = bt_rows.len() / k;
     ensure!(h > 0 && w > 0, "empty tile");
+    let fe = fold_every.max(1);
+    let slices = k / rank;
     let mut acc = vec![0i32; h * w];
     let mut transcript = [0u32; TRANSCRIPT_WORDS];
-    for s in 0..k / rank {
+    for s in 0..slices {
         let span = s * rank..(s + 1) * rank;
         for (u, a_row) in a_rows.chunks_exact(k).enumerate() {
             let a = &a_row[span.clone()];
@@ -146,8 +166,12 @@ pub fn tile_from_rows(
                 acc[u * w + v] = acc[u * w + v].wrapping_add(dot);
             }
         }
+        let is_group_end = (s % fe == fe - 1) || (s + 1 == slices);
+        if !is_group_end {
+            continue;
+        }
         let fold = acc.iter().fold(0u32, |x, &c| x ^ c as u32);
-        let slot = s % TRANSCRIPT_WORDS;
+        let slot = (s / fe) % TRANSCRIPT_WORDS;
         transcript[slot] = transcript[slot].rotate_left(TRANSCRIPT_ROTL) ^ fold;
     }
     Ok(TileResult {
@@ -194,6 +218,116 @@ mod tests {
             let mut bytes = vec![0u8; len];
             fill_int7_bytes_at(11, DOMAIN_A, start, &mut bytes);
             assert!(bytes.iter().zip(&out).all(|(&b, &x)| b == x as u8));
+        }
+    }
+
+    #[test]
+    fn fold_every_relaxation_matches_its_spec() {
+        // fold_every=1 must reproduce the pool semantics bit-exactly; a fully relaxed fold on a
+        // >=4-slice tile must produce exactly one fold at slot 0 over the FINAL cumulative acc.
+        for (m, n, k, seed) in [(128usize, 192usize, 2048usize, 7u64)] {
+            let p = Problem::generate(m, n, k, header(), seed).unwrap();
+            let c = commit(&p).unwrap();
+            let a_side = NoiseSide::new(&SEED_LABEL_A, &c.a_noise_seed, k, p.rank());
+            let b_side = NoiseSide::new(&SEED_LABEL_B, &c.b_noise_seed, k, p.rank());
+            let t_rows = p.row_offsets()[0];
+            let t_cols = p.col_offsets()[0];
+            let ri: Vec<usize> = p
+                .row_pattern()
+                .iter()
+                .map(|&d| (t_rows + d) as usize)
+                .collect();
+            let ci: Vec<usize> = p
+                .col_pattern()
+                .iter()
+                .map(|&d| (t_cols + d) as usize)
+                .collect();
+            let mut a = Vec::new();
+            for &r in &ri {
+                let mut row = vec![0i8; k];
+                fill_int7_at(seed, DOMAIN_A, r * k, &mut row);
+                a.extend_from_slice(&row);
+            }
+            let mut bt = Vec::new();
+            for &r in &ci {
+                let mut row = vec![0i8; k];
+                fill_int7_at(seed, DOMAIN_BT, r * k, &mut row);
+                bt.extend_from_slice(&row);
+            }
+            let a = a_side.noised_rows(&a, &ri).unwrap();
+            let bt = b_side.noised_rows(&bt, &ci).unwrap();
+
+            let base =
+                tile_from_rows(t_rows, t_cols, &a, &bt, k, p.rank(), &c.a_noise_seed).unwrap();
+            let fe1 = tile_from_rows_fold_every(
+                t_rows,
+                t_cols,
+                &a,
+                &bt,
+                k,
+                p.rank(),
+                &c.a_noise_seed,
+                1,
+            )
+            .unwrap();
+            assert_eq!(base, fe1, "fold_every=1 must equal the pool semantics");
+
+            let slices = k / p.rank();
+            assert!(slices >= 4, "need >= 4 slices for the grouped check");
+            let fe2 = tile_from_rows_fold_every(
+                t_rows,
+                t_cols,
+                &a,
+                &bt,
+                k,
+                p.rank(),
+                &c.a_noise_seed,
+                2,
+            )
+            .unwrap();
+            assert_ne!(
+                base.transcript, fe2.transcript,
+                "relaxed fold must change the transcript"
+            );
+            assert_ne!(base.digest, fe2.digest);
+
+            // independent reference for fe = slices (single group): one fold at slot 0 over the
+            // final cumulative acc, transcript otherwise zero.
+            let fe_all = tile_from_rows_fold_every(
+                t_rows,
+                t_cols,
+                &a,
+                &bt,
+                k,
+                p.rank(),
+                &c.a_noise_seed,
+                slices,
+            )
+            .unwrap();
+            let h = a.len() / k;
+            let w = bt.len() / k;
+            let mut acc = vec![0i32; h * w];
+            for s in 0..slices {
+                let span = s * p.rank()..(s + 1) * p.rank();
+                for (u, a_row) in a.chunks_exact(k).enumerate() {
+                    for (v, b_row) in bt.chunks_exact(k).enumerate() {
+                        let dot: i32 = a_row[span.clone()]
+                            .iter()
+                            .zip(&b_row[span.clone()])
+                            .map(|(&x, &y)| i32::from(x) * i32::from(y))
+                            .sum();
+                        acc[u * w + v] = acc[u * w + v].wrapping_add(dot);
+                    }
+                }
+            }
+            let fold = acc.iter().fold(0u32, |x, &c2| x ^ c2 as u32);
+            let mut expect = [0u32; TRANSCRIPT_WORDS];
+            // slot 0 starts at 0: rotl13(0) ^ fold = fold itself
+            expect[0] = fold;
+            assert_eq!(
+                fe_all.transcript, expect,
+                "fully-relaxed fold: exactly one fold at slot 0"
+            );
         }
     }
 

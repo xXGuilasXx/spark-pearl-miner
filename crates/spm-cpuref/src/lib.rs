@@ -36,7 +36,7 @@ pub use problem::{
     fill_int7, Problem, SplitMix64, DOMAIN_A, DOMAIN_BT, GEN_MAX, GEN_MIN, SIGNAL_MAX, SIGNAL_MIN,
 };
 pub use proof::{build_plain_proof, matrix_proof, verify_v3};
-pub use rows::{fill_int7_at, fill_int7_bytes_at, tile_from_rows, NoiseSide};
+pub use rows::{fill_int7_at, fill_int7_bytes_at, tile_from_rows, tile_from_rows_fold_every, NoiseSide};
 
 pub use spm_pow::{IncompleteBlockHeader, MiningConfiguration, PlainProof, U256};
 
