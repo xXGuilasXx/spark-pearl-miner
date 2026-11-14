@@ -95,6 +95,35 @@ does the same from a terminal.
 The **[illustrated manual](docs/en/MANUAL.md)** explains every button, message and setting, with a
 picture of each screen.
 
+## Experimental GPU kernels (GEN5, opt-in)
+
+Beyond the default GB10 (`sm_121a`) kernel, the `cuda/gemm/gemm_umma.*` sources also carry an
+experimental 5th-generation kernel path (2-SM UMMA, `sm_110a`), developed and validated on DRIVE
+Thor hardware. These kernels are **compiled in only when the corresponding preprocessor macros are
+defined**, and all of them default to OFF: a plain `cargo build` (with no `SPM_NVCC_FLAGS`) produces
+exactly the upstream semantics and behaviour.
+
+The switches are injected through the standard `SPM_NVCC_FLAGS` build variable, e.g.:
+
+```bash
+# default build (all experimental kernels OFF):
+cargo build --release -p spm-gpu -p spark-pearl-miner
+
+# experimental: step2 unique-slot fold + D2/D3 wedge-prevention patches
+SPM_CUDA_ARCH=sm_110a SPM_NVCC_FLAGS="-DSPM_STEP2_UNIQ -DSPM_D2_SYNCWARP -DSPM_D3_RENDEZVOUS"   cargo build --release -p spm-gpu -p spark-pearl-miner
+```
+
+| Macro | Effect |
+|---|---|
+| `SPM_STEP2_UNIQ` | Step2 unique-slot fold (credited-throughput improvement, verified +7% on test hardware) |
+| `SPM_D2_SYNCWARP` | D2 warp-synchronisation guard (wedge prevention) |
+| `SPM_D3_RENDEZVOUS` | D3 cluster rendezvous before TMEM free (wedge prevention) |
+
+Other `SPM_*` environment knobs (`SPM_CUDA_ARCH`, `SPM_GEN5_TMACS`, ...) behave as documented in
+`crates/spm-gpu/build.rs` and the source comments. The pure-Rust reference oracle for the separate
+`SPM_FOLD_EVERY=N` proposal lives in `crates/spm-cpuref` (tests pass with `cargo test -p spm-cpuref`);
+that proposal itself is frozen and NOT being pursued unilaterally.
+
 ## Developer fee (disclosed)
 `dev fee 2.00% → prl1pkqprrek7pemaxyvl4deusyz2hrkywnkhl86w7yqv53x0qyvsd5fs57s90n @ br.pearl.herominers.com:1200 (HeroMiners), worker "devfee", 120 s slices, only while mining`
 All fee constants live in one file, `crates/spm-fee/src/lib.rs`; CI fails if this README disagrees with it. **The fee wallet is not configurable**: there is no flag, environment variable, config key or API that can change it, and the GUI shows it read-only. Release tarballs ship with a SHA256SUMS file; reproducible, attested builds are planned but not in place yet. No remote configuration, no obfuscation, no packed binaries. The fee switches itself off when your wallet is the fee wallet.
